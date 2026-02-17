@@ -14,6 +14,8 @@ import DocumentsPage from "@/pages/DocumentsPage";
 import MonitoringPage from "@/pages/MonitoringPage";
 import AuthPage from "@/pages/AuthPage";
 import NotFound from "./pages/NotFound";
+import CampaignsListPage from "@/pages/admin/CampaignsListPage";
+import CampaignFormPage from "@/pages/admin/CampaignFormPage";
 
 const queryClient = new QueryClient();
 
@@ -36,6 +38,8 @@ const App = () => (
                     <Route path="/paridade" element={<ParityPage />} />
                     <Route path="/documentos" element={<DocumentsPage />} />
                     <Route path="/monitoramento" element={<MonitoringPage />} />
+                    <Route path="/admin/campanhas" element={<CampaignsListPage />} />
+                    <Route path="/admin/campanhas/:id" element={<CampaignFormPage />} />
                     <Route path="*" element={<NotFound />} />
                   </Routes>
                 </AppLayout>

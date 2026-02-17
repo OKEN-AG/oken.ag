@@ -3,7 +3,8 @@ import { NavLink, useLocation } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import {
   LayoutDashboard, Settings, ShoppingCart, BarChart3,
-  Wheat, FileText, ChevronLeft, ChevronRight, LogOut
+  Wheat, FileText, ChevronLeft, ChevronRight, LogOut,
+  FolderCog, Package, Layers, TrendingUp, Truck
 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 
@@ -16,10 +17,36 @@ const navItems = [
   { to: '/monitoramento', icon: BarChart3, label: 'Monitoramento' },
 ];
 
+const adminItems = [
+  { to: '/admin/campanhas', icon: FolderCog, label: 'Campanhas' },
+  { to: '/admin/produtos', icon: Package, label: 'Produtos' },
+  { to: '/admin/combos', icon: Layers, label: 'Combos' },
+  { to: '/admin/commodities', icon: TrendingUp, label: 'Commodities' },
+  { to: '/admin/fretes', icon: Truck, label: 'Fretes' },
+];
+
 export default function AppSidebar() {
   const [collapsed, setCollapsed] = useState(false);
   const location = useLocation();
   const { user, signOut } = useAuth();
+
+  const renderNavItem = (item: typeof navItems[0]) => {
+    const active = location.pathname === item.to || (item.to !== '/' && location.pathname.startsWith(item.to));
+    return (
+      <NavLink
+        key={item.to}
+        to={item.to}
+        className={`flex items-center gap-3 px-3 py-2.5 rounded-md text-sm transition-colors ${
+          active
+            ? 'bg-accent text-accent-foreground glow-border'
+            : 'text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground'
+        }`}
+      >
+        <item.icon className="w-4 h-4 shrink-0" />
+        {!collapsed && <span>{item.label}</span>}
+      </NavLink>
+    );
+  };
 
   return (
     <motion.aside
@@ -45,24 +72,17 @@ export default function AppSidebar() {
       </div>
 
       {/* Nav */}
-      <nav className="flex-1 py-4 space-y-1 px-2">
-        {navItems.map(item => {
-          const active = location.pathname === item.to;
-          return (
-            <NavLink
-              key={item.to}
-              to={item.to}
-              className={`flex items-center gap-3 px-3 py-2.5 rounded-md text-sm transition-colors ${
-                active
-                  ? 'bg-accent text-accent-foreground glow-border'
-                  : 'text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground'
-              }`}
-            >
-              <item.icon className="w-4 h-4 shrink-0" />
-              {!collapsed && <span>{item.label}</span>}
-            </NavLink>
-          );
-        })}
+      <nav className="flex-1 py-4 space-y-1 px-2 overflow-y-auto">
+        {navItems.map(renderNavItem)}
+
+        {/* Admin section */}
+        {!collapsed && (
+          <div className="pt-4 pb-1 px-3">
+            <span className="text-[10px] uppercase tracking-widest text-muted-foreground">Administração</span>
+          </div>
+        )}
+        {collapsed && <div className="border-t border-sidebar-border my-2" />}
+        {adminItems.map(renderNavItem)}
       </nav>
 
       {/* User & actions */}
