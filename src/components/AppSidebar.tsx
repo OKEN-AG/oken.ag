@@ -3,8 +3,9 @@ import { NavLink, useLocation } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import {
   LayoutDashboard, Settings, ShoppingCart, BarChart3,
-  Wheat, FileText, Shield, Truck, ChevronLeft, ChevronRight
+  Wheat, FileText, ChevronLeft, ChevronRight, LogOut
 } from 'lucide-react';
+import { useAuth } from '@/contexts/AuthContext';
 
 const navItems = [
   { to: '/', icon: LayoutDashboard, label: 'Dashboard' },
@@ -18,6 +19,7 @@ const navItems = [
 export default function AppSidebar() {
   const [collapsed, setCollapsed] = useState(false);
   const location = useLocation();
+  const { user, signOut } = useAuth();
 
   return (
     <motion.aside
@@ -63,13 +65,25 @@ export default function AppSidebar() {
         })}
       </nav>
 
-      {/* Collapse toggle */}
-      <button
-        onClick={() => setCollapsed(c => !c)}
-        className="h-10 flex items-center justify-center border-t border-sidebar-border text-sidebar-foreground hover:text-foreground transition-colors"
-      >
-        {collapsed ? <ChevronRight className="w-4 h-4" /> : <ChevronLeft className="w-4 h-4" />}
-      </button>
+      {/* User & actions */}
+      <div className="border-t border-sidebar-border p-2 space-y-1">
+        {!collapsed && user && (
+          <div className="px-3 py-1.5 text-xs text-muted-foreground truncate">{user.email}</div>
+        )}
+        <button
+          onClick={signOut}
+          className="flex items-center gap-3 px-3 py-2 rounded-md text-sm text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground transition-colors w-full"
+        >
+          <LogOut className="w-4 h-4 shrink-0" />
+          {!collapsed && <span>Sair</span>}
+        </button>
+        <button
+          onClick={() => setCollapsed(c => !c)}
+          className="flex items-center justify-center w-full py-1.5 text-sidebar-foreground hover:text-foreground transition-colors"
+        >
+          {collapsed ? <ChevronRight className="w-4 h-4" /> : <ChevronLeft className="w-4 h-4" />}
+        </button>
+      </div>
     </motion.aside>
   );
 }
