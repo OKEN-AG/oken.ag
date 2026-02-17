@@ -14,13 +14,143 @@ export type Database = {
   }
   public: {
     Tables: {
+      campaign_clients: {
+        Row: {
+          campaign_id: string
+          document: string
+          id: string
+          name: string
+        }
+        Insert: {
+          campaign_id: string
+          document?: string
+          id?: string
+          name?: string
+        }
+        Update: {
+          campaign_id?: string
+          document?: string
+          id?: string
+          name?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "campaign_clients_campaign_id_fkey"
+            columns: ["campaign_id"]
+            isOneToOne: false
+            referencedRelation: "campaigns"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      campaign_due_dates: {
+        Row: {
+          campaign_id: string
+          due_date: string
+          id: string
+          region_type: string
+          region_value: string
+        }
+        Insert: {
+          campaign_id: string
+          due_date: string
+          id?: string
+          region_type?: string
+          region_value: string
+        }
+        Update: {
+          campaign_id?: string
+          due_date?: string
+          id?: string
+          region_type?: string
+          region_value?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "campaign_due_dates_campaign_id_fkey"
+            columns: ["campaign_id"]
+            isOneToOne: false
+            referencedRelation: "campaigns"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      campaign_payment_methods: {
+        Row: {
+          active: boolean
+          annual_interest_rate: number
+          campaign_id: string
+          id: string
+          markup_percent: number
+          method_name: string
+        }
+        Insert: {
+          active?: boolean
+          annual_interest_rate?: number
+          campaign_id: string
+          id?: string
+          markup_percent?: number
+          method_name: string
+        }
+        Update: {
+          active?: boolean
+          annual_interest_rate?: number
+          campaign_id?: string
+          id?: string
+          markup_percent?: number
+          method_name?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "campaign_payment_methods_campaign_id_fkey"
+            columns: ["campaign_id"]
+            isOneToOne: false
+            referencedRelation: "campaigns"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      campaign_segments: {
+        Row: {
+          active: boolean
+          campaign_id: string
+          id: string
+          price_adjustment_percent: number
+          segment_name: string
+        }
+        Insert: {
+          active?: boolean
+          campaign_id: string
+          id?: string
+          price_adjustment_percent?: number
+          segment_name: string
+        }
+        Update: {
+          active?: boolean
+          campaign_id?: string
+          id?: string
+          price_adjustment_percent?: number
+          segment_name?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "campaign_segments_campaign_id_fkey"
+            columns: ["campaign_id"]
+            isOneToOne: false
+            referencedRelation: "campaigns"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       campaigns: {
         Row: {
           active: boolean
           active_modules: string[] | null
           available_due_dates: string[] | null
+          commodities: string[]
           created_at: string
           created_by: string | null
+          currency: string
           eligible_cities: string[] | null
           eligible_client_segments: string[] | null
           eligible_distributor_segments:
@@ -44,8 +174,10 @@ export type Database = {
           active?: boolean
           active_modules?: string[] | null
           available_due_dates?: string[] | null
+          commodities?: string[]
           created_at?: string
           created_by?: string | null
+          currency?: string
           eligible_cities?: string[] | null
           eligible_client_segments?: string[] | null
           eligible_distributor_segments?:
@@ -69,8 +201,10 @@ export type Database = {
           active?: boolean
           active_modules?: string[] | null
           available_due_dates?: string[] | null
+          commodities?: string[]
           created_at?: string
           created_by?: string | null
+          currency?: string
           eligible_cities?: string[] | null
           eligible_client_segments?: string[] | null
           eligible_distributor_segments?:
