@@ -1,19 +1,21 @@
 import { motion } from 'framer-motion';
-import { BarChart3, Wheat, Shield, TrendingUp, AlertTriangle, CheckCircle } from 'lucide-react';
+import { BarChart3, Wheat, Shield, TrendingUp, CheckCircle } from 'lucide-react';
 import StatCard from '@/components/StatCard';
 import { Progress } from '@/components/ui/progress';
-
-const operations = [
-  { id: 'OP-2025-001', client: 'Fazenda Santa Clara', sacas: 8420, entregue: 5200, valor: 1250000, garantia: 95, ndvi: 0.82, status: 'monitorando' },
-  { id: 'OP-2025-003', client: 'Cooperativa Agrisul', sacas: 14120, entregue: 0, valor: 2100000, garantia: 100, ndvi: 0.78, status: 'garantido' },
-  { id: 'OP-2025-004', client: 'Fazenda Progresso', sacas: 3760, entregue: 3760, valor: 560000, garantia: 100, ndvi: 0.85, status: 'liquidado' },
-];
+import { useOperations } from '@/hooks/useOperations';
+import { Skeleton } from '@/components/ui/skeleton';
 
 const healthColor = (v: number) => v >= 90 ? 'text-success' : v >= 70 ? 'text-warning' : 'text-destructive';
-const ndviColor = (v: number) => v >= 0.7 ? 'text-success' : v >= 0.5 ? 'text-warning' : 'text-destructive';
 
 export default function MonitoringPage() {
+  const { data: operations, isLoading } = useOperations();
   const formatCurrency = (v: number) => v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+
+  // Filter to monitoring-relevant statuses
+  const monitored = (operations || []).filter(o => ['garantido', 'faturado', 'monitorando', 'liquidado'].includes(o.status));
+  const totalSacas = monitored.reduce((s, o) => s + (o.total_sacas || 0), 0);
+
+  if (isLoading) return <div className="p-6"><Skeleton className="h-64 w-full" /></div>;
 
   return (
     <div className="p-6 space-y-6">
@@ -23,21 +25,22 @@ export default function MonitoringPage() {
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        <StatCard label="Operações Monitoradas" value="3" icon={<BarChart3 className="w-4 h-4" />} />
-        <StatCard label="Sacas a Receber" value="17.100" icon={<Wheat className="w-4 h-4" />} trend="neutral" trendValue="Soja" />
-        <StatCard label="Cobertura de Garantia" value="98%" icon={<Shield className="w-4 h-4" />} trend="up" trendValue="Saudável" />
-        <StatCard label="NDVI Médio" value="0.82" icon={<TrendingUp className="w-4 h-4" />} trend="up" trendValue="Bom desenvolvimento" />
+        <StatCard label="Operações Monitoradas" value={String(monitored.length)} icon={<BarChart3 className="w-4 h-4" />} />
+        <StatCard label="Sacas Comprometidas" value={totalSacas.toLocaleString('pt-BR')} icon={<Wheat className="w-4 h-4" />} />
+        <StatCard label="Cobertura de Garantia" value={monitored.length > 0 ? '—' : 'N/A'} icon={<Shield className="w-4 h-4" />} />
+        <StatCard label="Operações Liquidadas" value={String(monitored.filter(o => o.status === 'liquidado').length)} icon={<TrendingUp className="w-4 h-4" />} />
       </div>
 
-      <div className="space-y-4">
-        {operations.map((op, i) => {
-          const entregaPercent = op.sacas > 0 ? (op.entregue / op.sacas) * 100 : 0;
-          return (
+      {monitored.length === 0 ? (
+        <div className="glass-card p-8 text-center text-muted-foreground">Nenhuma operação em fase de monitoramento. Operações aparecem aqui após a formalização.</div>
+      ) : (
+        <div className="space-y-4">
+          {monitored.map((op, i) => (
             <motion.div key={op.id} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.05 }} className="glass-card p-5">
               <div className="flex items-center justify-between mb-4">
                 <div>
-                  <div className="text-sm font-semibold text-foreground">{op.id} — {op.client}</div>
-                  <div className="text-xs text-muted-foreground">{formatCurrency(op.valor)}</div>
+                  <div className="text-sm font-semibold text-foreground">{op.client_name || 'Sem nome'}</div>
+                  <div className="text-xs text-muted-foreground">{formatCurrency(op.gross_revenue || 0)}</div>
                 </div>
                 <span className={`engine-badge ${
                   op.status === 'liquidado' ? 'bg-success/10 text-success' :
@@ -48,32 +51,28 @@ export default function MonitoringPage() {
                   {op.status}
                 </span>
               </div>
-
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                 <div>
-                  <div className="stat-label">Entrega de Grãos</div>
-                  <div className="font-mono text-sm text-foreground">{op.entregue.toLocaleString('pt-BR')} / {op.sacas.toLocaleString('pt-BR')} sacas</div>
-                  <Progress value={entregaPercent} className="h-2 mt-1 bg-muted" />
+                  <div className="stat-label">Sacas</div>
+                  <div className="font-mono text-sm text-foreground">{(op.total_sacas || 0).toLocaleString('pt-BR')} sacas</div>
                 </div>
                 <div>
-                  <div className="stat-label">Cobertura Garantia</div>
-                  <div className={`font-mono font-bold text-lg ${healthColor(op.garantia)}`}>{op.garantia}%</div>
+                  <div className="stat-label">Commodity</div>
+                  <div className="font-mono text-sm text-foreground capitalize">{op.commodity || 'soja'}</div>
                 </div>
                 <div>
-                  <div className="stat-label">NDVI Área</div>
-                  <div className={`font-mono font-bold text-lg ${ndviColor(op.ndvi)}`}>{op.ndvi}</div>
-                  <div className="text-xs text-muted-foreground">{op.ndvi >= 0.7 ? 'Vegetação saudável' : 'Atenção'}</div>
+                  <div className="stat-label">Preço Ref.</div>
+                  <div className="font-mono text-sm text-foreground">{formatCurrency(op.reference_price || 0)}/saca</div>
                 </div>
                 <div>
-                  <div className="stat-label">Fluxo Financeiro</div>
-                  <div className="font-mono text-sm text-foreground">{formatCurrency(op.entregue * 148.5)}</div>
-                  <div className="text-xs text-muted-foreground">Recebido</div>
+                  <div className="stat-label">Valor Líquido</div>
+                  <div className="font-mono text-sm text-foreground">{formatCurrency(op.net_revenue || 0)}</div>
                 </div>
               </div>
             </motion.div>
-          );
-        })}
-      </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
