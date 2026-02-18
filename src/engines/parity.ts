@@ -9,20 +9,32 @@ export function calculateCommodityNetPrice(
   port: string,
   freightReducer?: FreightReducer
 ): number {
+  const bushelsPerTon = pricing.bushelsPerTon || 36.744;
+  const pesoSacaKg = pricing.pesoSacaKg || 60;
+  const sacasPerTon = 1000 / pesoSacaKg; // ~16.667
+
   const basis = pricing.basisByPort[port] ?? 0;
-  const fobPrice = (pricing.exchangePrice + basis) * pricing.exchangeRateBolsa;
 
-  // Apply security deltas
-  const afterMarketDelta = fobPrice * (1 - pricing.securityDeltaMarket / 100);
+  // USD/bushel → USD/ton
+  const fobUsdPerTon = (pricing.exchangePrice + basis) * bushelsPerTon;
 
-  // Subtract freight if interior delivery
-  const freightCost = freightReducer?.totalReducer ?? 0;
-  const interiorPrice = afterMarketDelta - freightCost;
+  // USD/ton → BRL/ton
+  const fobBrlPerTon = fobUsdPerTon * pricing.exchangeRateBolsa;
 
-  // Apply freight delta
-  const netPrice = interiorPrice * (1 - pricing.securityDeltaFreight / 100);
+  // Apply market security delta
+  const afterMarketDelta = fobBrlPerTon * (1 - pricing.securityDeltaMarket / 100);
 
-  return Math.max(netPrice, 0);
+  // Subtract freight (R$/ton). FreightReducer.totalReducer is R$/ton
+  const freightCostPerTon = freightReducer?.totalReducer ?? 0;
+  const interiorPricePerTon = afterMarketDelta - freightCostPerTon;
+
+  // Apply freight security delta
+  const netPricePerTon = interiorPricePerTon * (1 - pricing.securityDeltaFreight / 100);
+
+  // BRL/ton → BRL/saca
+  const netPricePerSaca = netPricePerTon / sacasPerTon;
+
+  return Math.max(netPricePerSaca, 0.01);
 }
 
 /**

@@ -56,18 +56,32 @@ export default function ParityResults({
       <div className="glass-card p-5">
         <h3 className="text-sm font-semibold text-foreground mb-3">Precificação da Commodity</h3>
         <div className="space-y-2 text-sm font-mono">
-          <PricingRow label="Preço Bolsa (CBOT)" value={`US$ ${pricing.exchangePrice.toFixed(4)}`} />
-          <PricingRow label={`Basis ${port}`} value={`US$ ${pricing.basisByPort[port]?.toFixed(2)}`} />
-          <PricingRow label="Preço FOB" value={`US$ ${(pricing.exchangePrice + (pricing.basisByPort[port] ?? 0)).toFixed(4)}`} />
-          <PricingRow label="Câmbio" value={`R$ ${pricing.exchangeRateBolsa.toFixed(4)}`} />
-          <PricingRow label="Preço FOB (R$/saca)" value={formatCurrency((pricing.exchangePrice + (pricing.basisByPort[port] ?? 0)) * pricing.exchangeRateBolsa)} />
-          <PricingRow label="Delta Mercado" value={`-${pricing.securityDeltaMarket}%`} highlight />
-          {freightReducer && <PricingRow label={`Frete ${freightReducer.origin}`} value={`-${formatCurrency(freightReducer.totalReducer)}`} highlight />}
-          <PricingRow label="Delta Frete" value={`-${pricing.securityDeltaFreight}%`} highlight />
-          <div className="pt-2 border-t border-border flex justify-between font-bold">
-            <span className="text-foreground">Preço Líquido Interior</span>
-            <span className="text-success">{formatCurrency(commodityNetPrice)}/saca</span>
-          </div>
+          {(() => {
+            const bushelsPerTon = pricing.bushelsPerTon || 36.744;
+            const pesoSacaKg = pricing.pesoSacaKg || 60;
+            const sacasPerTon = 1000 / pesoSacaKg;
+            const basis = pricing.basisByPort[port] ?? 0;
+            const fobUsdTon = (pricing.exchangePrice + basis) * bushelsPerTon;
+            const fobBrlTon = fobUsdTon * pricing.exchangeRateBolsa;
+            const fobBrlSaca = fobBrlTon / sacasPerTon;
+            return (
+              <>
+                <PricingRow label="Preço Bolsa (CBOT)" value={`US$ ${pricing.exchangePrice.toFixed(4)}/bu`} />
+                <PricingRow label={`Basis ${port}`} value={`US$ ${basis.toFixed(2)}/bu`} />
+                <PricingRow label="FOB (USD/ton)" value={`US$ ${fobUsdTon.toFixed(2)}`} />
+                <PricingRow label="Câmbio" value={`R$ ${pricing.exchangeRateBolsa.toFixed(4)}`} />
+                <PricingRow label="FOB (R$/ton)" value={formatCurrency(fobBrlTon)} />
+                <PricingRow label="FOB (R$/saca)" value={formatCurrency(fobBrlSaca)} />
+                <PricingRow label="Delta Mercado" value={`-${pricing.securityDeltaMarket}%`} highlight />
+                {freightReducer && <PricingRow label={`Frete ${freightReducer.origin}`} value={`-${formatCurrency(freightReducer.totalReducer)}/ton`} highlight />}
+                <PricingRow label="Delta Frete" value={`-${pricing.securityDeltaFreight}%`} highlight />
+                <div className="pt-2 border-t border-border flex justify-between font-bold">
+                  <span className="text-foreground">Preço Líquido Interior</span>
+                  <span className="text-success">{formatCurrency(commodityNetPrice)}/saca</span>
+                </div>
+              </>
+            );
+          })()}
         </div>
       </div>
     </div>

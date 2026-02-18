@@ -118,6 +118,8 @@ export function useCampaignData(campaignId?: string) {
         securityDeltaMarket: cp.security_delta_market || 2,
         securityDeltaFreight: cp.security_delta_freight || 15,
         stopLoss: cp.stop_loss || 0,
+        bushelsPerTon: cp.bushels_per_ton || 36.744,
+        pesoSacaKg: cp.peso_saca_kg || 60,
       } as CommodityPricing;
     },
   });

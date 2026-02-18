@@ -138,10 +138,12 @@ export interface CommodityPricing {
   optionCost: number;
   exchangeRateBolsa: number;
   exchangeRateOption: number;
-  basisByPort: Record<string, number>;
+  basisByPort: Record<string, number>; // USD/bushel premium by port
   securityDeltaMarket: number; // %
   securityDeltaFreight: number; // %
   stopLoss: number;
+  bushelsPerTon: number; // ~36.744 for soy
+  pesoSacaKg: number; // 60 for soy
 }
 
 export interface FreightReducer {

@@ -107,6 +107,8 @@ export const mockCommodityPricing: CommodityPricing = {
   securityDeltaMarket: 2.0,
   securityDeltaFreight: 15.0,
   stopLoss: 9.16,
+  bushelsPerTon: 36.744,
+  pesoSacaKg: 60,
 };
 
 export const mockFreightReducers: FreightReducer[] = [
