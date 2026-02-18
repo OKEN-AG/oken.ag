@@ -1,5 +1,5 @@
 import { motion } from 'framer-motion';
-import { ArrowRight, Shield } from 'lucide-react';
+import { ArrowRight, Shield, TrendingUp } from 'lucide-react';
 import type { CommodityPricing, FreightReducer, ParityResult } from '@/types/barter';
 
 interface InsurancePremium {
@@ -18,13 +18,14 @@ interface ParityResultsProps {
   commodityNetPrice: number;
   showInsurance: boolean;
   commodityName?: string;
+  valorizationBonus?: number; // I6
   formatCurrency: (v: number) => string;
   formatNum: (v: number) => string;
 }
 
 export default function ParityResults({
   amount, parity, insurancePremium, pricing, port, freightReducer,
-  commodityNetPrice, showInsurance, commodityName, formatCurrency, formatNum,
+  commodityNetPrice, showInsurance, commodityName, valorizationBonus, formatCurrency, formatNum,
 }: ParityResultsProps) {
   return (
     <div className="lg:col-span-2 space-y-4">
@@ -65,6 +66,11 @@ export default function ParityResults({
             const fobUsdTon = (pricing.exchangePrice + basis) * bushelsPerTon;
             const fobBrlTon = fobUsdTon * pricing.exchangeRateBolsa;
             const fobBrlSaca = fobBrlTon / sacasPerTon;
+            const afterMarketDelta = fobBrlTon * (1 - pricing.securityDeltaMarket / 100);
+            const freightCostTon = freightReducer?.totalReducer ?? 0;
+            const interiorTon = afterMarketDelta - freightCostTon;
+            const netTon = interiorTon * (1 - pricing.securityDeltaFreight / 100);
+            const netSaca = netTon / sacasPerTon;
             return (
               <>
                 <PricingRow label="Preço Bolsa (CBOT)" value={`US$ ${pricing.exchangePrice.toFixed(4)}/bu`} />
@@ -78,6 +84,17 @@ export default function ParityResults({
                 <PricingRow label="Delta Frete" value={`-${pricing.securityDeltaFreight}%`} highlight />
                 <div className="pt-2 border-t border-border flex justify-between font-bold">
                   <span className="text-foreground">Preço Líquido Interior</span>
+                  <span className="text-foreground">{formatCurrency(netSaca)}/saca</span>
+                </div>
+                {/* I6: Show valorization bonus */}
+                {(valorizationBonus || 0) > 0 && (
+                  <div className="flex justify-between text-success">
+                    <span>Valorização Padrão</span>
+                    <span>+{formatCurrency(valorizationBonus!)}/saca</span>
+                  </div>
+                )}
+                <div className="pt-1 border-t border-border flex justify-between font-bold text-lg">
+                  <span className="text-foreground">Preço Efetivo</span>
                   <span className="text-success">{formatCurrency(commodityNetPrice)}/saca</span>
                 </div>
               </>

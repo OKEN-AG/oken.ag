@@ -16,6 +16,8 @@ import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { toast } from 'sonner';
+import { supabase } from '@/integrations/supabase/client';
+import { useQuery } from '@tanstack/react-query';
 
 import ParityInputs from '@/components/parity/ParityInputs';
 import ParityResults from '@/components/parity/ParityResults';
@@ -24,19 +26,16 @@ export default function ParityPage() {
   const location = useLocation();
   const { user } = useAuth();
 
-  // State from navigation
   const stateAmount = (location.state as any)?.amount;
   const stateGross = (location.state as any)?.grossAmount;
   const stateCampaignId = (location.state as any)?.campaignId;
   const stateOperationId = (location.state as any)?.operationId;
 
-  // Bug #4 & #16: Add campaign and operation selectors for direct access
   const { data: activeCampaigns } = useActiveCampaigns();
   const { data: operations } = useOperations();
   const [selectedCampaignId, setSelectedCampaignId] = useState<string>(stateCampaignId || '');
   const [selectedOperationId, setSelectedOperationId] = useState<string>(stateOperationId || '');
 
-  // Auto-select campaign from state or first available
   useEffect(() => {
     if (!selectedCampaignId && stateCampaignId) {
       setSelectedCampaignId(stateCampaignId);
@@ -51,11 +50,9 @@ export default function ParityPage() {
     }
   }, [stateOperationId, selectedOperationId]);
 
-  // When operation is selected, load its amounts and commodity
   const selectedOp = operations?.find(op => op.id === selectedOperationId);
   const [selectedCommodity, setSelectedCommodity] = useState<string>('soja');
 
-  // AUDIT FIX I5: Get pricing for selected commodity, not just [0]
   const { commodityPricing: commodityPricingAll, freightReducers, rawCommodityPricing, deliveryLocations, rawCampaign, isLoading } = useCampaignData(selectedCampaignId || undefined);
   
   // Select commodity pricing matching selected commodity
@@ -77,15 +74,34 @@ export default function ParityPage() {
         stopLoss: match.stop_loss || 0,
         bushelsPerTon: match.bushels_per_ton || 36.744,
         pesoSacaKg: match.peso_saca_kg || 60,
+        // H3: B&S params from config
+        volatility: match.volatility || 25,
+        riskFreeRate: 0.1175, // SELIC - could be parameterized further
       } as CommodityPricing;
     }
-    return commodityPricingAll; // fallback to first
+    return commodityPricingAll;
   }, [rawCommodityPricing, selectedCommodity, commodityPricingAll]);
+
+  // I6: Fetch valorization config for selected commodity
+  const { data: valorizationConfig } = useQuery({
+    queryKey: ['commodity-valorization', selectedCampaignId, selectedCommodity],
+    enabled: !!selectedCampaignId,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('campaign_commodity_valorizations')
+        .select('*')
+        .eq('campaign_id', selectedCampaignId)
+        .eq('commodity', selectedCommodity)
+        .maybeSingle();
+      if (error) throw error;
+      return data;
+    },
+  });
+
   const updateOperation = useUpdateOperation();
   const createLog = useCreateOperationLog();
   const { fetchLivePrice, fetchExchangeRate, calculateDistance, loading: realtimeLoading } = useRealtimePricing();
 
-  // AUDIT FIX H1: Remove mock fallbacks - show error if no data configured
   const hasCommodityData = !!commodityPricing;
   const pricing: CommodityPricing = commodityPricing || {
     commodity: 'soja', exchange: 'CBOT', contract: 'K', exchangePrice: 0,
@@ -98,14 +114,19 @@ export default function ParityPage() {
   const [amount, setAmount] = useState(stateAmount ?? 500000);
   const [grossAmount, setGrossAmount] = useState(stateGross ?? 600000);
   const ports = Object.keys(pricing.basisByPort);
-  const [port, setPort] = useState(ports[0] || 'Paranaguá (PR)');
+  const [port, setPort] = useState(ports[0] || '');
   const [freightOrigin, setFreightOrigin] = useState(freights[0]?.origin || '');
   const [hasContract, setHasContract] = useState(false);
   const [userPrice, setUserPrice] = useState(0);
   const [showInsurance, setShowInsurance] = useState(false);
-  const [volatility, setVolatility] = useState(25);
+  // H3: Volatility from commodity config
+  const [volatility, setVolatility] = useState(pricing.volatility || 25);
 
-  // Update amount and commodity when operation changes
+  // Update volatility when pricing changes
+  useEffect(() => {
+    if (pricing.volatility) setVolatility(pricing.volatility);
+  }, [pricing.volatility]);
+
   useEffect(() => {
     if (selectedOp) {
       if (selectedOp.net_revenue) setAmount(selectedOp.net_revenue);
@@ -114,14 +135,12 @@ export default function ParityPage() {
     }
   }, [selectedOp]);
 
-  // Live price state
   const [livePrice, setLivePrice] = useState<number | null>(null);
   const [liveExchangeRate, setLiveExchangeRate] = useState<number | null>(null);
   const [livePriceTimestamp, setLivePriceTimestamp] = useState<string | null>(null);
   const [autoDistanceKm, setAutoDistanceKm] = useState<number | null>(null);
   const [selectedDeliveryLocation, setSelectedDeliveryLocation] = useState<string>('');
 
-  // Build effective pricing with live data overlay
   const effectivePricing: CommodityPricing = useMemo(() => {
     return {
       ...pricing,
@@ -132,14 +151,12 @@ export default function ParityPage() {
 
   const freightReducer = freights.find(f => f.origin === freightOrigin);
 
-  // Bug #6: Synthetic freight reducer when autoDistanceKm exists but no manual reducer
   const effectiveFreightReducer: FreightReducer | undefined = useMemo(() => {
     if (autoDistanceKm !== null) {
       if (freightReducer) {
         const autoTotal = autoDistanceKm * freightReducer.costPerKm + (freightReducer.adjustment || 0);
         return { ...freightReducer, distanceKm: autoDistanceKm, totalReducer: autoTotal };
       }
-      // Synthetic reducer with default cost
       const defaultCostPerKm = 0.11;
       return {
         origin: 'Auto',
@@ -154,51 +171,87 @@ export default function ParityPage() {
   }, [freightReducer, autoDistanceKm, port]);
 
   const commodityNetPrice = useMemo(() => calculateCommodityNetPrice(effectivePricing, port, effectiveFreightReducer), [port, effectiveFreightReducer, effectivePricing]);
-  const parity = useMemo(() => calculateParity(amount, commodityNetPrice, hasContract ? userPrice : undefined, grossAmount), [amount, commodityNetPrice, hasContract, userPrice, grossAmount]);
 
-  // Bug #13: Fix insurance premium calculation
+  // I6: Apply valorization bonus to effective price
+  const valorizationBonus = useMemo(() => {
+    if (!valorizationConfig) return 0;
+    if (valorizationConfig.use_percent && valorizationConfig.percent_value) {
+      return commodityNetPrice * valorizationConfig.percent_value / 100;
+    }
+    return valorizationConfig.nominal_value || 0;
+  }, [valorizationConfig, commodityNetPrice]);
+
+  const effectiveCommodityPrice = commodityNetPrice + valorizationBonus;
+
+  const parity = useMemo(() => calculateParity(amount, effectiveCommodityPrice, hasContract ? userPrice : undefined, grossAmount), [amount, effectiveCommodityPrice, hasContract, userPrice, grossAmount]);
+
+  // H3: Fix insurance premium - use params from config
   const insurancePremium = useMemo(() => {
     if (!showInsurance) return null;
     const spotPrice = effectivePricing.exchangePrice * effectivePricing.exchangeRateBolsa;
-    const premium = blackScholes(spotPrice, spotPrice * 1.05, 0.5, 0.06, volatility / 100, true);
-    // Premium is in BRL per unit. Divide by saca price to get sacas-equivalent per saca
-    const premiumPerSaca = commodityNetPrice > 0 ? premium / commodityNetPrice : 0;
+    const strikePercent = effectivePricing.strikePercent || 105; // H3: from config
+    const riskFreeRate = effectivePricing.riskFreeRate || 0.1175; // H3: from config  
+    const maturityYears = (effectivePricing.optionMaturityDays || 180) / 365; // H3: from config
+    const premium = blackScholes(spotPrice, spotPrice * (strikePercent / 100), maturityYears, riskFreeRate, volatility / 100, true);
+    const premiumPerSaca = effectiveCommodityPrice > 0 ? premium / effectiveCommodityPrice : 0;
     const additionalSacas = Math.ceil(premiumPerSaca * parity.quantitySacas);
     return { premiumPerSaca: premium, additionalSacas, totalSacas: parity.quantitySacas + additionalSacas };
-  }, [showInsurance, volatility, parity, commodityNetPrice, effectivePricing]);
+  }, [showInsurance, volatility, parity, effectiveCommodityPrice, effectivePricing]);
 
   const rawCommodity = rawCommodityPricing?.find((cp: any) => cp.commodity === selectedCommodity) || rawCommodityPricing?.[0];
 
-  // AUDIT FIX H6: Use ticker from selected commodity's config
   const handleFetchLivePrice = useCallback(async () => {
     try {
       const ticker = rawCommodity?.ticker || 'ZS=F';
       const currencyUnit = rawCommodity?.currency_unit || 'USc';
-
       const [priceResult, exchangeResult] = await Promise.all([
         fetchLivePrice(ticker, currencyUnit),
         fetchExchangeRate(),
       ]);
-
       const priceUsdBu = priceResult.price_usd;
       setLivePrice(priceUsdBu);
       setLiveExchangeRate(exchangeResult.rate);
       setLivePriceTimestamp(priceResult.timestamp);
-
       toast.success(`Preço atualizado: US$ ${priceUsdBu.toFixed(4)}/bu | Câmbio: R$ ${exchangeResult.rate.toFixed(4)}`);
     } catch (e: any) {
       toast.error('Erro ao buscar preço: ' + e.message);
     }
   }, [rawCommodity, fetchLivePrice, fetchExchangeRate]);
 
-  const portCoordinates: Record<string, { lat: number; lng: number }> = {
-    'Paranaguá (PR)': { lat: -25.5163, lng: -48.5164 },
-    'Santarem (PA)': { lat: -2.4388, lng: -54.7089 },
-    'Itaqui (MA)': { lat: -2.5614, lng: -44.3683 },
-    'Ilhéus (BA)': { lat: -14.7936, lng: -39.0463 },
-    'Santos (SP)': { lat: -23.9535, lng: -46.3338 },
-    'Rio Grande (RS)': { lat: -32.0349, lng: -52.0986 },
-  };
+  // H4: Port coordinates from delivery_locations + basis_by_port instead of hardcoded
+  const portCoordinates = useMemo<Record<string, { lat: number; lng: number }>>(() => {
+    const coords: Record<string, { lat: number; lng: number }> = {};
+    // Try to derive from delivery locations that match port names
+    for (const loc of deliveryLocations) {
+      if (loc.latitude && loc.longitude && loc.warehouse_name) {
+        // Check if this location name matches a port in basis_by_port
+        for (const portName of ports) {
+          if (portName.toLowerCase().includes((loc.city || '').toLowerCase()) ||
+              loc.warehouse_name.toLowerCase().includes(portName.split(' ')[0].toLowerCase())) {
+            coords[portName] = { lat: loc.latitude, lng: loc.longitude };
+          }
+        }
+      }
+    }
+    // H4: Fallback known port coordinates (only if not found from data)
+    const defaultPortCoords: Record<string, { lat: number; lng: number }> = {
+      'Paranaguá (PR)': { lat: -25.5163, lng: -48.5164 },
+      'Santarem (PA)': { lat: -2.4388, lng: -54.7089 },
+      'Itaqui (MA)': { lat: -2.5614, lng: -44.3683 },
+      'Ilhéus (BA)': { lat: -14.7936, lng: -39.0463 },
+      'Santos (SP)': { lat: -23.9535, lng: -46.3338 },
+      'Rio Grande (RS)': { lat: -32.0349, lng: -52.0986 },
+    };
+    for (const [name, coord] of Object.entries(defaultPortCoords)) {
+      if (!coords[name]) coords[name] = coord;
+    }
+    return coords;
+  }, [deliveryLocations, ports]);
+
+  // G2: Validate delivery locations lat/lng
+  const locationsWithoutCoords = useMemo(() => {
+    return deliveryLocations.filter(l => !l.latitude || !l.longitude || l.latitude === 0 || l.longitude === 0);
+  }, [deliveryLocations]);
 
   const handleCalculateDistance = useCallback(async () => {
     if (!selectedDeliveryLocation) {
@@ -206,13 +259,13 @@ export default function ParityPage() {
       return;
     }
     const loc = deliveryLocations.find(l => l.id === selectedDeliveryLocation);
-    if (!loc || !loc.latitude || !loc.longitude) {
-      toast.error('Local de entrega sem coordenadas cadastradas');
+    if (!loc || !loc.latitude || !loc.longitude || loc.latitude === 0 || loc.longitude === 0) {
+      toast.error('Local de entrega sem coordenadas cadastradas. Atualize lat/lng na configuração da campanha.');
       return;
     }
     const portCoord = portCoordinates[port];
     if (!portCoord) {
-      toast.error('Porto sem coordenadas configuradas');
+      toast.error(`Porto "${port}" sem coordenadas configuradas`);
       return;
     }
     try {
@@ -222,7 +275,7 @@ export default function ParityPage() {
     } catch (e: any) {
       toast.error('Erro ao calcular distância: ' + e.message);
     }
-  }, [selectedDeliveryLocation, deliveryLocations, port, calculateDistance]);
+  }, [selectedDeliveryLocation, deliveryLocations, port, portCoordinates, calculateDistance]);
 
   const handleSaveParity = async () => {
     if (!selectedOperationId || !user) return;
@@ -241,7 +294,13 @@ export default function ParityPage() {
         operation_id: selectedOperationId,
         user_id: user.id,
         action: 'paridade_calculada',
-        details: { sacas: parity.quantitySacas, preco: parity.commodityPricePerUnit, port, livePrice, liveExchangeRate },
+        details: {
+          sacas: parity.quantitySacas, preco: parity.commodityPricePerUnit,
+          port, livePrice, liveExchangeRate,
+          valorizationBonus,
+          volatility,
+          bsParams: { strikePercent: effectivePricing.strikePercent, riskFreeRate: effectivePricing.riskFreeRate },
+        },
       });
       toast.success('Paridade salva na operação!');
     } catch (e: any) {
@@ -252,7 +311,6 @@ export default function ParityPage() {
   const formatCurrency = (v: number) => v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
   const formatNum = (v: number) => v.toLocaleString('pt-BR', { maximumFractionDigits: 2 });
 
-  // Filter operations for this campaign
   const campaignOperations = operations?.filter(op => !selectedCampaignId || op.campaign_id === selectedCampaignId) || [];
 
   return (
@@ -315,15 +373,37 @@ export default function ParityPage() {
         </div>
       </div>
 
-      {/* AUDIT FIX H1: Warning when no commodity data configured */}
+      {/* Warnings */}
       {!hasCommodityData && !isLoading && (
         <div className="glass-card p-4 border border-warning/50 flex items-center gap-3">
           <AlertTriangle className="w-5 h-5 text-warning shrink-0" />
           <div>
             <div className="text-sm font-semibold text-warning">Precificação de commodity não configurada</div>
-            <div className="text-xs text-muted-foreground">Configure os dados de precificação na aba Commodities da campanha antes de calcular paridade.</div>
+            <div className="text-xs text-muted-foreground">Configure os dados de precificação na aba Commodities da campanha.</div>
           </div>
         </div>
+      )}
+
+      {/* G2: Warning for locations without coordinates */}
+      {locationsWithoutCoords.length > 0 && (
+        <div className="flex items-center gap-2 text-xs text-warning bg-warning/10 border border-warning/20 rounded-md px-3 py-2">
+          <MapPin className="w-3.5 h-3.5 shrink-0" />
+          {locationsWithoutCoords.length} local(is) de entrega sem coordenadas (lat/lng): {locationsWithoutCoords.map(l => l.warehouse_name).join(', ')}
+        </div>
+      )}
+
+      {/* I6: Valorization indicator */}
+      {valorizationConfig && valorizationBonus > 0 && (
+        <motion.div initial={{ opacity: 0, y: -5 }} animate={{ opacity: 1, y: 0 }} className="glass-card p-3 flex items-center gap-4 border border-success/30">
+          <TrendingUp className="w-5 h-5 text-success" />
+          <div className="text-sm">
+            <span className="text-muted-foreground">Valorização {selectedCommodity}:</span>{' '}
+            <span className="font-mono font-bold text-success">
+              +{formatCurrency(valorizationBonus)}/saca
+              {valorizationConfig.use_percent ? ` (${valorizationConfig.percent_value}%)` : ''}
+            </span>
+          </div>
+        </motion.div>
       )}
 
       {/* Live data banner */}
@@ -380,9 +460,10 @@ export default function ParityPage() {
             pricing={effectivePricing}
             port={port}
             freightReducer={effectiveFreightReducer}
-            commodityNetPrice={commodityNetPrice}
+            commodityNetPrice={effectiveCommodityPrice}
             showInsurance={showInsurance}
             commodityName={selectedCommodity.charAt(0).toUpperCase() + selectedCommodity.slice(1)}
+            valorizationBonus={valorizationBonus}
             formatCurrency={formatCurrency}
             formatNum={formatNum}
           />
