@@ -31,32 +31,32 @@ export const mockCampaign: Campaign = {
 
 export const mockProducts: Product[] = [
   {
-    id: 'prod-1', name: 'Cripton', category: 'Herbicida', activeIngredient: 'Glifosato',
+    id: 'prod-1', name: 'Cripton', ref: 'CRIPTON', category: 'Herbicida', activeIngredient: 'Glifosato',
     unitType: 'l', packageSizes: [5, 10], unitsPerBox: 4, boxesPerPallet: 40, palletsPerTruck: 20,
     dosePerHectare: 2.5, minDose: 1.5, maxDose: 4.0, pricePerUnit: 12.50, currency: 'USD', priceType: 'vista', includesMargin: false,
   },
   {
-    id: 'prod-2', name: 'Nativo', category: 'Fungicida', activeIngredient: 'Trifloxistrobina + Tebuconazol',
+    id: 'prod-2', name: 'Nativo', ref: 'NATIVO', category: 'Fungicida', activeIngredient: 'Trifloxistrobina + Tebuconazol',
     unitType: 'l', packageSizes: [1, 5], unitsPerBox: 6, boxesPerPallet: 50, palletsPerTruck: 20,
     dosePerHectare: 0.75, minDose: 0.5, maxDose: 1.0, pricePerUnit: 42.00, currency: 'USD', priceType: 'vista', includesMargin: false,
   },
   {
-    id: 'prod-3', name: 'Connect', category: 'Inseticida', activeIngredient: 'Imidacloprido + Beta-ciflutrina',
+    id: 'prod-3', name: 'Connect', ref: 'CONNECT', category: 'Inseticida', activeIngredient: 'Imidacloprido + Beta-ciflutrina',
     unitType: 'l', packageSizes: [1, 5], unitsPerBox: 4, boxesPerPallet: 60, palletsPerTruck: 20,
     dosePerHectare: 1.0, minDose: 0.5, maxDose: 1.5, pricePerUnit: 38.00, currency: 'USD', priceType: 'vista', includesMargin: false,
   },
   {
-    id: 'prod-4', name: 'Adengo', category: 'Herbicida', activeIngredient: 'Isoxaflutole + Tiencarbazona',
+    id: 'prod-4', name: 'Adengo', ref: 'ADENGO', category: 'Herbicida', activeIngredient: 'Isoxaflutole + Tiencarbazona',
     unitType: 'l', packageSizes: [5], unitsPerBox: 4, boxesPerPallet: 40, palletsPerTruck: 20,
     dosePerHectare: 0.35, minDose: 0.25, maxDose: 0.5, pricePerUnit: 85.00, currency: 'USD', priceType: 'vista', includesMargin: false,
   },
   {
-    id: 'prod-5', name: 'Fox Xpro', category: 'Fungicida', activeIngredient: 'Bixafem + Protioconazol + Trifloxistrobina',
+    id: 'prod-5', name: 'Fox Xpro', ref: 'FOX', category: 'Fungicida', activeIngredient: 'Bixafem + Protioconazol + Trifloxistrobina',
     unitType: 'l', packageSizes: [5], unitsPerBox: 4, boxesPerPallet: 40, palletsPerTruck: 20,
     dosePerHectare: 0.5, minDose: 0.4, maxDose: 0.6, pricePerUnit: 65.00, currency: 'USD', priceType: 'vista', includesMargin: false,
   },
   {
-    id: 'prod-6', name: 'Belt', category: 'Inseticida', activeIngredient: 'Flubendiamida',
+    id: 'prod-6', name: 'Belt', ref: 'BELT', category: 'Inseticida', activeIngredient: 'Flubendiamida',
     unitType: 'l', packageSizes: [1], unitsPerBox: 12, boxesPerPallet: 60, palletsPerTruck: 20,
     dosePerHectare: 0.1, minDose: 0.05, maxDose: 0.15, pricePerUnit: 180.00, currency: 'USD', priceType: 'vista', includesMargin: false,
   },
@@ -64,26 +64,26 @@ export const mockProducts: Product[] = [
 
 export const mockCombos: ComboDefinition[] = [
   {
-    id: 'combo-1', name: 'Combo Premium', discountPercent: 6, priority: 1,
+    id: 'combo-1', name: 'Combo Premium', discountPercent: 6, priority: 1, isComplementary: false,
     products: [
-      { productId: 'prod-1', minDosePerHa: 2.0, maxDosePerHa: 4.0 },
-      { productId: 'prod-2', minDosePerHa: 0.5, maxDosePerHa: 1.0 },
-      { productId: 'prod-5', minDosePerHa: 0.4, maxDosePerHa: 0.6 },
-      { productId: 'prod-3', minDosePerHa: 0.5, maxDosePerHa: 1.5 },
+      { ref: 'CRIPTON', minDosePerHa: 2.0, maxDosePerHa: 4.0 },
+      { ref: 'NATIVO', minDosePerHa: 0.5, maxDosePerHa: 1.0 },
+      { ref: 'FOX', minDosePerHa: 0.4, maxDosePerHa: 0.6 },
+      { ref: 'CONNECT', minDosePerHa: 0.5, maxDosePerHa: 1.5 },
     ],
   },
   {
-    id: 'combo-2', name: 'Combo Fungicida', discountPercent: 4, priority: 2,
+    id: 'combo-2', name: 'Combo Fungicida', discountPercent: 4, priority: 2, isComplementary: false,
     products: [
-      { productId: 'prod-2', minDosePerHa: 0.5, maxDosePerHa: 1.0 },
-      { productId: 'prod-5', minDosePerHa: 0.4, maxDosePerHa: 0.6 },
+      { ref: 'NATIVO', minDosePerHa: 0.5, maxDosePerHa: 1.0 },
+      { ref: 'FOX', minDosePerHa: 0.4, maxDosePerHa: 0.6 },
     ],
   },
   {
-    id: 'combo-3', name: 'Combo Proteção Total', discountPercent: 3, priority: 3,
+    id: 'combo-3', name: 'Complementares Proteção', discountPercent: 3, priority: 3, isComplementary: true,
     products: [
-      { productId: 'prod-3', minDosePerHa: 0.5, maxDosePerHa: 1.5 },
-      { productId: 'prod-6', minDosePerHa: 0.05, maxDosePerHa: 0.15 },
+      { ref: 'CONNECT', minDosePerHa: 0.5, maxDosePerHa: 1.5 },
+      { ref: 'BELT', minDosePerHa: 0.05, maxDosePerHa: 0.15 },
     ],
   },
 ];

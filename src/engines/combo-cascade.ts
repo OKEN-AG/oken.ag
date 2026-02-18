@@ -1,71 +1,174 @@
 import type { ComboDefinition, ComboActivation, AgronomicSelection } from '@/types/barter';
 
 /**
- * COMBO CASCADE ENGINE
- * Applies combos in cascade: highest discount + broadest first
- * No double-counting of products across combos
+ * COMBO CASCADE ENGINE v2
+ * 
+ * Key rules:
+ * 1. Combos match by REF (Nome Mãe), not individual product ID
+ *    → Any product presentation with the same REF satisfies the combo rule
+ * 2. Combos fill progressively like dams (represas):
+ *    - Priority 1 tries to consume REFs first
+ *    - If fully activated, those REFs are consumed
+ *    - If NOT fully activated, ALL REFs remain available for next combo
+ * 3. "Complementary" combos (name starts with COMPLEMENTAR):
+ *    - Apply proportionally to hectares of any activated offer
+ *    - Don't consume REFs from the main pool
  */
+
+/**
+ * Resolve the effective REF for a selection.
+ * Groups all product presentations under the same "Nome Mãe".
+ */
+function getSelectionRef(sel: AgronomicSelection): string {
+  return (sel.ref || sel.product?.ref || '').toUpperCase().trim();
+}
+
+/**
+ * Check if a combo name indicates it's complementary
+ */
+function isComplementaryCombo(combo: ComboDefinition): boolean {
+  return combo.isComplementary || /^COMPLEMENTAR/i.test(combo.name);
+}
+
+/**
+ * For a given REF, find the best matching selection (highest dose)
+ */
+function findSelectionByRef(
+  ref: string,
+  selections: AgronomicSelection[],
+  availableRefs: Set<string>
+): AgronomicSelection | undefined {
+  const upperRef = ref.toUpperCase().trim();
+  if (!availableRefs.has(upperRef)) return undefined;
+  return selections.find(s => getSelectionRef(s) === upperRef);
+}
+
 export function applyComboCascade(
   combos: ComboDefinition[],
   selections: AgronomicSelection[]
 ): ComboActivation[] {
-  // Sort: highest discount first, then by breadth (most products)
-  const sorted = [...combos].sort((a, b) => {
+  // Separate main offers from complementary
+  const mainCombos = combos.filter(c => !isComplementaryCombo(c));
+  const complementaryCombos = combos.filter(c => isComplementaryCombo(c));
+
+  // Sort main combos: highest discount first, then by breadth (most products)
+  const sortedMain = [...mainCombos].sort((a, b) => {
     if (b.discountPercent !== a.discountPercent) {
       return b.discountPercent - a.discountPercent;
     }
     return b.products.length - a.products.length;
   });
 
-  const usedProducts = new Set<string>();
-  const activations: ComboActivation[] = [];
+  // Build available REFs pool from selections
+  const availableRefs = new Set<string>();
+  for (const sel of selections) {
+    const ref = getSelectionRef(sel);
+    if (ref) availableRefs.add(ref);
+  }
 
-  for (const combo of sorted) {
-    const matchedProducts: string[] = [];
+  const activations: ComboActivation[] = [];
+  let totalActivatedHectares = 0;
+
+  // Process main combos in cascade
+  for (const combo of sortedMain) {
+    const matchedRefs: string[] = [];
     let allMatch = true;
 
     for (const rule of combo.products) {
-      if (usedProducts.has(rule.productId)) {
-        allMatch = false;
-        break;
-      }
+      const ruleRef = (rule.ref || '').toUpperCase().trim();
+      if (!ruleRef) { allMatch = false; break; }
 
-      const selection = selections.find(s => s.productId === rule.productId);
-      if (!selection) {
-        allMatch = false;
-        break;
-      }
+      const sel = findSelectionByRef(ruleRef, selections, availableRefs);
+      if (!sel) { allMatch = false; break; }
 
+      // Check dose is within range
       const doseInRange =
-        selection.dosePerHectare >= rule.minDosePerHa &&
-        selection.dosePerHectare <= rule.maxDosePerHa;
+        sel.dosePerHectare >= rule.minDosePerHa &&
+        sel.dosePerHectare <= rule.maxDosePerHa;
 
-      if (!doseInRange) {
-        allMatch = false;
-        break;
-      }
+      if (!doseInRange) { allMatch = false; break; }
 
-      matchedProducts.push(rule.productId);
+      matchedRefs.push(ruleRef);
     }
 
-    if (allMatch && matchedProducts.length > 0) {
-      matchedProducts.forEach(id => usedProducts.add(id));
+    if (allMatch && matchedRefs.length > 0) {
+      // Combo fully activated → consume REFs
+      matchedRefs.forEach(ref => availableRefs.delete(ref));
+      totalActivatedHectares = Math.max(
+        totalActivatedHectares,
+        ...matchedRefs.map(ref => {
+          const sel = selections.find(s => getSelectionRef(s) === ref);
+          return sel?.areaHectares || 0;
+        })
+      );
       activations.push({
         comboId: combo.id,
         comboName: combo.name,
         discountPercent: combo.discountPercent,
-        matchedProducts,
+        matchedProducts: matchedRefs,
         applied: true,
+        isComplementary: false,
       });
     } else {
+      // Combo NOT activated → all REFs remain available (dam didn't fill)
       activations.push({
         comboId: combo.id,
         comboName: combo.name,
         discountPercent: combo.discountPercent,
         matchedProducts: [],
         applied: false,
+        isComplementary: false,
       });
     }
+  }
+
+  // Process complementary combos
+  // Complementary combos apply proportionally to hectares of activated offers
+  const hasActivatedOffers = activations.some(a => a.applied);
+
+  for (const combo of complementaryCombos) {
+    if (!hasActivatedOffers) {
+      activations.push({
+        comboId: combo.id,
+        comboName: combo.name,
+        discountPercent: combo.discountPercent,
+        matchedProducts: [],
+        applied: false,
+        isComplementary: true,
+      });
+      continue;
+    }
+
+    // For complementary: check if any of its REFs are present in selections
+    // (they don't need to be "available" - complementary don't consume from main pool)
+    const matchedRefs: string[] = [];
+    let allMatch = true;
+
+    for (const rule of combo.products) {
+      const ruleRef = (rule.ref || '').toUpperCase().trim();
+      if (!ruleRef) { allMatch = false; break; }
+
+      const sel = selections.find(s => getSelectionRef(s) === ruleRef);
+      if (!sel) { allMatch = false; break; }
+
+      const doseInRange =
+        sel.dosePerHectare >= rule.minDosePerHa &&
+        sel.dosePerHectare <= rule.maxDosePerHa;
+
+      if (!doseInRange) { allMatch = false; break; }
+
+      matchedRefs.push(ruleRef);
+    }
+
+    activations.push({
+      comboId: combo.id,
+      comboName: combo.name,
+      discountPercent: combo.discountPercent,
+      matchedProducts: allMatch ? matchedRefs : [],
+      applied: allMatch,
+      isComplementary: true,
+      proportionalHectares: allMatch ? totalActivatedHectares : undefined,
+    });
   }
 
   return activations;

@@ -57,19 +57,21 @@ export function useCampaignData(campaignId?: string) {
         .order('discount_percent', { ascending: false });
       if (error) throw error;
       
-      // Fetch combo products for each combo
+      // Fetch combo products for each combo (with product ref)
       const result: ComboDefinition[] = [];
       for (const combo of combos || []) {
         const { data: prods } = await supabase
           .from('combo_products')
-          .select('*')
+          .select('*, product:products(id, ref, name)')
           .eq('combo_id', combo.id);
         result.push({
           id: combo.id,
           name: combo.name,
           discountPercent: combo.discount_percent,
           priority: combo.discount_percent,
+          isComplementary: /^COMPLEMENTAR/i.test(combo.name),
           products: (prods || []).map(p => ({
+            ref: ((p as any).product?.ref || (p as any).product?.name || '').toUpperCase(),
             productId: p.product_id,
             minDosePerHa: p.min_dose_per_ha,
             maxDosePerHa: p.max_dose_per_ha,
@@ -172,6 +174,7 @@ export function useCampaignData(campaignId?: string) {
   const products: Product[] = (productsQuery.data || []).map((p: any) => ({
     id: p.id,
     name: p.name,
+    ref: (p.ref || '').toUpperCase(),
     category: p.category,
     activeIngredient: p.active_ingredient || '',
     unitType: p.unit_type as any,
