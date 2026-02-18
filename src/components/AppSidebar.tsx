@@ -69,8 +69,8 @@ export default function AppSidebar() {
       <nav className="flex-1 py-4 space-y-1 px-2 overflow-y-auto">
         {navItems.map(renderNavItem)}
         {!collapsed &&
-        <div className="pt-4 pb-1 px-3 text-primary-foreground">
-            <span className="text-[10px] uppercase tracking-widest text-muted-foreground">Administração</span>
+        <div className="pt-4 pb-1 px-3">
+            <span className="text-[10px] uppercase tracking-widest text-primary">Administração</span>
           </div>
         }
         {collapsed && <div className="border-t border-sidebar-border my-2" />}
