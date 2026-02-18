@@ -218,6 +218,8 @@ export function useCampaignData(campaignId?: string) {
     minDose: p.min_dose,
     maxDose: p.max_dose,
     pricePerUnit: p.price_per_unit,
+    priceCash: p.price_cash || undefined,
+    priceTerm: p.price_term || undefined,
     currency: p.currency as any,
     priceType: p.price_type as any,
     includesMargin: p.includes_margin,

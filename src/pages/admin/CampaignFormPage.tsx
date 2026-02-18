@@ -135,11 +135,12 @@ export default function CampaignFormPage() {
   }, [existing]);
 
   const loadSubData = async (campaignId: string) => {
-    const [clientsRes, methodsRes, segmentsRes, datesRes] = await Promise.all([
-      (supabase as any).from('campaign_clients').select('*').eq('campaign_id', campaignId),
-      (supabase as any).from('campaign_payment_methods').select('*').eq('campaign_id', campaignId),
-      (supabase as any).from('campaign_segments').select('*').eq('campaign_id', campaignId),
-      (supabase as any).from('campaign_due_dates').select('*').eq('campaign_id', campaignId),
+      // Bug #23: Remove (supabase as any) - use typed client
+      const [clientsRes, methodsRes, segmentsRes, datesRes] = await Promise.all([
+      supabase.from('campaign_clients').select('*').eq('campaign_id', campaignId),
+      supabase.from('campaign_payment_methods').select('*').eq('campaign_id', campaignId),
+      supabase.from('campaign_segments').select('*').eq('campaign_id', campaignId),
+      supabase.from('campaign_due_dates').select('*').eq('campaign_id', campaignId),
     ]);
     if (clientsRes.data) setClients(clientsRes.data.map((c: any) => ({ document: c.document, name: c.name })));
     if (methodsRes.data) setPaymentMethods(methodsRes.data.map((m: any) => ({
@@ -168,7 +169,8 @@ export default function CampaignFormPage() {
       const selectedMunicipios = allMunicipios.filter(m => selectedCities.includes(m.ibge));
       const states = [...new Set(selectedMunicipios.map(m => m.uf))];
       const mesos = [...new Set(selectedMunicipios.map(m => m.mesoName))];
-      const priceFormat = form.price_list_format || (form.currency === 'BRL' ? 'brl_vista' : 'usd_vista');
+      // Bug #19: Use user-selected price_list_format, only fallback if truly empty
+      const priceFormat = form.price_list_format;
 
       const campaignData: any = {
         name: form.name,
@@ -214,25 +216,26 @@ export default function CampaignFormPage() {
       }
 
       // Save sub-tables
+      // Bug #23: Remove (supabase as any)
       await Promise.all([
-        (supabase as any).from('campaign_clients').delete().eq('campaign_id', campaignId!),
-        (supabase as any).from('campaign_payment_methods').delete().eq('campaign_id', campaignId!),
-        (supabase as any).from('campaign_segments').delete().eq('campaign_id', campaignId!),
-        (supabase as any).from('campaign_due_dates').delete().eq('campaign_id', campaignId!),
+        supabase.from('campaign_clients').delete().eq('campaign_id', campaignId!),
+        supabase.from('campaign_payment_methods').delete().eq('campaign_id', campaignId!),
+        supabase.from('campaign_segments').delete().eq('campaign_id', campaignId!),
+        supabase.from('campaign_due_dates').delete().eq('campaign_id', campaignId!),
       ]);
 
       const inserts = [];
       if (clients.length > 0) inserts.push(
-        (supabase as any).from('campaign_clients').insert(clients.map(c => ({ ...c, campaign_id: campaignId! })))
+        supabase.from('campaign_clients').insert(clients.map(c => ({ ...c, campaign_id: campaignId! })))
       );
       if (paymentMethods.length > 0) inserts.push(
-        (supabase as any).from('campaign_payment_methods').insert(paymentMethods.map(m => ({ ...m, campaign_id: campaignId! })))
+        supabase.from('campaign_payment_methods').insert(paymentMethods.map(m => ({ ...m, campaign_id: campaignId! })))
       );
       if (segments.length > 0) inserts.push(
-        (supabase as any).from('campaign_segments').insert(segments.map(s => ({ ...s, campaign_id: campaignId! })))
+        supabase.from('campaign_segments').insert(segments.map(s => ({ ...s, campaign_id: campaignId! })))
       );
       if (dueDates.length > 0) inserts.push(
-        (supabase as any).from('campaign_due_dates').insert(dueDates.map(d => ({ ...d, campaign_id: campaignId! })))
+        supabase.from('campaign_due_dates').insert(dueDates.map(d => ({ ...d, campaign_id: campaignId! })))
       );
       await Promise.all(inserts);
 

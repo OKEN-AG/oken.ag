@@ -59,6 +59,8 @@ export interface Product {
   minDose: number;
   maxDose: number;
   pricePerUnit: number; // base price in list format
+  priceCash?: number; // explicit cash price
+  priceTerm?: number; // explicit term price
   currency: 'BRL' | 'USD';
   priceType: 'vista' | 'prazo';
   includesMargin: boolean;
@@ -152,7 +154,7 @@ export interface FreightReducer {
   distanceKm: number;
   costPerKm: number;
   adjustment: number;
-  totalReducer: number; // R$/saca
+  totalReducer: number; // R$/ton
 }
 
 // === PARITY ENGINE ===
