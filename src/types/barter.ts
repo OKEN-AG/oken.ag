@@ -47,6 +47,7 @@ export type JourneyModule = 'adesao' | 'simulacao' | 'pagamento' | 'barter' | 's
 export interface Product {
   id: string;
   name: string;
+  ref: string; // "Nome Mãe" - groups product presentations for combo matching
   category: string;
   activeIngredient: string;
   unitType: 'kg' | 'l';
@@ -66,6 +67,7 @@ export interface Product {
 // === AGRONOMIC ENGINE ===
 export interface AgronomicSelection {
   productId: string;
+  ref: string; // "Nome Mãe" for combo matching
   product: Product;
   areaHectares: number;
   dosePerHectare: number;
@@ -82,10 +84,12 @@ export interface ComboDefinition {
   products: ComboProductRule[];
   discountPercent: number;
   priority: number; // auto-calculated: discount * breadth
+  isComplementary: boolean; // "COMPLEMENTAR" combos apply proportionally
 }
 
 export interface ComboProductRule {
-  productId: string;
+  ref: string; // Match by REF (Nome Mãe), not individual product ID
+  productId?: string; // optional, for reference only
   minDosePerHa: number;
   maxDosePerHa: number;
 }
@@ -94,8 +98,10 @@ export interface ComboActivation {
   comboId: string;
   comboName: string;
   discountPercent: number;
-  matchedProducts: string[];
+  matchedProducts: string[]; // REFs matched
   applied: boolean;
+  isComplementary: boolean;
+  proportionalHectares?: number; // For complementary: hectares from activated offers
 }
 
 // === PRICING ENGINE ===

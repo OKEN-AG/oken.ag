@@ -23,6 +23,7 @@ export function calculateAgronomicSelection(
 
   return {
     productId: product.id,
+    ref: product.ref || '',
     product,
     areaHectares,
     dosePerHectare: dose,
