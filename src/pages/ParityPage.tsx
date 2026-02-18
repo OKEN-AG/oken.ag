@@ -209,14 +209,14 @@ export default function ParityPage() {
             <div className="glass-card p-5">
               <h3 className="text-sm font-semibold text-foreground mb-3">Precificação da Commodity</h3>
               <div className="space-y-2 text-sm font-mono">
-                <Row label="Preço Bolsa (CBOT)" value={`US$ ${pricing.exchangePrice}`} />
-                <Row label={`Basis ${port}`} value={`US$ ${pricing.basisByPort[port]?.toFixed(2)}`} />
-                <Row label="Preço FOB" value={`US$ ${(pricing.exchangePrice + (pricing.basisByPort[port] ?? 0)).toFixed(2)}`} />
-                <Row label="Câmbio" value={`R$ ${pricing.exchangeRateBolsa}`} />
-                <Row label="Preço FOB (R$/saca)" value={formatCurrency((pricing.exchangePrice + (pricing.basisByPort[port] ?? 0)) * pricing.exchangeRateBolsa)} />
-                <Row label="Delta Mercado" value={`-${pricing.securityDeltaMarket}%`} highlight />
-                {freightReducer && <Row label={`Frete ${freightReducer.origin}`} value={`-${formatCurrency(freightReducer.totalReducer)}`} highlight />}
-                <Row label="Delta Frete" value={`-${pricing.securityDeltaFreight}%`} highlight />
+                <PricingRow label="Preço Bolsa (CBOT)" value={`US$ ${pricing.exchangePrice}`} />
+                <PricingRow label={`Basis ${port}`} value={`US$ ${pricing.basisByPort[port]?.toFixed(2)}`} />
+                <PricingRow label="Preço FOB" value={`US$ ${(pricing.exchangePrice + (pricing.basisByPort[port] ?? 0)).toFixed(2)}`} />
+                <PricingRow label="Câmbio" value={`R$ ${pricing.exchangeRateBolsa}`} />
+                <PricingRow label="Preço FOB (R$/saca)" value={formatCurrency((pricing.exchangePrice + (pricing.basisByPort[port] ?? 0)) * pricing.exchangeRateBolsa)} />
+                <PricingRow label="Delta Mercado" value={`-${pricing.securityDeltaMarket}%`} highlight />
+                {freightReducer && <PricingRow label={`Frete ${freightReducer.origin}`} value={`-${formatCurrency(freightReducer.totalReducer)}`} highlight />}
+                <PricingRow label="Delta Frete" value={`-${pricing.securityDeltaFreight}%`} highlight />
                 <div className="pt-2 border-t border-border flex justify-between font-bold">
                   <span className="text-foreground">Preço Líquido Interior</span>
                   <span className="text-success">{formatCurrency(commodityNetPrice)}/saca</span>
@@ -230,7 +230,7 @@ export default function ParityPage() {
   );
 }
 
-function Row({ label, value, highlight }: { label: string; value: string; highlight?: boolean }) {
+function PricingRow({ label, value, highlight }: { label: string; value: string; highlight?: boolean }) {
   return (
     <div className="flex justify-between py-0.5">
       <span className="text-muted-foreground">{label}</span>
