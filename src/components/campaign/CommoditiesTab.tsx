@@ -387,6 +387,7 @@ export default function CommoditiesTab({ campaignId, campaignCommodities = [] }:
     qc.invalidateQueries({ queryKey: ['indicative-prices', campaignId] });
   };
 
+  const handlePriceFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
     const reader = new FileReader();
