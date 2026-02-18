@@ -1,10 +1,16 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { motion } from 'framer-motion';
-import { FileText, CheckCircle, Clock, AlertTriangle } from 'lucide-react';
+import { FileText, CheckCircle, Clock, AlertTriangle, Lock, Train, ArrowRight } from 'lucide-react';
 import { useOperations, useOperationDocuments } from '@/hooks/useOperations';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
-import type { DocumentType } from '@/types/barter';
+import { Button } from '@/components/ui/button';
+import { supabase } from '@/integrations/supabase/client';
+import { useAuth } from '@/contexts/AuthContext';
+import { toast } from 'sonner';
+import { buildWagonStages, canAdvance, getBlockingReason } from '@/engines/orchestrator';
+import TrainTrack from '@/components/TrainTrack';
+import type { DocumentType, JourneyModule } from '@/types/barter';
 
 const allDocTypes: { type: DocumentType; label: string; description: string }[] = [
   { type: 'termo_adesao', label: 'Termo de Adesão', description: 'Aceite do distribuidor aos termos da campanha' },
@@ -26,9 +32,81 @@ const statusConfig = {
 };
 
 export default function DocumentsPage() {
+  const { user } = useAuth();
   const { data: operations, isLoading } = useOperations();
   const [selectedOpId, setSelectedOpId] = useState<string>('');
-  const { data: docs } = useOperationDocuments(selectedOpId || undefined);
+  const { data: docs, refetch: refetchDocs } = useOperationDocuments(selectedOpId || undefined);
+  const [emitting, setEmitting] = useState<string | null>(null);
+
+  const selectedOp = operations?.find(op => op.id === selectedOpId);
+
+  // Build wagon stages using orchestrator
+  const wagonStages = useMemo(() => {
+    if (!selectedOp || !docs) return [];
+    const activeModules: JourneyModule[] = ['adesao', 'simulacao', 'formalizacao', 'documentos', 'garantias'];
+    const docList = (docs || []).map(d => ({ doc_type: d.doc_type, status: d.status }));
+    return buildWagonStages(activeModules, selectedOp.status as any, docList);
+  }, [selectedOp, docs]);
+
+  const nextStatus = useMemo(() => {
+    if (!selectedOp || !docs) return null;
+    const activeModules: JourneyModule[] = ['adesao', 'simulacao', 'formalizacao', 'documentos', 'garantias'];
+    const docList = (docs || []).map(d => ({ doc_type: d.doc_type, status: d.status }));
+    return canAdvance(activeModules, selectedOp.status as any, docList);
+  }, [selectedOp, docs]);
+
+  const blockingReason = useMemo(() => {
+    if (!selectedOp || !docs) return null;
+    const activeModules: JourneyModule[] = ['adesao', 'simulacao', 'formalizacao', 'documentos', 'garantias'];
+    const docList = (docs || []).map(d => ({ doc_type: d.doc_type, status: d.status }));
+    return getBlockingReason(activeModules, selectedOp.status as any, docList);
+  }, [selectedOp, docs]);
+
+  const handleEmitDocument = async (docType: DocumentType) => {
+    if (!selectedOpId || !user) return;
+    setEmitting(docType);
+    try {
+      const existing = docs?.find(d => d.doc_type === docType);
+      if (existing) {
+        await supabase
+          .from('operation_documents')
+          .update({ status: 'emitido', generated_at: new Date().toISOString() })
+          .eq('id', existing.id);
+      } else {
+        await supabase.from('operation_documents').insert({
+          operation_id: selectedOpId,
+          doc_type: docType,
+          status: 'emitido',
+          generated_at: new Date().toISOString(),
+        });
+      }
+      await supabase.from('operation_logs').insert({
+        operation_id: selectedOpId,
+        user_id: user.id,
+        action: `documento_emitido_${docType}`,
+        details: { doc_type: docType },
+      });
+      toast.success(`Documento "${docType}" emitido com sucesso`);
+      refetchDocs();
+    } catch (e: any) {
+      toast.error('Erro: ' + e.message);
+    } finally {
+      setEmitting(null);
+    }
+  };
+
+  const handleAdvance = async () => {
+    if (!selectedOpId || !nextStatus) return;
+    try {
+      await supabase
+        .from('operations')
+        .update({ status: nextStatus })
+        .eq('id', selectedOpId);
+      toast.success(`Operação avançada para: ${nextStatus}`);
+    } catch (e: any) {
+      toast.error('Erro: ' + e.message);
+    }
+  };
 
   if (isLoading) return <div className="p-6"><Skeleton className="h-64 w-full" /></div>;
 
@@ -39,18 +117,20 @@ export default function DocumentsPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-foreground">Documentos & Formalização</h1>
-          <p className="text-sm text-muted-foreground">Gestão de documentos da operação</p>
+          <p className="text-sm text-muted-foreground">Gestão de documentos e certificação da operação</p>
         </div>
-        {operations && operations.length > 0 && (
-          <Select value={selectedOpId} onValueChange={setSelectedOpId}>
-            <SelectTrigger className="w-72 bg-muted border-border text-foreground"><SelectValue placeholder="Selecione operação..." /></SelectTrigger>
-            <SelectContent>
-              {operations.map(op => (
-                <SelectItem key={op.id} value={op.id}>{op.client_name || 'Sem nome'} — {op.status}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        )}
+        <div className="flex items-center gap-3">
+          {operations && operations.length > 0 && (
+            <Select value={selectedOpId} onValueChange={setSelectedOpId}>
+              <SelectTrigger className="w-72 bg-muted border-border text-foreground"><SelectValue placeholder="Selecione operação..." /></SelectTrigger>
+              <SelectContent>
+                {operations.map(op => (
+                  <SelectItem key={op.id} value={op.id}>{op.client_name || 'Sem nome'} — {op.status}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
+        </div>
       </div>
 
       {!operations || operations.length === 0 ? (
@@ -59,6 +139,44 @@ export default function DocumentsPage() {
         <div className="glass-card p-8 text-center text-muted-foreground">Selecione uma operação para ver seus documentos.</div>
       ) : (
         <>
+          {/* Train Track - Orchestrator visualization */}
+          {wagonStages.length > 0 && (
+            <div className="glass-card p-5">
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-sm font-semibold text-foreground flex items-center gap-2">
+                  <Train className="w-4 h-4 text-primary" /> Fluxo de Certificação (Trem)
+                </h2>
+                {selectedOp && (
+                  <span className="engine-badge bg-primary/10 text-primary">
+                    Status: {selectedOp.status}
+                  </span>
+                )}
+              </div>
+              <TrainTrack stages={wagonStages} />
+
+              {/* Gate controls */}
+              <div className="mt-4 flex items-center justify-between">
+                {blockingReason ? (
+                  <div className="flex items-center gap-2 text-xs text-warning">
+                    <Lock className="w-3 h-3" /> {blockingReason}
+                  </div>
+                ) : nextStatus ? (
+                  <div className="flex items-center gap-2 text-xs text-success">
+                    <CheckCircle className="w-3 h-3" /> Todos os gates passaram!
+                  </div>
+                ) : (
+                  <div className="text-xs text-muted-foreground">Selecione e emita documentos para avançar</div>
+                )}
+                {nextStatus && (
+                  <Button size="sm" onClick={handleAdvance} className="bg-success text-success-foreground hover:bg-success/90">
+                    <ArrowRight className="w-4 h-4 mr-1" /> Avançar para {nextStatus}
+                  </Button>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Document cards */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {allDocTypes.map((doc, i) => {
               const existing = docMap.get(doc.type);
@@ -66,7 +184,7 @@ export default function DocumentsPage() {
               const config = statusConfig[status];
               const Icon = config.icon;
               return (
-                <motion.div key={doc.type} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.03 }} className="glass-card p-4 hover:glow-border transition-all cursor-pointer group">
+                <motion.div key={doc.type} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.03 }} className="glass-card p-4 hover:glow-border transition-all group">
                   <div className="flex items-start justify-between mb-2">
                     <div className="flex items-center gap-2">
                       <FileText className="w-4 h-4 text-muted-foreground group-hover:text-primary transition-colors" />
@@ -74,25 +192,21 @@ export default function DocumentsPage() {
                     </div>
                     <span className={`engine-badge ${config.bg} ${config.color}`}><Icon className="w-3 h-3 inline mr-1" />{config.label}</span>
                   </div>
-                  <p className="text-xs text-muted-foreground">{doc.description}</p>
+                  <p className="text-xs text-muted-foreground mb-3">{doc.description}</p>
+                  {status === 'pendente' && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="w-full text-xs border-primary/30 text-primary hover:bg-primary/10"
+                      disabled={emitting === doc.type}
+                      onClick={() => handleEmitDocument(doc.type)}
+                    >
+                      {emitting === doc.type ? 'Emitindo...' : 'Emitir Documento'}
+                    </Button>
+                  )}
                 </motion.div>
               );
             })}
-          </div>
-
-          <div className="glass-card p-5">
-            <h2 className="text-sm font-semibold text-foreground mb-3">Fluxo de Certificação</h2>
-            <div className="flex flex-wrap items-center gap-2 text-xs">
-              {['Termo Adesão', 'Pedido', 'Termo Barter', 'CCV', 'Cessão', 'CPR/Garantias', 'Aceite', 'Faturamento'].map((step, i) => {
-                const completed = i < (docs?.filter(d => d.status !== 'pendente').length || 0);
-                return (
-                  <div key={step} className="flex items-center gap-2">
-                    <span className={`engine-badge ${completed ? 'bg-success/10 text-success' : 'bg-muted text-muted-foreground'}`}>{step}</span>
-                    {i < 7 && <span className="text-muted-foreground">→</span>}
-                  </div>
-                );
-              })}
-            </div>
           </div>
         </>
       )}

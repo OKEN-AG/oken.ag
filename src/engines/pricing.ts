@@ -82,9 +82,15 @@ export function calculateGrossToNet(
   const totalInterest = pricingResults.reduce((sum, p) => sum + p.interestComponent * p.quantity, 0);
   const totalMargin = pricingResults.reduce((sum, p) => sum + p.marginComponent * p.quantity, 0);
 
-  const comboDiscountPercent = comboActivations
-    .filter(c => c.applied)
+  // Non-cumulative: use highest main combo discount, plus additive complementary
+  const mainActivated = comboActivations.filter(c => c.applied && !c.isComplementary);
+  const mainDiscountPercent = mainActivated.length > 0
+    ? Math.max(...mainActivated.map(c => c.discountPercent))
+    : 0;
+  const complementaryPercent = comboActivations
+    .filter(c => c.applied && c.isComplementary)
     .reduce((sum, c) => sum + c.discountPercent, 0);
+  const comboDiscountPercent = mainDiscountPercent + complementaryPercent;
 
   const comboDiscount = grossRevenue * comboDiscountPercent / 100;
   const barterDiscount = (grossRevenue - comboDiscount) * barterDiscountPercent / 100;
