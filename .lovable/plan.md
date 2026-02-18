@@ -1,142 +1,90 @@
-# Plano: Correcoes de Design, Produtos como Workbook e Importacao de Combos
 
-## Problema 1: Design - Texto sumindo no background
 
-O tema CSS usa cores de `muted-foreground` e `card-foreground` que em modo claro podem conflitar com backgrounds assim como escuros . Especificamente:
+# Plano: Logistica por Cidade com Base CONAB de Armazens
 
-- `--card-foreground: 26 90.4762% 37.0588%` (um marrom/laranja) mistura com backgrounds claros
-- `--muted: 215 20% 65%` e `--muted-foreground: 222 47% 11%` precisam de contraste melhor
-- Labels com `text-muted-foreground` sobre `bg-muted/30` ficam invisiveis
+## Contexto
 
-**Correcao**: Ajustar as variaveis CSS para garantir contraste adequado em ambos os modos, e adicionar `bg-background` explicito em areas de conteudo.
+Os arquivos XLS enviados sao da base CONAB/SICARM (Sistema de Cadastro Nacional de Unidades Armazenadoras) contendo armazens de 9 estados (GO, MT, MS, BA, MG, MA, PA, PB, DF). Cada arquivo tem as colunas: CDA, Armazenador, Endereco, Municipio, UF, Telefone, E-mail, Tipo, CAP.(t), Latitude, Longitude.
 
----
+A tabela `campaign_delivery_locations` ja possui a estrutura compativel (cda, warehouse_name, address, city, state, phone, email, location_type, capacity_tons, latitude, longitude).
 
-## Problema 2: Produtos como Workbook (estilo Excel)
+## O que muda
 
-A aba de Produtos atual (`ProductsTab.tsx`) usa um formulario modal separado para criar/editar. O usuario quer uma tabela editavel diretamente, estilo planilha.
+### 1. Importacao dos XLS CONAB
 
-### Novo schema do produto (campos faltantes vs tabela anexa)
+- Criar uma funcionalidade de importacao em massa na aba "Locais de Entrega" do CommoditiesTab
+- Parsear os XLS usando a biblioteca `xlsx` ja instalada no projeto
+- Mapear colunas CONAB para colunas do banco:
+  - CDA -> cda
+  - Armazenador -> warehouse_name
+  - Endereco -> address
+  - Municipio -> city
+  - UF -> state
+  - Telefone -> phone
+  - E-mail -> email
+  - Tipo -> location_type
+  - CAP.(t) -> capacity_tons (converter string com ponto de milhar)
+  - Latitude -> latitude
+  - Longitude -> longitude
+- Importar vinculado ao campaign_id ativo
+- Evitar duplicatas por CDA dentro da mesma campanha
 
-A tabela `products` atual **nao possui** os campos: `code` (codigo do produto) e `ref` (referencia/nome mae para desconto), nem `price_cash` (preco a vista) vs `price_term` (preco prazo) separados. Atualmente so tem `price_per_unit`.
+### 2. Fluxo de Logistica por Cidade na ParityPage
 
-**Migracao necessaria**: Adicionar a tabela `products`:
+Alterar o componente `ParityInputs` para seguir a hierarquia:
 
-- `code` (text) - Codigo do produto (ex: 5696797)
-- `ref` (text) - Referencia/nome mae para desconto (ex: ATEN, BELT, FOX)
-- `price_cash` (numeric) - Preco Ponta Cash
-- `price_term` (numeric) - Preco Prazo
+```text
+Estado (UF) -> Cidade (Municipio) -> Armazem
+```
 
-### Nova interface ProductsTab
+Em vez de listar todos os armazens num unico dropdown:
+- Primeiro select: UF (extraido dos locais de entrega cadastrados)
+- Segundo select: Cidade (filtrada pela UF selecionada)
+- Terceiro select: Armazem (filtrado pela cidade selecionada, mostrando nome + capacidade)
 
-Substituir o formulario atual por uma tabela editavel inline com as colunas:
+Ao selecionar o armazem, as coordenadas (latitude/longitude) sao usadas automaticamente para calcular a distancia ao porto selecionado.
 
-- `#` (indice)
-- `CODIGO` (editavel)
-- `PRODUTO` (nome, editavel)
-- `REF` (referencia, editavel)
-- `PRECO PONTA CASH` (editavel)
-- `PRECO PRAZO` (editavel)
-- `CAIXA` (units_per_box, editavel)
-- `KG/L` (package size, editavel)
-- Acoes: excluir, desvincular
+### 3. Calculo automatico de distancia ao selecionar armazem
 
-Cada celula sera clicavel para edicao direta (click para editar, Enter/Tab para confirmar, Escape para cancelar).
-
-### Importacao
-
-Botoes de importacao no topo:
-
-- **CSV/XLS**: Upload de arquivo com as colunas na ordem do template
-- **Colar Texto**: Textarea para colar dados tabulados (separados por tab/;/,)
-
-O parser reconhece o formato: `CODIGO PRODUTO REF PRECO_CASH PRECO_PRAZO CAIXA KG_L`
-
----
-
-## Problema 3: Combos - Importacao de Matriz de Desconto
-
-A aba de Combos (`CombosTab.tsx`) nao suporta importacao. Os combos sao chamados "OFERTA 1", "OFERTA 2", etc, com produtos identificados pelo campo `REF` (nome mae).
-
-### Fluxo de importacao
-
-Adicionar botao "Importar Matriz" no `CombosTab` que:
-
-1. Aceita CSV, XLS ou texto colado
-2. Parseia o formato da matriz de desconto:
-  - Linhas com `OFERTA X` ou `COMPLEMENTARES` criam um novo combo
-  - Cada linha subsequente com `# REF DESCONTO DOSE_MIN DOSE_MAX` adiciona produto ao combo
-  - O `REF` e usado para buscar o produto pelo campo `ref` na tabela `products`
-3. Cria os combos automaticamente no banco com os respectivos produtos vinculados
-
-### Parser da matriz
-
-O parser identifica:
-
-- Linhas contendo "OFERTA" ou "COMPLEMENTARES" como delimitadores de grupo
-- Linhas com dados numericos como items do combo
-- Desconto em `%` e convertido para numero
-- Dose minima e maxima sao mapeadas para `min_dose_per_ha` e `max_dose_per_ha`
+Quando o usuario seleciona um armazem, o sistema automaticamente:
+- Pega latitude/longitude do armazem
+- Pega coordenadas do porto selecionado
+- Chama a edge function `realtime-pricing/calculate-distance`
+- Atualiza o redutor logistico com a distancia calculada
 
 ---
 
 ## Detalhes Tecnicos
 
-### Migracao SQL
-
-```text
-ALTER TABLE products ADD COLUMN IF NOT EXISTS code text DEFAULT '';
-ALTER TABLE products ADD COLUMN IF NOT EXISTS ref text DEFAULT '';
-ALTER TABLE products ADD COLUMN IF NOT EXISTS price_cash numeric DEFAULT 0;
-ALTER TABLE products ADD COLUMN IF NOT EXISTS price_term numeric DEFAULT 0;
-```
-
 ### Arquivos modificados
 
-1. `**src/index.css**`: Corrigir variaveis de cor para contraste
-2. `**supabase/migrations/...**`: Adicionar colunas `code`, `ref`, `price_cash`, `price_term` na tabela `products`
-3. `**src/components/campaign/ProductsTab.tsx**`: Reescrever como tabela editavel estilo workbook com importacao CSV/XLS/texto
-4. `**src/components/campaign/CombosTab.tsx**`: Adicionar importacao de matriz de desconto com parser inteligente que busca produtos por REF
-5. `**src/hooks/useProducts.ts**`: Ajustar mutations para os novos campos
-6. `**src/pages/ParityPage.tsx**`: Corrigir warning de ref no componente `Row`
+1. **`src/components/campaign/CommoditiesTab.tsx`**
+   - Melhorar o parser de importacao XLS para reconhecer o formato CONAB automaticamente (detectar colunas CDA, Armazenador, etc.)
+   - Tratar a conversao de capacidade (ex: "3.580" com ponto de milhar -> 3580 numerico)
 
-### Fluxo do Workbook de Produtos
+2. **`src/components/parity/ParityInputs.tsx`**
+   - Adicionar states `selectedState` e `selectedCity`
+   - Extrair lista unica de UFs dos `deliveryLocations`
+   - Filtrar cidades pela UF selecionada
+   - Filtrar armazens pela cidade selecionada
+   - Disparar calculo de distancia automaticamente ao selecionar armazem (sem botao manual)
 
-```text
-Usuario abre aba Produtos
-  |
-  v
-Tabela editavel com todos os produtos vinculados
-  |
-  +--> Clica em celula -> campo vira Input editavel
-  +--> Enter/Tab -> salva automaticamente no banco
-  +--> Escape -> cancela edicao
-  |
-  v
-Botoes no topo:
-  [+ Linha] [Importar CSV/XLS] [Colar Texto]
-  |
-  +--> Importar: parseia arquivo, cria produtos e vincula
-  +--> Colar: textarea modal, parseia linhas tabuladas
-```
+3. **`src/pages/ParityPage.tsx`**
+   - Passar novos props de estado/cidade para ParityInputs
+   - Disparar `handleCalculateDistance` automaticamente via useEffect quando armazem muda
 
-### Fluxo de Importacao de Combos
+### Tratamento de dados
 
-```text
-Usuario abre aba Combos -> [Importar Matriz]
-  |
-  v
-Modal com opcoes: [Upload CSV/XLS] [Colar Texto]
-  |
-  v
-Parser identifica blocos OFERTA/COMPLEMENTARES
-  |
-  v
-Para cada bloco:
-  1. Cria combo com nome e desconto
-  2. Busca produtos pelo REF
-  3. Vincula com dose min/max
-  |
-  v
-Combos criados no banco, lista atualizada
-```
+- Capacidade: remover separador de milhar antes de converter (ex: "40.930" -> 40930)
+- Latitude/Longitude: ja vem como numeros negativos no formato correto
+- Encoding: os XLS tem encoding latin1, a lib xlsx ja lida com isso
+- CDA: usado como identificador unico para evitar duplicatas na importacao
+
+### UX da importacao
+
+- Botao "Importar Base CONAB" na aba Locais de Entrega
+- Aceita multiplos arquivos XLS simultaneamente
+- Mostra preview com contagem antes de confirmar
+- Ignora duplicatas (mesmo CDA + mesma campanha)
+- Toast com resultado: "X armazens importados, Y duplicatas ignoradas"
+
