@@ -26,6 +26,11 @@ export interface Campaign {
   activeModules: JourneyModule[];
   availableDueDates: string[]; // ISO dates
   createdAt: string;
+  // I7: Global incentives
+  globalIncentiveType?: string;
+  globalIncentive1?: number;
+  globalIncentive2?: number;
+  globalIncentive3?: number;
 }
 
 export interface CampaignEligibility {
@@ -47,20 +52,20 @@ export type JourneyModule = 'adesao' | 'simulacao' | 'pagamento' | 'barter' | 's
 export interface Product {
   id: string;
   name: string;
-  ref: string; // "Nome Mãe" - groups product presentations for combo matching
+  ref: string;
   category: string;
   activeIngredient: string;
   unitType: 'kg' | 'l';
-  packageSizes: number[]; // e.g. [1, 5, 10] liters
+  packageSizes: number[];
   unitsPerBox: number;
   boxesPerPallet: number;
   palletsPerTruck: number;
-  dosePerHectare: number; // recommended dose
+  dosePerHectare: number;
   minDose: number;
   maxDose: number;
-  pricePerUnit: number; // base price in list format
-  priceCash?: number; // explicit cash price
-  priceTerm?: number; // explicit term price
+  pricePerUnit: number;
+  priceCash?: number;
+  priceTerm?: number;
   currency: 'BRL' | 'USD';
   priceType: 'vista' | 'prazo';
   includesMargin: boolean;
@@ -69,12 +74,12 @@ export interface Product {
 // === AGRONOMIC ENGINE ===
 export interface AgronomicSelection {
   productId: string;
-  ref: string; // "Nome Mãe" for combo matching
+  ref: string;
   product: Product;
   areaHectares: number;
   dosePerHectare: number;
-  rawQuantity: number; // area * dose
-  roundedQuantity: number; // rounded to full boxes
+  rawQuantity: number;
+  roundedQuantity: number;
   boxes: number;
   pallets: number;
 }
@@ -85,13 +90,13 @@ export interface ComboDefinition {
   name: string;
   products: ComboProductRule[];
   discountPercent: number;
-  priority: number; // auto-calculated: discount * breadth
-  isComplementary: boolean; // "COMPLEMENTAR" combos apply proportionally
+  priority: number;
+  isComplementary: boolean;
 }
 
 export interface ComboProductRule {
-  ref: string; // Match by REF (Nome Mãe), not individual product ID
-  productId?: string; // optional, for reference only
+  ref: string;
+  productId?: string;
   minDosePerHa: number;
   maxDosePerHa: number;
 }
@@ -100,19 +105,21 @@ export interface ComboActivation {
   comboId: string;
   comboName: string;
   discountPercent: number;
-  matchedProducts: string[]; // REFs matched
+  matchedProducts: string[];
   applied: boolean;
   isComplementary: boolean;
-  proportionalHectares?: number; // For complementary: hectares from activated offers
+  proportionalHectares?: number;
 }
 
 // === PRICING ENGINE ===
 export interface PricingResult {
   productId: string;
   basePrice: number;
-  normalizedPrice: number; // after FX, interest, margin normalization
+  normalizedPrice: number;
   interestComponent: number;
   marginComponent: number;
+  segmentAdjustmentComponent?: number; // I2
+  paymentMethodComponent?: number; // I1
   commercialPrice: number;
   quantity: number;
   subtotal: number;
@@ -122,9 +129,14 @@ export interface GrossToNet {
   grossRevenue: number;
   comboDiscount: number;
   barterDiscount: number;
+  directIncentiveDiscount?: number; // I7
+  creditLiberacao?: number; // I7
+  creditLiquidacao?: number; // I7
   netRevenue: number;
-  financialRevenue: number; // interest
+  financialRevenue: number;
   distributorMargin: number;
+  segmentAdjustment?: number; // I2
+  paymentMethodMarkup?: number; // I1
   barterCost: number;
   netNetRevenue: number;
 }
@@ -134,18 +146,23 @@ export type CommodityType = 'soja' | 'milho' | 'cafe' | 'algodao';
 
 export interface CommodityPricing {
   commodity: CommodityType;
-  exchange: string; // CBOT etc
-  contract: string; // K, N, etc
-  exchangePrice: number; // USD/bushel
+  exchange: string;
+  contract: string;
+  exchangePrice: number;
   optionCost: number;
   exchangeRateBolsa: number;
   exchangeRateOption: number;
-  basisByPort: Record<string, number>; // USD/bushel premium by port
-  securityDeltaMarket: number; // %
-  securityDeltaFreight: number; // %
+  basisByPort: Record<string, number>;
+  securityDeltaMarket: number;
+  securityDeltaFreight: number;
   stopLoss: number;
-  bushelsPerTon: number; // ~36.744 for soy
-  pesoSacaKg: number; // 60 for soy
+  bushelsPerTon: number;
+  pesoSacaKg: number;
+  // H3: B&S params from config
+  volatility?: number;
+  riskFreeRate?: number;
+  optionMaturityDays?: number;
+  strikePercent?: number; // strike as % of spot
 }
 
 export interface FreightReducer {
@@ -154,16 +171,16 @@ export interface FreightReducer {
   distanceKm: number;
   costPerKm: number;
   adjustment: number;
-  totalReducer: number; // R$/ton
+  totalReducer: number;
 }
 
 // === PARITY ENGINE ===
 export interface ParityResult {
   totalAmountBRL: number;
-  commodityPricePerUnit: number; // R$/saca net
+  commodityPricePerUnit: number;
   quantitySacas: number;
-  referencePrice: number; // montante sem desconto / sacas
-  valorization: number; // % above contract price
+  referencePrice: number;
+  valorization: number;
   userOverridePrice?: number;
   counterparty?: string;
   hasExistingContract: boolean;

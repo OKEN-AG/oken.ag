@@ -4,83 +4,98 @@ import { motion } from 'framer-motion';
 import {
   LayoutDashboard, Settings, ShoppingCart, BarChart3,
   Wheat, FileText, ChevronLeft, ChevronRight, LogOut,
-  FolderCog } from
-'lucide-react';
+  FolderCog, Shield } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
+import { useActiveCampaigns, useCampaignData } from '@/hooks/useActiveCampaign';
+import type { JourneyModule } from '@/types/barter';
 
-const navItems = [
-{ to: '/', icon: LayoutDashboard, label: 'Dashboard' },
-{ to: '/campanha', icon: Settings, label: 'Campanha' },
-{ to: '/simulacao', icon: ShoppingCart, label: 'Simulação' },
-{ to: '/paridade', icon: Wheat, label: 'Paridade Barter' },
-{ to: '/documentos', icon: FileText, label: 'Documentos' },
-{ to: '/monitoramento', icon: BarChart3, label: 'Monitoramento' }];
-
+// I3: Map nav items to their controlling module
+const navItems: { to: string; icon: any; label: string; module?: JourneyModule }[] = [
+  { to: '/', icon: LayoutDashboard, label: 'Dashboard' },
+  { to: '/campanha', icon: Settings, label: 'Campanha' },
+  { to: '/simulacao', icon: ShoppingCart, label: 'Simulação', module: 'simulacao' },
+  { to: '/paridade', icon: Wheat, label: 'Paridade Barter', module: 'barter' },
+  { to: '/documentos', icon: FileText, label: 'Documentos', module: 'documentos' },
+  { to: '/monitoramento', icon: BarChart3, label: 'Monitoramento' },
+];
 
 const adminItems = [
-{ to: '/admin/campanhas', icon: FolderCog, label: 'Campanhas' }];
-
+  { to: '/admin/campanhas', icon: FolderCog, label: 'Campanhas' },
+];
 
 export default function AppSidebar() {
   const [collapsed, setCollapsed] = useState(false);
   const location = useLocation();
   const { user, signOut } = useAuth();
 
+  // I3: Get active modules from the first active campaign to control visibility
+  const { data: activeCampaigns } = useActiveCampaigns();
+  const firstCampaignId = activeCampaigns?.[0]?.id;
+  const { campaign } = useCampaignData(firstCampaignId);
+  const activeModules = campaign?.activeModules || [];
+
+  // I3: Filter nav items based on active modules
+  const visibleNavItems = navItems.filter(item => {
+    if (!item.module) return true; // Items without a module are always visible
+    if (activeModules.length === 0) return true; // No modules configured = show all
+    return activeModules.includes(item.module);
+  });
+
   const renderNavItem = (item: typeof navItems[0]) => {
-    const active = location.pathname === item.to || item.to !== '/' && location.pathname.startsWith(item.to);
+    const active = location.pathname === item.to || (item.to !== '/' && location.pathname.startsWith(item.to));
     return (
       <NavLink
         key={item.to}
         to={item.to}
         className={`flex items-center gap-3 px-3 py-2.5 rounded-md text-sm transition-colors ${
-        active ?
-        'bg-accent text-accent-foreground glow-border' :
-        'text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground'}`
-        }>
-
+          active
+            ? 'bg-accent text-accent-foreground glow-border'
+            : 'text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground'
+        }`}
+      >
         <item.icon className="w-4 h-4 shrink-0" />
         {!collapsed && <span>{item.label}</span>}
-      </NavLink>);
-
+      </NavLink>
+    );
   };
 
   return (
     <motion.aside
       animate={{ width: collapsed ? 64 : 240 }}
       transition={{ duration: 0.2 }}
-      className="h-screen bg-sidebar border-r border-sidebar-border flex flex-col fixed left-0 top-0 z-40">
-
+      className="h-screen bg-sidebar border-r border-sidebar-border flex flex-col fixed left-0 top-0 z-40"
+    >
       <div className="h-16 flex items-center px-4 border-b border-sidebar-border">
-        {!collapsed &&
-        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex items-center gap-2">
+        {!collapsed && (
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex items-center gap-2">
             <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center">
               <Wheat className="w-5 h-5 text-primary-foreground" />
             </div>
             <span className="font-bold text-foreground tracking-tight">BarterPro</span>
           </motion.div>
-        }
-        {collapsed &&
-        <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center mx-auto">
+        )}
+        {collapsed && (
+          <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center mx-auto">
             <Wheat className="w-5 h-5 text-primary-foreground" />
           </div>
-        }
+        )}
       </div>
 
       <nav className="flex-1 py-4 space-y-1 px-2 overflow-y-auto">
-        {navItems.map(renderNavItem)}
-        {!collapsed &&
-        <div className="pt-4 pb-1 px-3">
+        {visibleNavItems.map(renderNavItem)}
+        {!collapsed && (
+          <div className="pt-4 pb-1 px-3">
             <span className="text-[10px] uppercase tracking-widest text-primary">Administração</span>
           </div>
-        }
+        )}
         {collapsed && <div className="border-t border-sidebar-border my-2" />}
         {adminItems.map(renderNavItem)}
       </nav>
 
       <div className="border-t border-sidebar-border p-2 space-y-1">
-        {!collapsed && user &&
-        <div className="px-3 py-1.5 text-xs text-muted-foreground truncate">{user.email}</div>
-        }
+        {!collapsed && user && (
+          <div className="px-3 py-1.5 text-xs text-muted-foreground truncate">{user.email}</div>
+        )}
         <button onClick={signOut} className="flex items-center gap-3 px-3 py-2 rounded-md text-sm text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground transition-colors w-full">
           <LogOut className="w-4 h-4 shrink-0" />
           {!collapsed && <span>Sair</span>}
@@ -89,6 +104,6 @@ export default function AppSidebar() {
           {collapsed ? <ChevronRight className="w-4 h-4" /> : <ChevronLeft className="w-4 h-4" />}
         </button>
       </div>
-    </motion.aside>);
-
+    </motion.aside>
+  );
 }
