@@ -43,6 +43,27 @@ function findSelectionByRef(
   return selections.find(s => getSelectionRef(s) === upperRef);
 }
 
+/**
+ * Given combos and a product REF, find the best suggested dose
+ * (midpoint of the tightest combo range that includes this REF)
+ */
+export function getSuggestedDoseForRef(
+  combos: ComboDefinition[],
+  ref: string
+): number | null {
+  const upperRef = ref.toUpperCase().trim();
+  if (!upperRef) return null;
+
+  for (const combo of combos) {
+    const rule = combo.products.find(p => (p.ref || '').toUpperCase().trim() === upperRef);
+    if (rule) {
+      // Use midpoint of the dose range as suggested dose
+      return (rule.minDosePerHa + rule.maxDosePerHa) / 2;
+    }
+  }
+  return null;
+}
+
 export function applyComboCascade(
   combos: ComboDefinition[],
   selections: AgronomicSelection[]
