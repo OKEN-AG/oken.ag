@@ -97,13 +97,11 @@ export default function SimulationPage() {
         return { value: String(Math.max(diffMonths, 1)), label: date.toLocaleDateString('pt-BR'), date: d };
       });
     }
-    // Ultimate fallback
-    return [
-      { value: '6', label: '6 meses', date: '' },
-      { value: '9', label: '9 meses', date: '' },
-      { value: '12', label: '12 meses', date: '' },
-      { value: '15', label: '15 meses', date: '' },
-    ];
+    // AUDIT FIX H5: No hardcoded fallback - show warning if no dates configured
+    if (!campaignDueDates?.length && (!campaign?.availableDueDates || !campaign.availableDueDates.length)) {
+      return [];
+    }
+    return [];
   }, [campaignDueDates, campaign]);
 
   // Derive segment options: use campaign_segments if available
@@ -113,12 +111,16 @@ export default function SimulationPage() {
         .filter(s => s.active)
         .map(s => ({ value: s.segment_name, label: s.segment_name }));
     }
-    return [
-      { value: 'distribuidor', label: 'Distribuidor' },
-      { value: 'cooperativa', label: 'Cooperativa' },
-      { value: 'direto', label: 'Venda Direta' },
-    ];
-  }, [campaignSegments]);
+    // AUDIT FIX H6: No hardcoded fallback - use only configured segments
+    if (!campaignSegments?.length) {
+      // Fallback to channel_margins segments from campaign
+      if (campaign?.margins?.length) {
+        return campaign.margins.map(m => ({ value: m.segment, label: m.segment.charAt(0).toUpperCase() + m.segment.slice(1) }));
+      }
+      return [];
+    }
+    return [];
+  }, [campaignSegments, campaign]);
 
   const toggleProduct = (productId: string) => {
     const next = new Map(selectedProducts);
@@ -316,6 +318,27 @@ export default function SimulationPage() {
           </Select>
         </div>
       </div>
+
+      {/* AUDIT: Configuration warnings */}
+      {campaign && (
+        <div className="space-y-2">
+          {dueDateOptions.length === 0 && (
+            <div className="flex items-center gap-2 text-xs text-warning bg-warning/10 border border-warning/20 rounded-md px-3 py-2">
+              <AlertCircle className="w-3.5 h-3.5 shrink-0" /> Nenhuma data de vencimento configurada para esta campanha. Configure em Admin → Campanhas → Financeiro.
+            </div>
+          )}
+          {segmentOptions.length === 0 && (
+            <div className="flex items-center gap-2 text-xs text-warning bg-warning/10 border border-warning/20 rounded-md px-3 py-2">
+              <AlertCircle className="w-3.5 h-3.5 shrink-0" /> Nenhum canal de venda/segmento configurado. Configure em Admin → Campanhas → Elegibilidade.
+            </div>
+          )}
+          {campaign.margins.length === 0 && (
+            <div className="flex items-center gap-2 text-xs text-info bg-info/10 border border-info/20 rounded-md px-3 py-2">
+              <AlertCircle className="w-3.5 h-3.5 shrink-0" /> Nenhuma margem de canal configurada. O preço não incluirá margem de distribuição.
+            </div>
+          )}
+        </div>
+      )}
 
       {loadingData ? (
         <div className="space-y-4"><Skeleton className="h-32 w-full" /><Skeleton className="h-64 w-full" /></div>

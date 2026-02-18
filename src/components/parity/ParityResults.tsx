@@ -17,13 +17,14 @@ interface ParityResultsProps {
   freightReducer?: FreightReducer;
   commodityNetPrice: number;
   showInsurance: boolean;
+  commodityName?: string;
   formatCurrency: (v: number) => string;
   formatNum: (v: number) => string;
 }
 
 export default function ParityResults({
   amount, parity, insurancePremium, pricing, port, freightReducer,
-  commodityNetPrice, showInsurance, formatCurrency, formatNum,
+  commodityNetPrice, showInsurance, commodityName, formatCurrency, formatNum,
 }: ParityResultsProps) {
   return (
     <div className="lg:col-span-2 space-y-4">
@@ -32,7 +33,7 @@ export default function ParityResults({
         <div className="flex items-center justify-center gap-6 mb-8">
           <div className="text-center"><div className="stat-label mb-1">Montante (R$)</div><div className="text-3xl font-bold font-mono text-foreground">{formatCurrency(amount)}</div></div>
           <ArrowRight className="w-8 h-8 text-primary" />
-          <div className="text-center"><div className="stat-label mb-1">Sacas de Soja</div><div className="text-3xl font-bold font-mono text-success">{formatNum(insurancePremium?.totalSacas ?? parity.quantitySacas)}</div></div>
+          <div className="text-center"><div className="stat-label mb-1">Sacas de {commodityName || 'Commodity'}</div><div className="text-3xl font-bold font-mono text-success">{formatNum(insurancePremium?.totalSacas ?? parity.quantitySacas)}</div></div>
         </div>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           <div className="bg-muted/30 rounded-lg p-3 text-center"><div className="stat-label">Preço Líquido</div><div className="font-mono font-bold text-foreground text-lg">{formatCurrency(parity.commodityPricePerUnit)}</div><div className="text-xs text-muted-foreground">/saca interior</div></div>
