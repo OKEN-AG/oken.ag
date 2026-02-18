@@ -1,9 +1,9 @@
+import { useState, useMemo, useEffect } from 'react';
 import { DollarSign, Wheat, Truck, Shield, MapPin, Loader2 } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
-import { Button } from '@/components/ui/button';
 import type { CommodityPricing, FreightReducer } from '@/types/barter';
 
 interface DeliveryLocation {
@@ -13,6 +13,7 @@ interface DeliveryLocation {
   state: string | null;
   latitude: number | null;
   longitude: number | null;
+  capacity_tons?: number | null;
 }
 
 interface ParityInputsProps {
@@ -53,6 +54,54 @@ export default function ParityInputs({
   deliveryLocations, selectedDeliveryLocation, setSelectedDeliveryLocation,
   autoDistanceKm, onCalculateDistance, realtimeLoading, formatCurrency,
 }: ParityInputsProps) {
+  // Hierarchical state: UF -> City -> Warehouse
+  const [selectedState, setSelectedState] = useState<string>('');
+  const [selectedCity, setSelectedCity] = useState<string>('');
+
+  // Extract unique states from delivery locations
+  const availableStates = useMemo(() => {
+    const states = new Set(deliveryLocations.filter(l => l.state).map(l => l.state!));
+    return [...states].sort();
+  }, [deliveryLocations]);
+
+  // Filter cities by selected state
+  const availableCities = useMemo(() => {
+    if (!selectedState) return [];
+    const cities = new Set(
+      deliveryLocations
+        .filter(l => l.state === selectedState && l.city)
+        .map(l => l.city!)
+    );
+    return [...cities].sort();
+  }, [deliveryLocations, selectedState]);
+
+  // Filter warehouses by selected city
+  const availableWarehouses = useMemo(() => {
+    if (!selectedCity) return [];
+    return deliveryLocations
+      .filter(l => l.state === selectedState && l.city === selectedCity)
+      .sort((a, b) => a.warehouse_name.localeCompare(b.warehouse_name));
+  }, [deliveryLocations, selectedState, selectedCity]);
+
+  // Reset cascade when parent changes
+  const handleStateChange = (uf: string) => {
+    setSelectedState(uf);
+    setSelectedCity('');
+    setSelectedDeliveryLocation('');
+  };
+
+  const handleCityChange = (city: string) => {
+    setSelectedCity(city);
+    setSelectedDeliveryLocation('');
+  };
+
+  // Auto-calculate distance when warehouse is selected
+  useEffect(() => {
+    if (selectedDeliveryLocation) {
+      onCalculateDistance();
+    }
+  }, [selectedDeliveryLocation]);
+
   return (
     <div className="space-y-4">
       {/* Montante */}
@@ -93,15 +142,75 @@ export default function ParityInputs({
             </SelectContent>
           </Select>
         </div>
-        <div>
-          <label className="stat-label">Origem (Frete Manual)</label>
-          <Select value={freightOrigin} onValueChange={setFreightOrigin}>
-            <SelectTrigger className="mt-1 bg-muted border-border text-foreground"><SelectValue /></SelectTrigger>
-            <SelectContent>
-              {freights.map(f => <SelectItem key={f.origin} value={f.origin}>{f.origin}</SelectItem>)}
-            </SelectContent>
-          </Select>
-        </div>
+
+        {/* Hierarchical: UF -> City -> Warehouse */}
+        {deliveryLocations.length > 0 ? (
+          <>
+            <div>
+              <label className="stat-label">Estado (UF)</label>
+              <Select value={selectedState} onValueChange={handleStateChange}>
+                <SelectTrigger className="mt-1 bg-muted border-border text-foreground"><SelectValue placeholder="Selecione UF..." /></SelectTrigger>
+                <SelectContent>
+                  {availableStates.map(uf => <SelectItem key={uf} value={uf}>{uf}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {selectedState && (
+              <div>
+                <label className="stat-label">Cidade</label>
+                <Select value={selectedCity} onValueChange={handleCityChange}>
+                  <SelectTrigger className="mt-1 bg-muted border-border text-foreground"><SelectValue placeholder="Selecione cidade..." /></SelectTrigger>
+                  <SelectContent>
+                    {availableCities.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+
+            {selectedCity && (
+              <div>
+                <label className="stat-label">Armazém</label>
+                <Select value={selectedDeliveryLocation} onValueChange={setSelectedDeliveryLocation}>
+                  <SelectTrigger className="mt-1 bg-muted border-border text-foreground"><SelectValue placeholder="Selecione armazém..." /></SelectTrigger>
+                  <SelectContent>
+                    {availableWarehouses.map(loc => (
+                      <SelectItem key={loc.id} value={loc.id}>
+                        {loc.warehouse_name}{loc.capacity_tons ? ` (${loc.capacity_tons}t)` : ''}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+
+            {realtimeLoading && selectedDeliveryLocation && (
+              <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                <Loader2 className="w-3 h-3 animate-spin" /> Calculando distância...
+              </div>
+            )}
+
+            {autoDistanceKm !== null && (
+              <div className="text-xs bg-primary/10 rounded p-2 text-center">
+                <span className="text-muted-foreground">Distância calculada:</span>{' '}
+                <span className="font-mono font-bold text-primary">{autoDistanceKm.toFixed(0)} km</span>
+              </div>
+            )}
+          </>
+        ) : (
+          <>
+            <div>
+              <label className="stat-label">Origem (Frete Manual)</label>
+              <Select value={freightOrigin} onValueChange={setFreightOrigin}>
+                <SelectTrigger className="mt-1 bg-muted border-border text-foreground"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {freights.map(f => <SelectItem key={f.origin} value={f.origin}>{f.origin}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+          </>
+        )}
+
         {freightReducer && (
           <div className="text-xs text-muted-foreground">
             Redutor logístico: <span className="font-mono text-warning">{formatCurrency(freightReducer.totalReducer)}/saca</span>
@@ -109,36 +218,6 @@ export default function ParityInputs({
           </div>
         )}
       </div>
-
-      {/* Distância Automática */}
-      {deliveryLocations.length > 0 && (
-        <div className="glass-card p-4 space-y-3">
-          <h3 className="text-sm font-semibold text-foreground flex items-center gap-2"><MapPin className="w-4 h-4 text-primary" /> Distância Automática</h3>
-          <div>
-            <label className="stat-label">Local de Entrega</label>
-            <Select value={selectedDeliveryLocation} onValueChange={setSelectedDeliveryLocation}>
-              <SelectTrigger className="mt-1 bg-muted border-border text-foreground"><SelectValue placeholder="Selecione armazém..." /></SelectTrigger>
-              <SelectContent>
-                {deliveryLocations.map(loc => (
-                  <SelectItem key={loc.id} value={loc.id}>
-                    {loc.warehouse_name} {loc.city ? `- ${loc.city}/${loc.state}` : ''}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <Button variant="outline" size="sm" onClick={onCalculateDistance} disabled={realtimeLoading || !selectedDeliveryLocation} className="w-full">
-            {realtimeLoading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <MapPin className="w-4 h-4 mr-2" />}
-            Calcular Distância
-          </Button>
-          {autoDistanceKm !== null && (
-            <div className="text-xs bg-primary/10 rounded p-2 text-center">
-              <span className="text-muted-foreground">Distância calculada:</span>{' '}
-              <span className="font-mono font-bold text-primary">{autoDistanceKm.toFixed(0)} km</span>
-            </div>
-          )}
-        </div>
-      )}
 
       {/* Contrato existente */}
       <div className="glass-card p-4 space-y-3">
