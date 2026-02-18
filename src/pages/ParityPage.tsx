@@ -5,10 +5,10 @@ import { useActiveCampaigns, useCampaignData } from '@/hooks/useActiveCampaign';
 import { useOperations, useUpdateOperation, useCreateOperationLog } from '@/hooks/useOperations';
 import { useAuth } from '@/contexts/AuthContext';
 import { useRealtimePricing } from '@/hooks/useRealtimePricing';
-import { mockCommodityPricing, mockFreightReducers } from '@/data/mock-data';
+import { AlertCircle } from 'lucide-react';
 import { calculateCommodityNetPrice, calculateParity, blackScholes } from '@/engines/parity';
 import type { CommodityPricing, FreightReducer } from '@/types/barter';
-import { Wheat, ArrowRight, TrendingUp, DollarSign, Truck, Shield, Save, Loader2, RefreshCw, MapPin, Zap } from 'lucide-react';
+import { Wheat, ArrowRight, TrendingUp, DollarSign, Truck, Shield, Save, Loader2, RefreshCw, MapPin, Zap, AlertTriangle } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
@@ -51,16 +51,49 @@ export default function ParityPage() {
     }
   }, [stateOperationId, selectedOperationId]);
 
-  // When operation is selected, load its amounts
+  // When operation is selected, load its amounts and commodity
   const selectedOp = operations?.find(op => op.id === selectedOperationId);
+  const [selectedCommodity, setSelectedCommodity] = useState<string>('soja');
 
-  const { commodityPricing, freightReducers, rawCommodityPricing, deliveryLocations, isLoading } = useCampaignData(selectedCampaignId || undefined);
+  // AUDIT FIX I5: Get pricing for selected commodity, not just [0]
+  const { commodityPricing: commodityPricingAll, freightReducers, rawCommodityPricing, deliveryLocations, rawCampaign, isLoading } = useCampaignData(selectedCampaignId || undefined);
+  
+  // Select commodity pricing matching selected commodity
+  const commodityPricing: CommodityPricing | null = useMemo(() => {
+    if (!rawCommodityPricing || rawCommodityPricing.length === 0) return null;
+    const match = rawCommodityPricing.find((cp: any) => cp.commodity === selectedCommodity);
+    if (match) {
+      return {
+        commodity: match.commodity as any,
+        exchange: match.exchange,
+        contract: match.contract,
+        exchangePrice: match.exchange_price,
+        optionCost: match.option_cost || 0,
+        exchangeRateBolsa: match.exchange_rate_bolsa,
+        exchangeRateOption: match.exchange_rate_option || match.exchange_rate_bolsa,
+        basisByPort: (match.basis_by_port || {}) as Record<string, number>,
+        securityDeltaMarket: match.security_delta_market || 2,
+        securityDeltaFreight: match.security_delta_freight || 15,
+        stopLoss: match.stop_loss || 0,
+        bushelsPerTon: match.bushels_per_ton || 36.744,
+        pesoSacaKg: match.peso_saca_kg || 60,
+      } as CommodityPricing;
+    }
+    return commodityPricingAll; // fallback to first
+  }, [rawCommodityPricing, selectedCommodity, commodityPricingAll]);
   const updateOperation = useUpdateOperation();
   const createLog = useCreateOperationLog();
   const { fetchLivePrice, fetchExchangeRate, calculateDistance, loading: realtimeLoading } = useRealtimePricing();
 
-  const pricing: CommodityPricing = commodityPricing || mockCommodityPricing;
-  const freights: FreightReducer[] = freightReducers.length > 0 ? freightReducers : mockFreightReducers;
+  // AUDIT FIX H1: Remove mock fallbacks - show error if no data configured
+  const hasCommodityData = !!commodityPricing;
+  const pricing: CommodityPricing = commodityPricing || {
+    commodity: 'soja', exchange: 'CBOT', contract: 'K', exchangePrice: 0,
+    optionCost: 0, exchangeRateBolsa: 0, exchangeRateOption: 0,
+    basisByPort: {}, securityDeltaMarket: 0, securityDeltaFreight: 0,
+    stopLoss: 0, bushelsPerTon: 36.744, pesoSacaKg: 60,
+  };
+  const freights: FreightReducer[] = freightReducers;
 
   const [amount, setAmount] = useState(stateAmount ?? 500000);
   const [grossAmount, setGrossAmount] = useState(stateGross ?? 600000);
@@ -72,11 +105,12 @@ export default function ParityPage() {
   const [showInsurance, setShowInsurance] = useState(false);
   const [volatility, setVolatility] = useState(25);
 
-  // Update amount when operation changes
+  // Update amount and commodity when operation changes
   useEffect(() => {
     if (selectedOp) {
       if (selectedOp.net_revenue) setAmount(selectedOp.net_revenue);
       if (selectedOp.gross_revenue) setGrossAmount(selectedOp.gross_revenue);
+      if (selectedOp.commodity) setSelectedCommodity(selectedOp.commodity);
     }
   }, [selectedOp]);
 
@@ -133,8 +167,9 @@ export default function ParityPage() {
     return { premiumPerSaca: premium, additionalSacas, totalSacas: parity.quantitySacas + additionalSacas };
   }, [showInsurance, volatility, parity, commodityNetPrice, effectivePricing]);
 
-  const rawCommodity = rawCommodityPricing?.[0];
+  const rawCommodity = rawCommodityPricing?.find((cp: any) => cp.commodity === selectedCommodity) || rawCommodityPricing?.[0];
 
+  // AUDIT FIX H6: Use ticker from selected commodity's config
   const handleFetchLivePrice = useCallback(async () => {
     try {
       const ticker = rawCommodity?.ticker || 'ZS=F';
@@ -241,8 +276,8 @@ export default function ParityPage() {
         </div>
       </div>
 
-      {/* Bug #4 & #16: Campaign & Operation selectors */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+      {/* Campaign, Operation & Commodity selectors */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <div className="glass-card p-4">
           <label className="stat-label">Campanha</label>
           <Select value={selectedCampaignId} onValueChange={setSelectedCampaignId}>
@@ -267,7 +302,29 @@ export default function ParityPage() {
             </SelectContent>
           </Select>
         </div>
+        <div className="glass-card p-4">
+          <label className="stat-label">Commodity</label>
+          <Select value={selectedCommodity} onValueChange={setSelectedCommodity}>
+            <SelectTrigger className="mt-1 bg-muted border-border text-foreground"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              {(rawCampaign?.commodities?.length ? rawCampaign.commodities : ['soja', 'milho', 'cafe', 'algodao']).map((c: string) => (
+                <SelectItem key={c} value={c} className="capitalize">{c}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
       </div>
+
+      {/* AUDIT FIX H1: Warning when no commodity data configured */}
+      {!hasCommodityData && !isLoading && (
+        <div className="glass-card p-4 border border-warning/50 flex items-center gap-3">
+          <AlertTriangle className="w-5 h-5 text-warning shrink-0" />
+          <div>
+            <div className="text-sm font-semibold text-warning">Precificação de commodity não configurada</div>
+            <div className="text-xs text-muted-foreground">Configure os dados de precificação na aba Commodities da campanha antes de calcular paridade.</div>
+          </div>
+        </div>
+      )}
 
       {/* Live data banner */}
       {livePrice !== null && (
@@ -325,6 +382,7 @@ export default function ParityPage() {
             freightReducer={effectiveFreightReducer}
             commodityNetPrice={commodityNetPrice}
             showInsurance={showInsurance}
+            commodityName={selectedCommodity.charAt(0).toUpperCase() + selectedCommodity.slice(1)}
             formatCurrency={formatCurrency}
             formatNum={formatNum}
           />
