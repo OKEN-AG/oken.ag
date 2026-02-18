@@ -1,4 +1,5 @@
 import { motion } from 'framer-motion';
+import { useNavigate } from 'react-router-dom';
 import StatCard from '@/components/StatCard';
 import { useOperationStats } from '@/hooks/useOperations';
 import { BarChart3, Wheat, ShoppingCart, FileText, TrendingUp, DollarSign } from 'lucide-react';
@@ -15,6 +16,7 @@ const statusColors: Record<string, string> = {
 };
 
 export default function Dashboard() {
+  const navigate = useNavigate();
   const { data: stats, isLoading } = useOperationStats();
 
   const formatCurrency = (v: number) => {
@@ -24,6 +26,11 @@ export default function Dashboard() {
   };
 
   const formatNum = (v: number) => v.toLocaleString('pt-BR', { maximumFractionDigits: 0 });
+
+  // Bug #14: Navigate to documents page with operation context
+  const handleOperationClick = (opId: string) => {
+    navigate('/documentos', { state: { operationId: opId } });
+  };
 
   return (
     <div className="p-6 space-y-6">
@@ -47,7 +54,7 @@ export default function Dashboard() {
             <StatCard label="Total de Operações" value={String(stats?.totalCount || 0)} icon={<BarChart3 className="w-4 h-4" />} />
           </div>
 
-          {/* Recent Operations */}
+          {/* Recent Operations - Bug #14: Now clickable */}
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.1 }} className="glass-card p-5">
             <h2 className="text-sm font-semibold text-foreground mb-4 flex items-center gap-2">
               <FileText className="w-4 h-4 text-muted-foreground" /> Operações Recentes
@@ -57,7 +64,11 @@ export default function Dashboard() {
             ) : (
               <div className="space-y-2">
                 {stats.operations.slice(0, 10).map(op => (
-                  <div key={op.id} className="flex items-center justify-between p-3 rounded-md bg-muted/30 hover:bg-muted/50 transition-colors cursor-pointer">
+                  <div
+                    key={op.id}
+                    className="flex items-center justify-between p-3 rounded-md bg-muted/30 hover:bg-muted/50 transition-colors cursor-pointer"
+                    onClick={() => handleOperationClick(op.id)}
+                  >
                     <div>
                       <div className="text-sm font-medium text-foreground">{op.client_name || 'Sem nome'}</div>
                       <div className="text-xs text-muted-foreground">{new Date(op.created_at).toLocaleDateString('pt-BR')}</div>

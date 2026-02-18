@@ -1,8 +1,8 @@
-import { useState, useMemo, useCallback } from 'react';
+import { useState, useMemo, useCallback, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { useLocation } from 'react-router-dom';
-import { useCampaignData } from '@/hooks/useActiveCampaign';
-import { useUpdateOperation, useCreateOperationLog } from '@/hooks/useOperations';
+import { useActiveCampaigns, useCampaignData } from '@/hooks/useActiveCampaign';
+import { useOperations, useUpdateOperation, useCreateOperationLog } from '@/hooks/useOperations';
 import { useAuth } from '@/contexts/AuthContext';
 import { useRealtimePricing } from '@/hooks/useRealtimePricing';
 import { mockCommodityPricing, mockFreightReducers } from '@/data/mock-data';
@@ -23,12 +23,38 @@ import ParityResults from '@/components/parity/ParityResults';
 export default function ParityPage() {
   const location = useLocation();
   const { user } = useAuth();
-  const stateAmount = (location.state as any)?.amount ?? 500000;
-  const stateGross = (location.state as any)?.grossAmount ?? 600000;
-  const campaignId = (location.state as any)?.campaignId;
-  const operationId = (location.state as any)?.operationId;
 
-  const { commodityPricing, freightReducers, rawCommodityPricing, deliveryLocations, isLoading } = useCampaignData(campaignId);
+  // State from navigation
+  const stateAmount = (location.state as any)?.amount;
+  const stateGross = (location.state as any)?.grossAmount;
+  const stateCampaignId = (location.state as any)?.campaignId;
+  const stateOperationId = (location.state as any)?.operationId;
+
+  // Bug #4 & #16: Add campaign and operation selectors for direct access
+  const { data: activeCampaigns } = useActiveCampaigns();
+  const { data: operations } = useOperations();
+  const [selectedCampaignId, setSelectedCampaignId] = useState<string>(stateCampaignId || '');
+  const [selectedOperationId, setSelectedOperationId] = useState<string>(stateOperationId || '');
+
+  // Auto-select campaign from state or first available
+  useEffect(() => {
+    if (!selectedCampaignId && stateCampaignId) {
+      setSelectedCampaignId(stateCampaignId);
+    } else if (!selectedCampaignId && activeCampaigns && activeCampaigns.length > 0) {
+      setSelectedCampaignId(activeCampaigns[0].id);
+    }
+  }, [activeCampaigns, stateCampaignId, selectedCampaignId]);
+
+  useEffect(() => {
+    if (!selectedOperationId && stateOperationId) {
+      setSelectedOperationId(stateOperationId);
+    }
+  }, [stateOperationId, selectedOperationId]);
+
+  // When operation is selected, load its amounts
+  const selectedOp = operations?.find(op => op.id === selectedOperationId);
+
+  const { commodityPricing, freightReducers, rawCommodityPricing, deliveryLocations, isLoading } = useCampaignData(selectedCampaignId || undefined);
   const updateOperation = useUpdateOperation();
   const createLog = useCreateOperationLog();
   const { fetchLivePrice, fetchExchangeRate, calculateDistance, loading: realtimeLoading } = useRealtimePricing();
@@ -36,8 +62,8 @@ export default function ParityPage() {
   const pricing: CommodityPricing = commodityPricing || mockCommodityPricing;
   const freights: FreightReducer[] = freightReducers.length > 0 ? freightReducers : mockFreightReducers;
 
-  const [amount, setAmount] = useState(stateAmount);
-  const [grossAmount] = useState(stateGross);
+  const [amount, setAmount] = useState(stateAmount ?? 500000);
+  const [grossAmount, setGrossAmount] = useState(stateGross ?? 600000);
   const ports = Object.keys(pricing.basisByPort);
   const [port, setPort] = useState(ports[0] || 'Paranaguá (PR)');
   const [freightOrigin, setFreightOrigin] = useState(freights[0]?.origin || '');
@@ -45,6 +71,14 @@ export default function ParityPage() {
   const [userPrice, setUserPrice] = useState(0);
   const [showInsurance, setShowInsurance] = useState(false);
   const [volatility, setVolatility] = useState(25);
+
+  // Update amount when operation changes
+  useEffect(() => {
+    if (selectedOp) {
+      if (selectedOp.net_revenue) setAmount(selectedOp.net_revenue);
+      if (selectedOp.gross_revenue) setGrossAmount(selectedOp.gross_revenue);
+    }
+  }, [selectedOp]);
 
   // Live price state
   const [livePrice, setLivePrice] = useState<number | null>(null);
@@ -64,25 +98,39 @@ export default function ParityPage() {
 
   const freightReducer = freights.find(f => f.origin === freightOrigin);
 
-  // Auto-distance override for freight
+  // Bug #6: Synthetic freight reducer when autoDistanceKm exists but no manual reducer
   const effectiveFreightReducer: FreightReducer | undefined = useMemo(() => {
-    if (autoDistanceKm !== null && freightReducer) {
-      const autoTotal = autoDistanceKm * freightReducer.costPerKm + (freightReducer.adjustment || 0);
-      return { ...freightReducer, distanceKm: autoDistanceKm, totalReducer: autoTotal };
+    if (autoDistanceKm !== null) {
+      if (freightReducer) {
+        const autoTotal = autoDistanceKm * freightReducer.costPerKm + (freightReducer.adjustment || 0);
+        return { ...freightReducer, distanceKm: autoDistanceKm, totalReducer: autoTotal };
+      }
+      // Synthetic reducer with default cost
+      const defaultCostPerKm = 0.11;
+      return {
+        origin: 'Auto',
+        destination: port,
+        distanceKm: autoDistanceKm,
+        costPerKm: defaultCostPerKm,
+        adjustment: 0,
+        totalReducer: autoDistanceKm * defaultCostPerKm,
+      };
     }
     return freightReducer;
-  }, [freightReducer, autoDistanceKm]);
+  }, [freightReducer, autoDistanceKm, port]);
 
   const commodityNetPrice = useMemo(() => calculateCommodityNetPrice(effectivePricing, port, effectiveFreightReducer), [port, effectiveFreightReducer, effectivePricing]);
   const parity = useMemo(() => calculateParity(amount, commodityNetPrice, hasContract ? userPrice : undefined, grossAmount), [amount, commodityNetPrice, hasContract, userPrice, grossAmount]);
 
+  // Bug #13: Fix insurance premium calculation
   const insurancePremium = useMemo(() => {
     if (!showInsurance) return null;
     const spotPrice = effectivePricing.exchangePrice * effectivePricing.exchangeRateBolsa;
     const premium = blackScholes(spotPrice, spotPrice * 1.05, 0.5, 0.06, volatility / 100, true);
-    const premiumPerSaca = premium * 16.667;
-    const additionalSacas = Math.ceil(premiumPerSaca * parity.quantitySacas / commodityNetPrice);
-    return { premiumPerSaca, additionalSacas, totalSacas: parity.quantitySacas + additionalSacas };
+    // Premium is in BRL per unit. Divide by saca price to get sacas-equivalent per saca
+    const premiumPerSaca = commodityNetPrice > 0 ? premium / commodityNetPrice : 0;
+    const additionalSacas = Math.ceil(premiumPerSaca * parity.quantitySacas);
+    return { premiumPerSaca: premium, additionalSacas, totalSacas: parity.quantitySacas + additionalSacas };
   }, [showInsurance, volatility, parity, commodityNetPrice, effectivePricing]);
 
   const rawCommodity = rawCommodityPricing?.[0];
@@ -91,15 +139,12 @@ export default function ParityPage() {
     try {
       const ticker = rawCommodity?.ticker || 'ZS=F';
       const currencyUnit = rawCommodity?.currency_unit || 'USc';
-      const bushelsTon = rawCommodity?.bushels_per_ton || 36.744;
-      const pesoSaca = rawCommodity?.peso_saca_kg || 60;
 
       const [priceResult, exchangeResult] = await Promise.all([
         fetchLivePrice(ticker, currencyUnit),
         fetchExchangeRate(),
       ]);
 
-      // Convert to USD per bushel if needed
       const priceUsdBu = priceResult.price_usd;
       setLivePrice(priceUsdBu);
       setLiveExchangeRate(exchangeResult.rate);
@@ -111,7 +156,6 @@ export default function ParityPage() {
     }
   }, [rawCommodity, fetchLivePrice, fetchExchangeRate]);
 
-  // Port coordinates for distance calculation
   const portCoordinates: Record<string, { lat: number; lng: number }> = {
     'Paranaguá (PR)': { lat: -25.5163, lng: -48.5164 },
     'Santarem (PA)': { lat: -2.4388, lng: -54.7089 },
@@ -146,10 +190,10 @@ export default function ParityPage() {
   }, [selectedDeliveryLocation, deliveryLocations, port, calculateDistance]);
 
   const handleSaveParity = async () => {
-    if (!operationId || !user) return;
+    if (!selectedOperationId || !user) return;
     try {
       await updateOperation.mutateAsync({
-        id: operationId,
+        id: selectedOperationId,
         total_sacas: insurancePremium?.totalSacas ?? parity.quantitySacas,
         commodity_price: parity.commodityPricePerUnit,
         reference_price: parity.referencePrice,
@@ -159,7 +203,7 @@ export default function ParityPage() {
         status: 'pedido' as const,
       });
       await createLog.mutateAsync({
-        operation_id: operationId,
+        operation_id: selectedOperationId,
         user_id: user.id,
         action: 'paridade_calculada',
         details: { sacas: parity.quantitySacas, preco: parity.commodityPricePerUnit, port, livePrice, liveExchangeRate },
@@ -173,6 +217,9 @@ export default function ParityPage() {
   const formatCurrency = (v: number) => v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
   const formatNum = (v: number) => v.toLocaleString('pt-BR', { maximumFractionDigits: 2 });
 
+  // Filter operations for this campaign
+  const campaignOperations = operations?.filter(op => !selectedCampaignId || op.campaign_id === selectedCampaignId) || [];
+
   return (
     <div className="p-6 space-y-6">
       <div className="flex items-center justify-between">
@@ -185,12 +232,40 @@ export default function ParityPage() {
             {realtimeLoading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Zap className="w-4 h-4 mr-2 text-primary" />}
             Preço ao Vivo
           </Button>
-          {operationId && (
+          {selectedOperationId && (
             <Button onClick={handleSaveParity} disabled={updateOperation.isPending} className="bg-primary text-primary-foreground">
               {updateOperation.isPending ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Save className="w-4 h-4 mr-2" />}
               Salvar Paridade
             </Button>
           )}
+        </div>
+      </div>
+
+      {/* Bug #4 & #16: Campaign & Operation selectors */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="glass-card p-4">
+          <label className="stat-label">Campanha</label>
+          <Select value={selectedCampaignId} onValueChange={setSelectedCampaignId}>
+            <SelectTrigger className="mt-1 bg-muted border-border text-foreground"><SelectValue placeholder="Selecione campanha..." /></SelectTrigger>
+            <SelectContent>
+              {activeCampaigns?.map(c => (
+                <SelectItem key={c.id} value={c.id}>{c.name} ({c.season})</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="glass-card p-4">
+          <label className="stat-label">Operação (opcional)</label>
+          <Select value={selectedOperationId} onValueChange={setSelectedOperationId}>
+            <SelectTrigger className="mt-1 bg-muted border-border text-foreground"><SelectValue placeholder="Selecione operação..." /></SelectTrigger>
+            <SelectContent>
+              {campaignOperations.map(op => (
+                <SelectItem key={op.id} value={op.id}>
+                  {op.client_name || 'Sem nome'} — {op.status} — {(op.net_revenue || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
       </div>
 

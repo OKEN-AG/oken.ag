@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { useActiveCampaigns, useCampaignData } from '@/hooks/useActiveCampaign';
 import { useCreateOperation, useCreateOperationItems, useCreateOperationLog } from '@/hooks/useOperations';
@@ -15,6 +15,8 @@ import { Progress } from '@/components/ui/progress';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
+import { supabase } from '@/integrations/supabase/client';
+import { useQuery } from '@tanstack/react-query';
 
 export default function SimulationPage() {
   const navigate = useNavigate();
@@ -33,17 +35,88 @@ export default function SimulationPage() {
   const createItems = useCreateOperationItems();
   const createLog = useCreateOperationLog();
 
-  // Auto-select first campaign
-  useMemo(() => {
+  // Bug #1: Fix useMemo → useEffect for auto-select
+  useEffect(() => {
     if (!selectedCampaignId && activeCampaigns && activeCampaigns.length > 0) {
       setSelectedCampaignId(activeCampaigns[0].id);
     }
   }, [activeCampaigns, selectedCampaignId]);
 
-  // Reset products when campaign changes
-  useMemo(() => {
+  // Bug #1: Fix useMemo → useEffect for reset products
+  useEffect(() => {
     setSelectedProducts(new Map());
   }, [selectedCampaignId]);
+
+  // Bug #9: Fetch campaign_due_dates dynamically
+  const { data: campaignDueDates } = useQuery({
+    queryKey: ['campaign-due-dates-sim', selectedCampaignId],
+    enabled: !!selectedCampaignId,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('campaign_due_dates')
+        .select('*')
+        .eq('campaign_id', selectedCampaignId);
+      if (error) throw error;
+      return data || [];
+    },
+  });
+
+  // Bug #10: Fetch campaign_segments dynamically
+  const { data: campaignSegments } = useQuery({
+    queryKey: ['campaign-segments-sim', selectedCampaignId],
+    enabled: !!selectedCampaignId,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('campaign_segments')
+        .select('*')
+        .eq('campaign_id', selectedCampaignId);
+      if (error) throw error;
+      return data || [];
+    },
+  });
+
+  // Derive due date options: use campaign_due_dates if available, else fallback
+  const dueDateOptions = useMemo(() => {
+    if (campaignDueDates && campaignDueDates.length > 0) {
+      const uniqueDates = [...new Set(campaignDueDates.map(d => d.due_date))].sort();
+      return uniqueDates.map(d => {
+        const date = new Date(d + 'T00:00:00');
+        const now = new Date();
+        const diffMonths = Math.round((date.getTime() - now.getTime()) / (1000 * 60 * 60 * 24 * 30));
+        return { value: String(Math.max(diffMonths, 1)), label: date.toLocaleDateString('pt-BR'), date: d };
+      });
+    }
+    // Fallback: available_due_dates from campaign
+    if (campaign?.availableDueDates && campaign.availableDueDates.length > 0) {
+      return campaign.availableDueDates.map(d => {
+        const date = new Date(d + 'T00:00:00');
+        const now = new Date();
+        const diffMonths = Math.round((date.getTime() - now.getTime()) / (1000 * 60 * 60 * 24 * 30));
+        return { value: String(Math.max(diffMonths, 1)), label: date.toLocaleDateString('pt-BR'), date: d };
+      });
+    }
+    // Ultimate fallback
+    return [
+      { value: '6', label: '6 meses', date: '' },
+      { value: '9', label: '9 meses', date: '' },
+      { value: '12', label: '12 meses', date: '' },
+      { value: '15', label: '15 meses', date: '' },
+    ];
+  }, [campaignDueDates, campaign]);
+
+  // Derive segment options: use campaign_segments if available
+  const segmentOptions = useMemo(() => {
+    if (campaignSegments && campaignSegments.length > 0) {
+      return campaignSegments
+        .filter(s => s.active)
+        .map(s => ({ value: s.segment_name, label: s.segment_name }));
+    }
+    return [
+      { value: 'distribuidor', label: 'Distribuidor' },
+      { value: 'cooperativa', label: 'Cooperativa' },
+      { value: 'direto', label: 'Venda Direta' },
+    ];
+  }, [campaignSegments]);
 
   const toggleProduct = (productId: string) => {
     const next = new Map(selectedProducts);
@@ -51,7 +124,6 @@ export default function SimulationPage() {
       next.delete(productId);
     } else {
       const prod = products.find(p => p.id === productId)!;
-      // Use combo-suggested dose if product's default is outside combo ranges
       const suggestedDose = getSuggestedDoseForRef(combos, prod.ref || '');
       const defaultDose = suggestedDose !== null ? suggestedDose : prod.dosePerHectare;
       next.set(productId, defaultDose);
@@ -95,51 +167,67 @@ export default function SimulationPage() {
 
   const formatCurrency = (v: number) => v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 
-  const handleSaveOperation = async () => {
-    if (!user || !selectedCampaignId || selections.length === 0) return;
-    try {
-      const op = await createOperation.mutateAsync({
-        campaign_id: selectedCampaignId,
-        user_id: user.id,
-        client_name: clientName || 'Sem nome',
-        channel: segment,
-        due_months: dueMonths,
-        area_hectares: area,
-        gross_revenue: grossToNet.grossRevenue,
-        combo_discount: grossToNet.comboDiscount,
-        net_revenue: grossToNet.netRevenue,
-        financial_revenue: grossToNet.financialRevenue,
-        distributor_margin: grossToNet.distributorMargin,
-        status: 'simulacao' as const,
-      });
+  // Bug #3: Separate save-only vs save-and-navigate
+  const doSave = async () => {
+    if (!user || !selectedCampaignId || selections.length === 0) return null;
+    const op = await createOperation.mutateAsync({
+      campaign_id: selectedCampaignId,
+      user_id: user.id,
+      client_name: clientName || 'Sem nome',
+      channel: segment,
+      due_months: dueMonths,
+      area_hectares: area,
+      gross_revenue: grossToNet.grossRevenue,
+      combo_discount: grossToNet.comboDiscount,
+      net_revenue: grossToNet.netRevenue,
+      financial_revenue: grossToNet.financialRevenue,
+      distributor_margin: grossToNet.distributorMargin,
+      status: 'simulacao' as const,
+    });
 
-      const items = pricingResults.map(pr => {
-        const sel = selections.find(s => s.productId === pr.productId)!;
-        return {
-          operation_id: op.id,
-          product_id: pr.productId,
-          dose_per_hectare: sel.dosePerHectare,
-          raw_quantity: sel.rawQuantity,
-          rounded_quantity: sel.roundedQuantity,
-          boxes: sel.boxes,
-          pallets: sel.pallets,
-          base_price: pr.basePrice,
-          normalized_price: pr.normalizedPrice,
-          interest_component: pr.interestComponent,
-          margin_component: pr.marginComponent,
-          subtotal: pr.subtotal,
-        };
-      });
-
-      await createItems.mutateAsync(items);
-      await createLog.mutateAsync({
+    const items = pricingResults.map(pr => {
+      const sel = selections.find(s => s.productId === pr.productId)!;
+      return {
         operation_id: op.id,
-        user_id: user.id,
-        action: 'simulacao_criada',
-        details: { area, segment, dueMonths, productsCount: selections.length },
-      });
+        product_id: pr.productId,
+        dose_per_hectare: sel.dosePerHectare,
+        raw_quantity: sel.rawQuantity,
+        rounded_quantity: sel.roundedQuantity,
+        boxes: sel.boxes,
+        pallets: sel.pallets,
+        base_price: pr.basePrice,
+        normalized_price: pr.normalizedPrice,
+        interest_component: pr.interestComponent,
+        margin_component: pr.marginComponent,
+        subtotal: pr.subtotal,
+      };
+    });
 
+    await createItems.mutateAsync(items);
+    await createLog.mutateAsync({
+      operation_id: op.id,
+      user_id: user.id,
+      action: 'simulacao_criada',
+      details: { area, segment, dueMonths, productsCount: selections.length },
+    });
+
+    return op;
+  };
+
+  const handleSaveOnly = async () => {
+    try {
+      await doSave();
       toast.success('Operação salva como simulação!');
+    } catch (e: any) {
+      toast.error('Erro ao salvar: ' + e.message);
+    }
+  };
+
+  const handleSaveAndParity = async () => {
+    try {
+      const op = await doSave();
+      if (!op) return;
+      toast.success('Operação salva! Redirecionando para paridade...');
       navigate('/paridade', { state: { operationId: op.id, campaignId: selectedCampaignId, amount: grossToNet.netRevenue, grossAmount: grossToNet.grossRevenue } });
     } catch (e: any) {
       toast.error('Erro ao salvar: ' + e.message);
@@ -195,21 +283,20 @@ export default function SimulationPage() {
           <Select value={segment} onValueChange={(v) => setSegment(v as ChannelSegment)}>
             <SelectTrigger className="mt-2 bg-muted border-border text-foreground"><SelectValue /></SelectTrigger>
             <SelectContent>
-              <SelectItem value="distribuidor">Distribuidor</SelectItem>
-              <SelectItem value="cooperativa">Cooperativa</SelectItem>
-              <SelectItem value="direto">Venda Direta</SelectItem>
+              {segmentOptions.map(opt => (
+                <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+              ))}
             </SelectContent>
           </Select>
         </div>
         <div className="glass-card p-4">
-          <label className="stat-label">Prazo (meses)</label>
+          <label className="stat-label">Prazo / Vencimento</label>
           <Select value={String(dueMonths)} onValueChange={(v) => setDueMonths(Number(v))}>
             <SelectTrigger className="mt-2 bg-muted border-border text-foreground"><SelectValue /></SelectTrigger>
             <SelectContent>
-              <SelectItem value="6">6 meses</SelectItem>
-              <SelectItem value="9">9 meses</SelectItem>
-              <SelectItem value="12">12 meses</SelectItem>
-              <SelectItem value="15">15 meses</SelectItem>
+              {dueDateOptions.map(opt => (
+                <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+              ))}
             </SelectContent>
           </Select>
         </div>
@@ -330,20 +417,23 @@ export default function SimulationPage() {
                 })}
               </div>
 
-              {/* Gross to Net */}
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 pt-4 border-t border-border">
+              {/* Bug #8: Complete Gross-to-Net */}
+              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 pt-4 border-t border-border">
                 <div><div className="stat-label">Receita Bruta</div><div className="font-mono font-bold text-foreground">{formatCurrency(grossToNet.grossRevenue)}</div></div>
                 <div><div className="stat-label">Desconto Combo</div><div className="font-mono font-bold text-warning">-{formatCurrency(grossToNet.comboDiscount)}</div></div>
+                <div><div className="stat-label">Margem Canal</div><div className="font-mono font-bold text-muted-foreground">{formatCurrency(grossToNet.distributorMargin)}</div></div>
                 <div><div className="stat-label">Receita Financeira</div><div className="font-mono font-bold text-info">{formatCurrency(grossToNet.financialRevenue)}</div></div>
+                <div><div className="stat-label">Net Net Revenue</div><div className="font-mono font-bold text-foreground">{formatCurrency(grossToNet.netNetRevenue)}</div></div>
                 <div><div className="stat-label">Total a Pagar (Prazo)</div><div className="font-mono font-bold text-xl text-success">{formatCurrency(grossToNet.netRevenue)}</div></div>
               </div>
 
+              {/* Bug #3: Separate save buttons */}
               <div className="flex justify-end gap-3 mt-6">
-                <Button onClick={handleSaveOperation} disabled={createOperation.isPending} variant="outline" className="border-primary text-primary hover:bg-primary/10">
+                <Button onClick={handleSaveOnly} disabled={createOperation.isPending} variant="outline" className="border-primary text-primary hover:bg-primary/10">
                   {createOperation.isPending ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Save className="w-4 h-4 mr-2" />}
                   Salvar Operação
                 </Button>
-                <Button onClick={handleSaveOperation} disabled={createOperation.isPending} className="bg-primary text-primary-foreground hover:bg-primary/90">
+                <Button onClick={handleSaveAndParity} disabled={createOperation.isPending} className="bg-primary text-primary-foreground hover:bg-primary/90">
                   <Wheat className="w-4 h-4 mr-2" /> Salvar & Calcular Paridade →
                 </Button>
               </div>
