@@ -4,7 +4,7 @@ import { motion } from 'framer-motion';
 import {
   LayoutDashboard, Settings, ShoppingCart, BarChart3,
   Wheat, FileText, ChevronLeft, ChevronRight, LogOut,
-  FolderCog, Package, Layers, TrendingUp, Truck
+  FolderCog
 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 
@@ -19,10 +19,6 @@ const navItems = [
 
 const adminItems = [
   { to: '/admin/campanhas', icon: FolderCog, label: 'Campanhas' },
-  { to: '/admin/produtos', icon: Package, label: 'Produtos' },
-  { to: '/admin/combos', icon: Layers, label: 'Combos' },
-  { to: '/admin/commodities', icon: TrendingUp, label: 'Commodities' },
-  { to: '/admin/fretes', icon: Truck, label: 'Fretes' },
 ];
 
 export default function AppSidebar() {
@@ -54,7 +50,6 @@ export default function AppSidebar() {
       transition={{ duration: 0.2 }}
       className="h-screen bg-sidebar border-r border-sidebar-border flex flex-col fixed left-0 top-0 z-40"
     >
-      {/* Logo */}
       <div className="h-16 flex items-center px-4 border-b border-sidebar-border">
         {!collapsed && (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex items-center gap-2">
@@ -71,11 +66,8 @@ export default function AppSidebar() {
         )}
       </div>
 
-      {/* Nav */}
       <nav className="flex-1 py-4 space-y-1 px-2 overflow-y-auto">
         {navItems.map(renderNavItem)}
-
-        {/* Admin section */}
         {!collapsed && (
           <div className="pt-4 pb-1 px-3">
             <span className="text-[10px] uppercase tracking-widest text-muted-foreground">Administração</span>
@@ -85,22 +77,15 @@ export default function AppSidebar() {
         {adminItems.map(renderNavItem)}
       </nav>
 
-      {/* User & actions */}
       <div className="border-t border-sidebar-border p-2 space-y-1">
         {!collapsed && user && (
           <div className="px-3 py-1.5 text-xs text-muted-foreground truncate">{user.email}</div>
         )}
-        <button
-          onClick={signOut}
-          className="flex items-center gap-3 px-3 py-2 rounded-md text-sm text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground transition-colors w-full"
-        >
+        <button onClick={signOut} className="flex items-center gap-3 px-3 py-2 rounded-md text-sm text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground transition-colors w-full">
           <LogOut className="w-4 h-4 shrink-0" />
           {!collapsed && <span>Sair</span>}
         </button>
-        <button
-          onClick={() => setCollapsed(c => !c)}
-          className="flex items-center justify-center w-full py-1.5 text-sidebar-foreground hover:text-foreground transition-colors"
-        >
+        <button onClick={() => setCollapsed(c => !c)} className="flex items-center justify-center w-full py-1.5 text-sidebar-foreground hover:text-foreground transition-colors">
           {collapsed ? <ChevronRight className="w-4 h-4" /> : <ChevronLeft className="w-4 h-4" />}
         </button>
       </div>
