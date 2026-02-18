@@ -253,23 +253,89 @@ export default function CommoditiesTab({ campaignId, campaignCommodities = [] }:
   };
 
   const bulkInsertLocations = async (locations: Omit<DeliveryLocation, 'id'>[]) => {
-    if (!campaignId) return;
-    await (supabase as any).from('campaign_delivery_locations').insert(locations.map(l => ({ ...l, campaign_id: campaignId })));
+    if (!campaignId || locations.length === 0) return;
+    // Fetch existing CDAs for dedup
+    const existingCdas = new Set(deliveryLocations.filter((l: any) => l.cda).map((l: any) => l.cda));
+    const unique = locations.filter(l => !l.cda || !existingCdas.has(l.cda));
+    const dupes = locations.length - unique.length;
+    if (unique.length > 0) {
+      await (supabase as any).from('campaign_delivery_locations').insert(unique.map(l => ({ ...l, campaign_id: campaignId })));
+    }
     qc.invalidateQueries({ queryKey: ['delivery-locations', campaignId] });
+    toast.success(`${unique.length} armazéns importados${dupes > 0 ? `, ${dupes} duplicatas ignoradas` : ''}`);
   };
   const deleteLocation = async (id: string) => {
     await (supabase as any).from('campaign_delivery_locations').delete().eq('id', id);
     qc.invalidateQueries({ queryKey: ['delivery-locations', campaignId] });
   };
 
-  const bulkInsertPrices = async (prices: Omit<IndicativePrice, 'id'>[]) => {
-    if (!campaignId) return;
-    await (supabase as any).from('campaign_indicative_prices').insert(prices.map(p => ({ ...p, campaign_id: campaignId })));
-    qc.invalidateQueries({ queryKey: ['indicative-prices', campaignId] });
+  // CONAB XLS column detection and parsing
+  const parseConabCapacity = (val: any): number => {
+    if (typeof val === 'number') return val;
+    if (typeof val === 'string') return Number(val.replace(/\./g, '').replace(',', '.')) || 0;
+    return 0;
   };
-  const deletePrice = async (id: string) => {
-    await (supabase as any).from('campaign_indicative_prices').delete().eq('id', id);
-    qc.invalidateQueries({ queryKey: ['indicative-prices', campaignId] });
+
+  const parseConabRow = (row: Record<string, any>): Omit<DeliveryLocation, 'id'> | null => {
+    // Detect CONAB columns (case-insensitive, partial match)
+    const keys = Object.keys(row);
+    const find = (patterns: string[]) => keys.find(k => patterns.some(p => k.toLowerCase().includes(p.toLowerCase())));
+    const cdaKey = find(['CDA']);
+    const nameKey = find(['Armazenador']);
+    const addrKey = find(['Endere']);
+    const cityKey = find(['Munic', 'Cidade']);
+    const stateKey = find(['UF', 'Estado']);
+    const phoneKey = find(['Telefone', 'Fone']);
+    const emailKey = find(['mail']);
+    const typeKey = find(['Tipo']);
+    const capKey = find(['CAP', 'Capacidade']);
+    const latKey = find(['Lat']);
+    const lngKey = find(['Long']);
+    if (!nameKey) return null;
+    return {
+      cda: String(row[cdaKey!] || '').trim(),
+      warehouse_name: String(row[nameKey] || '').trim(),
+      address: String(row[addrKey!] || '').trim(),
+      city: String(row[cityKey!] || '').trim(),
+      state: String(row[stateKey!] || '').trim(),
+      phone: String(row[phoneKey!] || '').trim(),
+      email: String(row[emailKey!] || '').trim(),
+      location_type: String(row[typeKey!] || '').trim(),
+      capacity_tons: parseConabCapacity(row[capKey!]),
+      latitude: Number(row[latKey!] || 0),
+      longitude: Number(row[lngKey!] || 0),
+    };
+  };
+
+  const conabFileRef = useRef<HTMLInputElement>(null);
+
+  const handleConabImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+    let allRows: Omit<DeliveryLocation, 'id'>[] = [];
+    const readFile = (file: File): Promise<Omit<DeliveryLocation, 'id'>[]> => {
+      return new Promise((resolve) => {
+        const reader = new FileReader();
+        reader.onload = (ev) => {
+          const data = new Uint8Array(ev.target?.result as ArrayBuffer);
+          const wb = XLSX.read(data, { type: 'array' });
+          const jsonRows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]) as Record<string, any>[];
+          const parsed = jsonRows.map(parseConabRow).filter(Boolean) as Omit<DeliveryLocation, 'id'>[];
+          resolve(parsed);
+        };
+        reader.readAsArrayBuffer(file);
+      });
+    };
+    for (const file of Array.from(files)) {
+      const rows = await readFile(file);
+      allRows = [...allRows, ...rows];
+    }
+    if (allRows.length > 0) {
+      await bulkInsertLocations(allRows);
+    } else {
+      toast.error('Nenhum armazém encontrado nos arquivos');
+    }
+    e.target.value = '';
   };
 
   const handleLocFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -287,22 +353,40 @@ export default function CommoditiesTab({ campaignId, campaignCommodities = [] }:
       };
       reader.readAsText(file);
     } else {
+      // For generic XLS, try CONAB detection first
       reader.onload = (ev) => {
         const data = new Uint8Array(ev.target?.result as ArrayBuffer);
         const wb = XLSX.read(data, { type: 'array' });
-        const rows = (XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1 }) as any[][]).slice(1).map(r => ({
-          cda: String(r[0] || ''), warehouse_name: String(r[1] || ''), address: String(r[2] || ''), city: String(r[3] || ''), state: String(r[4] || ''),
-          phone: String(r[5] || ''), email: String(r[6] || ''), location_type: String(r[7] || ''), capacity_tons: Number(r[8] || 0),
-          latitude: Number(r[9] || 0), longitude: Number(r[10] || 0),
-        }));
-        bulkInsertLocations(rows);
+        const jsonRows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]) as Record<string, any>[];
+        // Check if CONAB format
+        if (jsonRows.length > 0 && Object.keys(jsonRows[0]).some(k => k.toLowerCase().includes('armazenador') || k.toLowerCase().includes('cda'))) {
+          const parsed = jsonRows.map(parseConabRow).filter(Boolean) as Omit<DeliveryLocation, 'id'>[];
+          bulkInsertLocations(parsed);
+        } else {
+          // Fallback to positional
+          const rows = (XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1 }) as any[][]).slice(1).map(r => ({
+            cda: String(r[0] || ''), warehouse_name: String(r[1] || ''), address: String(r[2] || ''), city: String(r[3] || ''), state: String(r[4] || ''),
+            phone: String(r[5] || ''), email: String(r[6] || ''), location_type: String(r[7] || ''), capacity_tons: Number(r[8] || 0),
+            latitude: Number(r[9] || 0), longitude: Number(r[10] || 0),
+          }));
+          bulkInsertLocations(rows);
+        }
       };
       reader.readAsArrayBuffer(file);
     }
     e.target.value = '';
   };
 
-  const handlePriceFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const bulkInsertPrices = async (prices: Omit<IndicativePrice, 'id'>[]) => {
+    if (!campaignId) return;
+    await (supabase as any).from('campaign_indicative_prices').insert(prices.map(p => ({ ...p, campaign_id: campaignId })));
+    qc.invalidateQueries({ queryKey: ['indicative-prices', campaignId] });
+  };
+  const deletePrice = async (id: string) => {
+    await (supabase as any).from('campaign_indicative_prices').delete().eq('id', id);
+    qc.invalidateQueries({ queryKey: ['indicative-prices', campaignId] });
+  };
+
     const file = e.target.files?.[0];
     if (!file) return;
     const reader = new FileReader();
@@ -516,7 +600,9 @@ export default function CommoditiesTab({ campaignId, campaignCommodities = [] }:
               <div className="flex gap-2">
                 <Button variant="outline" size="sm" onClick={() => setLocPasteMode(!locPasteMode)}><ClipboardPaste className="w-3 h-3 mr-1" /> Colar</Button>
                 <Button variant="outline" size="sm" onClick={() => locFileRef.current?.click()}><Upload className="w-3 h-3 mr-1" /> Importar</Button>
+                <Button variant="default" size="sm" onClick={() => conabFileRef.current?.click()}><Upload className="w-3 h-3 mr-1" /> Importar Base CONAB</Button>
                 <input ref={locFileRef} type="file" accept=".csv,.xls,.xlsx,.txt" className="hidden" onChange={handleLocFileUpload} />
+                <input ref={conabFileRef} type="file" accept=".xls,.xlsx" multiple className="hidden" onChange={handleConabImport} />
               </div>
             </div>
             {locPasteMode && (
