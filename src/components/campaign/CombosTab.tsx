@@ -13,6 +13,7 @@ import { useCampaignProducts } from '@/hooks/useProducts';
 import { supabase } from '@/integrations/supabase/client';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
+import { handleDatabaseError } from '@/lib/error-handler';
 import * as XLSX from 'xlsx';
 
 type Props = { campaignId?: string };
@@ -46,7 +47,7 @@ export default function CombosTab({ campaignId }: Props) {
       setNewName('');
       setNewDiscount(5);
       toast.success('Combo criado');
-    } catch (e: any) { toast.error(e.message); }
+    } catch (e: any) { toast.error(handleDatabaseError(e)); }
   };
 
   const handleAddProduct = async (comboId: string) => {
@@ -58,7 +59,7 @@ export default function CombosTab({ campaignId }: Props) {
       setMaxDose(100);
       setAddingProductTo(null);
       toast.success('Produto adicionado ao combo');
-    } catch (e: any) { toast.error(e.message); }
+    } catch (e: any) { toast.error(handleDatabaseError(e)); }
   };
 
   // Parse discount matrix text

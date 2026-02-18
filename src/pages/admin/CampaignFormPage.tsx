@@ -238,7 +238,8 @@ export default function CampaignFormPage() {
 
       navigate('/admin/campanhas');
     } catch (err: any) {
-      toast.error(err.message || 'Erro ao salvar');
+      const { handleDatabaseError } = await import('@/lib/error-handler');
+      toast.error(handleDatabaseError(err));
     }
   };
 

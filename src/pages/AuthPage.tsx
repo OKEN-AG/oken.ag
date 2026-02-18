@@ -6,6 +6,7 @@ import { Wheat, Mail, Lock, User, Loader } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
+import { handleDatabaseError } from '@/lib/error-handler';
 
 export default function AuthPage() {
   const { user, loading } = useAuth();
@@ -31,17 +32,26 @@ export default function AuthPage() {
     e.preventDefault();
     setSubmitting(true);
 
+    const sanitizeAuthError = (error: any): string => {
+      const msg = error?.message || '';
+      if (msg.includes('already registered')) return 'Este email já está cadastrado.';
+      if (msg.includes('Invalid login')) return 'Email ou senha incorretos.';
+      if (msg.includes('Email not confirmed')) return 'Confirme seu email antes de entrar.';
+      if (msg.includes('Password should be')) return 'A senha deve ter pelo menos 6 caracteres.';
+      return 'Erro ao processar. Tente novamente.';
+    };
+
     if (isSignUp) {
       const { error } = await signUp(email, password, fullName);
       if (error) {
-        toast({ title: 'Erro no cadastro', description: error.message, variant: 'destructive' });
+        toast({ title: 'Erro no cadastro', description: sanitizeAuthError(error), variant: 'destructive' });
       } else {
         toast({ title: 'Cadastro realizado!', description: 'Verifique seu email para confirmar a conta.' });
       }
     } else {
       const { error } = await signIn(email, password);
       if (error) {
-        toast({ title: 'Erro no login', description: error.message, variant: 'destructive' });
+        toast({ title: 'Erro no login', description: sanitizeAuthError(error), variant: 'destructive' });
       }
     }
 
