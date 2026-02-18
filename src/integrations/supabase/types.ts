@@ -600,53 +600,77 @@ export type Database = {
       }
       commodity_pricing: {
         Row: {
+          api_source: string | null
           basis_by_port: Json | null
+          bushels_per_ton: number | null
           campaign_id: string
           commodity: Database["public"]["Enums"]["commodity_type"]
           contract: string
+          currency_unit: string | null
           exchange: string
           exchange_price: number
           exchange_rate_bolsa: number
           exchange_rate_option: number | null
           id: string
+          market: string | null
           option_cost: number | null
+          peso_saca_kg: number | null
           security_delta_freight: number | null
           security_delta_market: number | null
           stop_loss: number | null
+          ticker: string | null
+          ticker_b3: string | null
+          unit_measure: string | null
           updated_at: string
           volatility: number | null
         }
         Insert: {
+          api_source?: string | null
           basis_by_port?: Json | null
+          bushels_per_ton?: number | null
           campaign_id: string
           commodity?: Database["public"]["Enums"]["commodity_type"]
           contract?: string
+          currency_unit?: string | null
           exchange?: string
           exchange_price?: number
           exchange_rate_bolsa?: number
           exchange_rate_option?: number | null
           id?: string
+          market?: string | null
           option_cost?: number | null
+          peso_saca_kg?: number | null
           security_delta_freight?: number | null
           security_delta_market?: number | null
           stop_loss?: number | null
+          ticker?: string | null
+          ticker_b3?: string | null
+          unit_measure?: string | null
           updated_at?: string
           volatility?: number | null
         }
         Update: {
+          api_source?: string | null
           basis_by_port?: Json | null
+          bushels_per_ton?: number | null
           campaign_id?: string
           commodity?: Database["public"]["Enums"]["commodity_type"]
           contract?: string
+          currency_unit?: string | null
           exchange?: string
           exchange_price?: number
           exchange_rate_bolsa?: number
           exchange_rate_option?: number | null
           id?: string
+          market?: string | null
           option_cost?: number | null
+          peso_saca_kg?: number | null
           security_delta_freight?: number | null
           security_delta_market?: number | null
           stop_loss?: number | null
+          ticker?: string | null
+          ticker_b3?: string | null
+          unit_measure?: string | null
           updated_at?: string
           volatility?: number | null
         }

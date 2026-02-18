@@ -10,7 +10,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
 import { Textarea } from '@/components/ui/textarea';
-import { Plus, Trash2, Save, Upload, ClipboardPaste } from 'lucide-react';
+import { Plus, Trash2, Save, Upload, ClipboardPaste, Wifi, Loader2 } from 'lucide-react';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Calendar } from '@/components/ui/calendar';
 import { format } from 'date-fns';
@@ -168,6 +168,11 @@ export default function CommoditiesTab({ campaignId, campaignCommodities = [] }:
     }
   }, [campaignId]);
 
+  // API config state
+  const [apiConfig, setApiConfig] = useState({ ticker: '', ticker_b3: '', api_source: 'yahoo', bushels_per_ton: 36.744, peso_saca_kg: 60, currency_unit: 'USc', unit_measure: 'bushel', market: 'CBOT' });
+  const [testingApi, setTestingApi] = useState(false);
+  const [apiTestResult, setApiTestResult] = useState<any>(null);
+
   useEffect(() => {
     if (pricingList) {
       const existing = pricingList.find((p: any) => p.commodity === selectedCommodity);
@@ -175,7 +180,13 @@ export default function CommoditiesTab({ campaignId, campaignCommodities = [] }:
         setPricingForm({ id: existing.id, exchange: existing.exchange, contract: existing.contract, exchange_price: existing.exchange_price, exchange_rate_bolsa: existing.exchange_rate_bolsa, exchange_rate_option: existing.exchange_rate_option, option_cost: existing.option_cost, security_delta_market: existing.security_delta_market, security_delta_freight: existing.security_delta_freight, stop_loss: existing.stop_loss, volatility: existing.volatility });
         const bp = existing.basis_by_port as any;
         setBasisPorts(bp && typeof bp === 'object' ? Object.entries(bp).map(([port, basis]) => ({ port, basis: Number(basis) })) : []);
-      } else { setPricingForm(null); setBasisPorts([]); }
+        setApiConfig({
+          ticker: (existing as any).ticker || '', ticker_b3: (existing as any).ticker_b3 || '',
+          api_source: (existing as any).api_source || 'yahoo', bushels_per_ton: Number((existing as any).bushels_per_ton || 36.744),
+          peso_saca_kg: Number((existing as any).peso_saca_kg || 60), currency_unit: (existing as any).currency_unit || 'USc',
+          unit_measure: (existing as any).unit_measure || 'bushel', market: (existing as any).market || 'CBOT',
+        });
+      } else { setPricingForm(null); setBasisPorts([]); setApiConfig({ ticker: '', ticker_b3: '', api_source: 'yahoo', bushels_per_ton: 36.744, peso_saca_kg: 60, currency_unit: 'USc', unit_measure: 'bushel', market: 'CBOT' }); }
     }
   }, [pricingList, selectedCommodity]);
 
@@ -350,6 +361,7 @@ export default function CommoditiesTab({ campaignId, campaignCommodities = [] }:
           <TabsTrigger value="locais">Locais de Entrega</TabsTrigger>
           <TabsTrigger value="precos_indicativos">Preços Indicativos</TabsTrigger>
           <TabsTrigger value="fretes">Fretes</TabsTrigger>
+          <TabsTrigger value="consulta_api">Consulta API</TabsTrigger>
         </TabsList>
 
         {/* Pricing Tab */}
@@ -615,6 +627,132 @@ export default function CommoditiesTab({ campaignId, campaignCommodities = [] }:
                 </TableBody>
               </Table>
             ) : <p className="text-sm text-muted-foreground text-center py-4 border border-dashed border-border rounded-md">Nenhum redutor de frete.</p>}
+          </div>
+        </TabsContent>
+
+        {/* API Configuration Tab */}
+        <TabsContent value="consulta_api" className="mt-4">
+          <div className="border border-border rounded-md p-4 space-y-4">
+            <Label className="font-semibold flex items-center gap-2"><Wifi className="w-4 h-4" /> Consulta API - {COMMODITIES.find(x => x.value === selectedCommodity)?.label}</Label>
+            <p className="text-xs text-muted-foreground">Configure os parâmetros para consulta de preços em tempo real via APIs públicas (Yahoo Finance, B3, etc).</p>
+
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              <div className="space-y-1">
+                <Label className="text-xs">Fonte da API</Label>
+                <Select value={apiConfig.api_source} onValueChange={v => setApiConfig(prev => ({ ...prev, api_source: v }))}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="yahoo">Yahoo Finance</SelectItem>
+                    <SelectItem value="b3">B3 (via Yahoo)</SelectItem>
+                    <SelectItem value="manual">Manual</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">Ticker Yahoo</Label>
+                <Input value={apiConfig.ticker} onChange={e => setApiConfig(prev => ({ ...prev, ticker: e.target.value }))} placeholder="Ex: ZS=F, ZC=F, KC=F" />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">Ticker B3</Label>
+                <Input value={apiConfig.ticker_b3} onChange={e => setApiConfig(prev => ({ ...prev, ticker_b3: e.target.value }))} placeholder="Ex: CCM, SJC, ICF" />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">Mercado</Label>
+                <Input value={apiConfig.market} onChange={e => setApiConfig(prev => ({ ...prev, market: e.target.value }))} placeholder="Ex: CBOT, ICE, B3" />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">Unidade de Moeda</Label>
+                <Select value={apiConfig.currency_unit} onValueChange={v => setApiConfig(prev => ({ ...prev, currency_unit: v }))}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="USc">USc (Centavos USD)</SelectItem>
+                    <SelectItem value="USD">USD (Dólares)</SelectItem>
+                    <SelectItem value="BRL">BRL (Reais)</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">Unidade de Medida</Label>
+                <Input value={apiConfig.unit_measure} onChange={e => setApiConfig(prev => ({ ...prev, unit_measure: e.target.value }))} placeholder="Ex: bushel, libra, saca" />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">Bushels/Ton (fator conversão)</Label>
+                <Input type="number" step="0.001" value={apiConfig.bushels_per_ton} onChange={e => setApiConfig(prev => ({ ...prev, bushels_per_ton: Number(e.target.value) }))} />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">Peso Saca (kg)</Label>
+                <Input type="number" value={apiConfig.peso_saca_kg} onChange={e => setApiConfig(prev => ({ ...prev, peso_saca_kg: Number(e.target.value) }))} />
+              </div>
+            </div>
+
+            {/* Reference defaults */}
+            <div className="bg-muted/50 rounded p-3 space-y-1">
+              <Label className="text-xs font-medium">Referência de Tickers</Label>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-xs text-muted-foreground">
+                <div><strong>Soja:</strong> ZS=F (36.744 bu/ton)</div>
+                <div><strong>Milho:</strong> ZC=F (39.368 bu/ton)</div>
+                <div><strong>Café:</strong> KC=F (132.277 lb/ton)</div>
+                <div><strong>Algodão:</strong> CT=F (22.046 lb/ton)</div>
+                <div><strong>Câmbio:</strong> USDBRL=X</div>
+                <div><strong>Milho B3:</strong> CCM=F</div>
+                <div><strong>Soja B3:</strong> SJC=F</div>
+                <div><strong>Café B3:</strong> ICF=F</div>
+              </div>
+            </div>
+
+            <div className="flex gap-2">
+              <Button onClick={async () => {
+                if (!campaignId) return;
+                const basisObj: any = {};
+                basisPorts.forEach(bp => { basisObj[bp.port] = bp.basis; });
+                try {
+                  await upsertPricing.mutateAsync({ ...pricingForm, campaign_id: campaignId, commodity: selectedCommodity, basis_by_port: basisObj, ...apiConfig });
+                  toast.success('Configuração de API salva');
+                } catch (e: any) { toast.error(e.message); }
+              }} disabled={upsertPricing.isPending}>
+                <Save className="w-4 h-4 mr-1" /> Salvar Configuração
+              </Button>
+
+              <Button variant="outline" disabled={!apiConfig.ticker || testingApi} onClick={async () => {
+                setTestingApi(true);
+                setApiTestResult(null);
+                try {
+                  const projectId = import.meta.env.VITE_SUPABASE_PROJECT_ID || 'iezoyqbrcfebdzwjxfbd';
+                  const session = await supabase.auth.getSession();
+                  const token = session.data.session?.access_token;
+                  const response = await fetch(
+                    `https://${projectId}.supabase.co/functions/v1/realtime-pricing/fetch-price`,
+                    {
+                      method: 'POST',
+                      headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${token || import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
+                        'apikey': import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
+                      },
+                      body: JSON.stringify({ ticker: apiConfig.ticker, currency_unit: apiConfig.currency_unit }),
+                    }
+                  );
+                  const data = await response.json();
+                  if (!response.ok) throw new Error(data.error);
+                  setApiTestResult(data);
+                  toast.success(`Preço obtido: ${data.price_usd} USD`);
+                } catch (e: any) {
+                  toast.error('Erro na consulta: ' + e.message);
+                  setApiTestResult({ error: e.message });
+                } finally {
+                  setTestingApi(false);
+                }
+              }}>
+                {testingApi ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : <Wifi className="w-4 h-4 mr-1" />}
+                Testar Consulta
+              </Button>
+            </div>
+
+            {apiTestResult && (
+              <div className={`rounded p-3 text-xs font-mono ${apiTestResult.error ? 'bg-destructive/10 text-destructive' : 'bg-primary/10 text-foreground'}`}>
+                <pre className="whitespace-pre-wrap">{JSON.stringify(apiTestResult, null, 2)}</pre>
+              </div>
+            )}
           </div>
         </TabsContent>
       </Tabs>
