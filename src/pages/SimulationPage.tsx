@@ -4,7 +4,7 @@ import { useActiveCampaigns, useCampaignData } from '@/hooks/useActiveCampaign';
 import { useCreateOperation, useCreateOperationItems, useCreateOperationLog } from '@/hooks/useOperations';
 import { useAuth } from '@/contexts/AuthContext';
 import { calculateAgronomicSelection } from '@/engines/agronomic';
-import { applyComboCascade, getMaxPossibleDiscount, getActivatedDiscount } from '@/engines/combo-cascade';
+import { applyComboCascade, getMaxPossibleDiscount, getActivatedDiscount, getSuggestedDoseForRef } from '@/engines/combo-cascade';
 import { decomposePricing, calculateGrossToNet } from '@/engines/pricing';
 import type { AgronomicSelection, ChannelSegment, Product } from '@/types/barter';
 import { Plus, Minus, Wheat, ShoppingCart, TrendingUp, AlertCircle, Save, Loader2 } from 'lucide-react';
@@ -51,7 +51,10 @@ export default function SimulationPage() {
       next.delete(productId);
     } else {
       const prod = products.find(p => p.id === productId)!;
-      next.set(productId, prod.dosePerHectare);
+      // Use combo-suggested dose if product's default is outside combo ranges
+      const suggestedDose = getSuggestedDoseForRef(combos, prod.ref || '');
+      const defaultDose = suggestedDose !== null ? suggestedDose : prod.dosePerHectare;
+      next.set(productId, defaultDose);
     }
     setSelectedProducts(next);
   };
