@@ -1,13 +1,14 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useCallback } from 'react';
 import { motion } from 'framer-motion';
 import { useLocation } from 'react-router-dom';
 import { useCampaignData } from '@/hooks/useActiveCampaign';
 import { useUpdateOperation, useCreateOperationLog } from '@/hooks/useOperations';
 import { useAuth } from '@/contexts/AuthContext';
+import { useRealtimePricing } from '@/hooks/useRealtimePricing';
 import { mockCommodityPricing, mockFreightReducers } from '@/data/mock-data';
 import { calculateCommodityNetPrice, calculateParity, blackScholes } from '@/engines/parity';
 import type { CommodityPricing, FreightReducer } from '@/types/barter';
-import { Wheat, ArrowRight, TrendingUp, DollarSign, Truck, Shield, Save, Loader2 } from 'lucide-react';
+import { Wheat, ArrowRight, TrendingUp, DollarSign, Truck, Shield, Save, Loader2, RefreshCw, MapPin, Zap } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
@@ -15,6 +16,9 @@ import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { toast } from 'sonner';
+
+import ParityInputs from '@/components/parity/ParityInputs';
+import ParityResults from '@/components/parity/ParityResults';
 
 export default function ParityPage() {
   const location = useLocation();
@@ -24,11 +28,11 @@ export default function ParityPage() {
   const campaignId = (location.state as any)?.campaignId;
   const operationId = (location.state as any)?.operationId;
 
-  const { commodityPricing, freightReducers, isLoading } = useCampaignData(campaignId);
+  const { commodityPricing, freightReducers, rawCommodityPricing, deliveryLocations, isLoading } = useCampaignData(campaignId);
   const updateOperation = useUpdateOperation();
   const createLog = useCreateOperationLog();
+  const { fetchLivePrice, fetchExchangeRate, calculateDistance, loading: realtimeLoading } = useRealtimePricing();
 
-  // Use real data if available, fallback to mock
   const pricing: CommodityPricing = commodityPricing || mockCommodityPricing;
   const freights: FreightReducer[] = freightReducers.length > 0 ? freightReducers : mockFreightReducers;
 
@@ -42,22 +46,104 @@ export default function ParityPage() {
   const [showInsurance, setShowInsurance] = useState(false);
   const [volatility, setVolatility] = useState(25);
 
+  // Live price state
+  const [livePrice, setLivePrice] = useState<number | null>(null);
+  const [liveExchangeRate, setLiveExchangeRate] = useState<number | null>(null);
+  const [livePriceTimestamp, setLivePriceTimestamp] = useState<string | null>(null);
+  const [autoDistanceKm, setAutoDistanceKm] = useState<number | null>(null);
+  const [selectedDeliveryLocation, setSelectedDeliveryLocation] = useState<string>('');
+
+  // Build effective pricing with live data overlay
+  const effectivePricing: CommodityPricing = useMemo(() => {
+    return {
+      ...pricing,
+      exchangePrice: livePrice ?? pricing.exchangePrice,
+      exchangeRateBolsa: liveExchangeRate ?? pricing.exchangeRateBolsa,
+    };
+  }, [pricing, livePrice, liveExchangeRate]);
+
   const freightReducer = freights.find(f => f.origin === freightOrigin);
 
-  const commodityNetPrice = useMemo(() => calculateCommodityNetPrice(pricing, port, freightReducer), [port, freightReducer, pricing]);
+  // Auto-distance override for freight
+  const effectiveFreightReducer: FreightReducer | undefined = useMemo(() => {
+    if (autoDistanceKm !== null && freightReducer) {
+      const autoTotal = autoDistanceKm * freightReducer.costPerKm + (freightReducer.adjustment || 0);
+      return { ...freightReducer, distanceKm: autoDistanceKm, totalReducer: autoTotal };
+    }
+    return freightReducer;
+  }, [freightReducer, autoDistanceKm]);
+
+  const commodityNetPrice = useMemo(() => calculateCommodityNetPrice(effectivePricing, port, effectiveFreightReducer), [port, effectiveFreightReducer, effectivePricing]);
   const parity = useMemo(() => calculateParity(amount, commodityNetPrice, hasContract ? userPrice : undefined, grossAmount), [amount, commodityNetPrice, hasContract, userPrice, grossAmount]);
 
   const insurancePremium = useMemo(() => {
     if (!showInsurance) return null;
-    const spotPrice = pricing.exchangePrice * pricing.exchangeRateBolsa;
+    const spotPrice = effectivePricing.exchangePrice * effectivePricing.exchangeRateBolsa;
     const premium = blackScholes(spotPrice, spotPrice * 1.05, 0.5, 0.06, volatility / 100, true);
     const premiumPerSaca = premium * 16.667;
     const additionalSacas = Math.ceil(premiumPerSaca * parity.quantitySacas / commodityNetPrice);
     return { premiumPerSaca, additionalSacas, totalSacas: parity.quantitySacas + additionalSacas };
-  }, [showInsurance, volatility, parity, commodityNetPrice, pricing]);
+  }, [showInsurance, volatility, parity, commodityNetPrice, effectivePricing]);
 
-  const formatCurrency = (v: number) => v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
-  const formatNum = (v: number) => v.toLocaleString('pt-BR', { maximumFractionDigits: 2 });
+  const rawCommodity = rawCommodityPricing?.[0];
+
+  const handleFetchLivePrice = useCallback(async () => {
+    try {
+      const ticker = rawCommodity?.ticker || 'ZS=F';
+      const currencyUnit = rawCommodity?.currency_unit || 'USc';
+      const bushelsTon = rawCommodity?.bushels_per_ton || 36.744;
+      const pesoSaca = rawCommodity?.peso_saca_kg || 60;
+
+      const [priceResult, exchangeResult] = await Promise.all([
+        fetchLivePrice(ticker, currencyUnit),
+        fetchExchangeRate(),
+      ]);
+
+      // Convert to USD per bushel if needed
+      const priceUsdBu = priceResult.price_usd;
+      setLivePrice(priceUsdBu);
+      setLiveExchangeRate(exchangeResult.rate);
+      setLivePriceTimestamp(priceResult.timestamp);
+
+      toast.success(`Preço atualizado: US$ ${priceUsdBu.toFixed(4)}/bu | Câmbio: R$ ${exchangeResult.rate.toFixed(4)}`);
+    } catch (e: any) {
+      toast.error('Erro ao buscar preço: ' + e.message);
+    }
+  }, [rawCommodity, fetchLivePrice, fetchExchangeRate]);
+
+  // Port coordinates for distance calculation
+  const portCoordinates: Record<string, { lat: number; lng: number }> = {
+    'Paranaguá (PR)': { lat: -25.5163, lng: -48.5164 },
+    'Santarem (PA)': { lat: -2.4388, lng: -54.7089 },
+    'Itaqui (MA)': { lat: -2.5614, lng: -44.3683 },
+    'Ilhéus (BA)': { lat: -14.7936, lng: -39.0463 },
+    'Santos (SP)': { lat: -23.9535, lng: -46.3338 },
+    'Rio Grande (RS)': { lat: -32.0349, lng: -52.0986 },
+  };
+
+  const handleCalculateDistance = useCallback(async () => {
+    if (!selectedDeliveryLocation) {
+      toast.error('Selecione um local de entrega');
+      return;
+    }
+    const loc = deliveryLocations.find(l => l.id === selectedDeliveryLocation);
+    if (!loc || !loc.latitude || !loc.longitude) {
+      toast.error('Local de entrega sem coordenadas cadastradas');
+      return;
+    }
+    const portCoord = portCoordinates[port];
+    if (!portCoord) {
+      toast.error('Porto sem coordenadas configuradas');
+      return;
+    }
+    try {
+      const result = await calculateDistance(loc.latitude, loc.longitude, portCoord.lat, portCoord.lng);
+      setAutoDistanceKm(result.distancia_km);
+      toast.success(`Distância calculada: ${result.distancia_km.toFixed(0)} km (${result.metodo})`);
+    } catch (e: any) {
+      toast.error('Erro ao calcular distância: ' + e.message);
+    }
+  }, [selectedDeliveryLocation, deliveryLocations, port, calculateDistance]);
 
   const handleSaveParity = async () => {
     if (!operationId || !user) return;
@@ -76,13 +162,16 @@ export default function ParityPage() {
         operation_id: operationId,
         user_id: user.id,
         action: 'paridade_calculada',
-        details: { sacas: parity.quantitySacas, preco: parity.commodityPricePerUnit, port },
+        details: { sacas: parity.quantitySacas, preco: parity.commodityPricePerUnit, port, livePrice, liveExchangeRate },
       });
       toast.success('Paridade salva na operação!');
     } catch (e: any) {
       toast.error('Erro: ' + e.message);
     }
   };
+
+  const formatCurrency = (v: number) => v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+  const formatNum = (v: number) => v.toLocaleString('pt-BR', { maximumFractionDigits: 2 });
 
   return (
     <div className="p-6 space-y-6">
@@ -91,150 +180,81 @@ export default function ParityPage() {
           <h1 className="text-2xl font-bold text-foreground">Paridade Barter</h1>
           <p className="text-sm text-muted-foreground">Conversão do montante em sacas de commodity</p>
         </div>
-        {operationId && (
-          <Button onClick={handleSaveParity} disabled={updateOperation.isPending} className="bg-primary text-primary-foreground">
-            {updateOperation.isPending ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Save className="w-4 h-4 mr-2" />}
-            Salvar Paridade
+        <div className="flex gap-2">
+          <Button variant="outline" onClick={handleFetchLivePrice} disabled={realtimeLoading} className="border-primary/30">
+            {realtimeLoading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Zap className="w-4 h-4 mr-2 text-primary" />}
+            Preço ao Vivo
           </Button>
-        )}
+          {operationId && (
+            <Button onClick={handleSaveParity} disabled={updateOperation.isPending} className="bg-primary text-primary-foreground">
+              {updateOperation.isPending ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Save className="w-4 h-4 mr-2" />}
+              Salvar Paridade
+            </Button>
+          )}
+        </div>
       </div>
+
+      {/* Live data banner */}
+      {livePrice !== null && (
+        <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} className="glass-card p-3 flex items-center gap-4 border border-primary/30">
+          <Zap className="w-5 h-5 text-primary" />
+          <div className="flex-1 flex gap-6 text-sm">
+            <div><span className="text-muted-foreground">Preço Bolsa:</span> <span className="font-mono font-bold text-foreground">US$ {livePrice.toFixed(4)}/bu</span></div>
+            <div><span className="text-muted-foreground">Câmbio:</span> <span className="font-mono font-bold text-foreground">R$ {liveExchangeRate?.toFixed(4)}</span></div>
+            <div><span className="text-muted-foreground">Atualizado:</span> <span className="font-mono text-muted-foreground">{livePriceTimestamp ? new Date(livePriceTimestamp).toLocaleTimeString('pt-BR') : '-'}</span></div>
+          </div>
+          <Button variant="ghost" size="sm" onClick={handleFetchLivePrice} disabled={realtimeLoading}>
+            <RefreshCw className={`w-4 h-4 ${realtimeLoading ? 'animate-spin' : ''}`} />
+          </Button>
+        </motion.div>
+      )}
 
       {isLoading ? (
         <Skeleton className="h-96 w-full" />
       ) : (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* Left: Inputs */}
-          <div className="space-y-4">
-            <div className="glass-card p-4 space-y-4">
-              <h3 className="text-sm font-semibold text-foreground flex items-center gap-2"><DollarSign className="w-4 h-4 text-primary" /> Montante</h3>
-              <div>
-                <label className="stat-label">Valor Total do Pedido (R$)</label>
-                <Input type="number" value={amount} onChange={e => setAmount(Number(e.target.value))} className="mt-1 bg-muted border-border font-mono text-foreground" />
-              </div>
-            </div>
-
-            <div className="glass-card p-4 space-y-4">
-              <h3 className="text-sm font-semibold text-foreground flex items-center gap-2"><Wheat className="w-4 h-4 text-primary" /> Commodity</h3>
-              <div className="grid grid-cols-2 gap-2 text-xs">
-                <div className="bg-muted/50 rounded p-2"><span className="text-muted-foreground">Bolsa</span><div className="font-mono font-medium text-foreground">{pricing.exchange}</div></div>
-                <div className="bg-muted/50 rounded p-2"><span className="text-muted-foreground">Contrato</span><div className="font-mono font-medium text-foreground">{pricing.contract}</div></div>
-                <div className="bg-muted/50 rounded p-2"><span className="text-muted-foreground">Preço Bolsa</span><div className="font-mono font-medium text-foreground">US$ {pricing.exchangePrice}</div></div>
-                <div className="bg-muted/50 rounded p-2"><span className="text-muted-foreground">Câmbio</span><div className="font-mono font-medium text-foreground">R$ {pricing.exchangeRateBolsa}</div></div>
-              </div>
-            </div>
-
-            <div className="glass-card p-4 space-y-4">
-              <h3 className="text-sm font-semibold text-foreground flex items-center gap-2"><Truck className="w-4 h-4 text-primary" /> Logística</h3>
-              <div>
-                <label className="stat-label">Porto de Referência</label>
-                <Select value={port} onValueChange={setPort}>
-                  <SelectTrigger className="mt-1 bg-muted border-border text-foreground"><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    {ports.map(p => <SelectItem key={p} value={p}>{p}</SelectItem>)}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div>
-                <label className="stat-label">Origem (Frete)</label>
-                <Select value={freightOrigin} onValueChange={setFreightOrigin}>
-                  <SelectTrigger className="mt-1 bg-muted border-border text-foreground"><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    {freights.map(f => <SelectItem key={f.origin} value={f.origin}>{f.origin}</SelectItem>)}
-                  </SelectContent>
-                </Select>
-              </div>
-              {freightReducer && (
-                <div className="text-xs text-muted-foreground">
-                  Redutor logístico: <span className="font-mono text-warning">{formatCurrency(freightReducer.totalReducer)}/saca</span>
-                  <span className="ml-2">({freightReducer.distanceKm} km)</span>
-                </div>
-              )}
-            </div>
-
-            <div className="glass-card p-4 space-y-3">
-              <div className="flex items-center justify-between">
-                <Label className="text-sm text-foreground">Possui contrato de compra e venda?</Label>
-                <Switch checked={hasContract} onCheckedChange={setHasContract} />
-              </div>
-              {hasContract && (
-                <div>
-                  <label className="stat-label">Preço do Contrato (R$/saca)</label>
-                  <Input type="number" value={userPrice} onChange={e => setUserPrice(Number(e.target.value))} className="mt-1 bg-muted border-border font-mono text-foreground" step={0.5} />
-                </div>
-              )}
-            </div>
-
-            <div className="glass-card p-4 space-y-3">
-              <div className="flex items-center justify-between">
-                <Label className="text-sm text-foreground flex items-center gap-2"><Shield className="w-4 h-4 text-info" /> Seguro de Mercado</Label>
-                <Switch checked={showInsurance} onCheckedChange={setShowInsurance} />
-              </div>
-              {showInsurance && (
-                <div>
-                  <label className="stat-label">Volatilidade (%)</label>
-                  <Input type="number" value={volatility} onChange={e => setVolatility(Number(e.target.value))} className="mt-1 bg-muted border-border font-mono text-foreground" />
-                </div>
-              )}
-            </div>
-          </div>
-
-          {/* Right: Results */}
-          <div className="lg:col-span-2 space-y-4">
-            <motion.div initial={{ opacity: 0, scale: 0.98 }} animate={{ opacity: 1, scale: 1 }} className="glass-card p-6 glow-border">
-              <h3 className="text-sm font-semibold text-foreground mb-6">Resultado da Paridade</h3>
-              <div className="flex items-center justify-center gap-6 mb-8">
-                <div className="text-center"><div className="stat-label mb-1">Montante (R$)</div><div className="text-3xl font-bold font-mono text-foreground">{formatCurrency(amount)}</div></div>
-                <ArrowRight className="w-8 h-8 text-primary" />
-                <div className="text-center"><div className="stat-label mb-1">Sacas de Soja</div><div className="text-3xl font-bold font-mono text-success">{formatNum(insurancePremium?.totalSacas ?? parity.quantitySacas)}</div></div>
-              </div>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                <div className="bg-muted/30 rounded-lg p-3 text-center"><div className="stat-label">Preço Líquido</div><div className="font-mono font-bold text-foreground text-lg">{formatCurrency(parity.commodityPricePerUnit)}</div><div className="text-xs text-muted-foreground">/saca interior</div></div>
-                <div className="bg-muted/30 rounded-lg p-3 text-center"><div className="stat-label">Preço Valorizado</div><div className="font-mono font-bold text-primary text-lg">{formatCurrency(parity.referencePrice)}</div><div className="text-xs text-muted-foreground">/saca referência</div></div>
-                <div className="bg-muted/30 rounded-lg p-3 text-center"><div className="stat-label">Valorização</div><div className={`font-mono font-bold text-lg ${parity.valorization > 0 ? 'text-success' : 'text-destructive'}`}>{parity.valorization > 0 ? '+' : ''}{formatNum(parity.valorization)}%</div><div className="text-xs text-muted-foreground">vs contrato</div></div>
-                <div className="bg-muted/30 rounded-lg p-3 text-center"><div className="stat-label">Basis</div><div className="font-mono font-bold text-foreground text-lg">US$ {pricing.basisByPort[port]?.toFixed(2) ?? '0.00'}</div><div className="text-xs text-muted-foreground">{port}</div></div>
-              </div>
-            </motion.div>
-
-            {showInsurance && insurancePremium && (
-              <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="glass-card p-5">
-                <h3 className="text-sm font-semibold text-foreground mb-3 flex items-center gap-2"><Shield className="w-4 h-4 text-info" /> Seguro de Mercado (Black-Scholes)</h3>
-                <div className="grid grid-cols-3 gap-4">
-                  <div><div className="stat-label">Prêmio/Saca</div><div className="font-mono font-bold text-foreground">{formatCurrency(insurancePremium.premiumPerSaca)}</div></div>
-                  <div><div className="stat-label">Sacas Adicionais</div><div className="font-mono font-bold text-warning">+{formatNum(insurancePremium.additionalSacas)}</div></div>
-                  <div><div className="stat-label">Total c/ Seguro</div><div className="font-mono font-bold text-success text-lg">{formatNum(insurancePremium.totalSacas)} sacas</div></div>
-                </div>
-              </motion.div>
-            )}
-
-            <div className="glass-card p-5">
-              <h3 className="text-sm font-semibold text-foreground mb-3">Precificação da Commodity</h3>
-              <div className="space-y-2 text-sm font-mono">
-                <PricingRow label="Preço Bolsa (CBOT)" value={`US$ ${pricing.exchangePrice}`} />
-                <PricingRow label={`Basis ${port}`} value={`US$ ${pricing.basisByPort[port]?.toFixed(2)}`} />
-                <PricingRow label="Preço FOB" value={`US$ ${(pricing.exchangePrice + (pricing.basisByPort[port] ?? 0)).toFixed(2)}`} />
-                <PricingRow label="Câmbio" value={`R$ ${pricing.exchangeRateBolsa}`} />
-                <PricingRow label="Preço FOB (R$/saca)" value={formatCurrency((pricing.exchangePrice + (pricing.basisByPort[port] ?? 0)) * pricing.exchangeRateBolsa)} />
-                <PricingRow label="Delta Mercado" value={`-${pricing.securityDeltaMarket}%`} highlight />
-                {freightReducer && <PricingRow label={`Frete ${freightReducer.origin}`} value={`-${formatCurrency(freightReducer.totalReducer)}`} highlight />}
-                <PricingRow label="Delta Frete" value={`-${pricing.securityDeltaFreight}%`} highlight />
-                <div className="pt-2 border-t border-border flex justify-between font-bold">
-                  <span className="text-foreground">Preço Líquido Interior</span>
-                  <span className="text-success">{formatCurrency(commodityNetPrice)}/saca</span>
-                </div>
-              </div>
-            </div>
-          </div>
+          <ParityInputs
+            amount={amount}
+            setAmount={setAmount}
+            pricing={effectivePricing}
+            livePrice={livePrice}
+            ports={ports}
+            port={port}
+            setPort={setPort}
+            freights={freights}
+            freightOrigin={freightOrigin}
+            setFreightOrigin={setFreightOrigin}
+            freightReducer={effectiveFreightReducer}
+            hasContract={hasContract}
+            setHasContract={setHasContract}
+            userPrice={userPrice}
+            setUserPrice={setUserPrice}
+            showInsurance={showInsurance}
+            setShowInsurance={setShowInsurance}
+            volatility={volatility}
+            setVolatility={setVolatility}
+            deliveryLocations={deliveryLocations}
+            selectedDeliveryLocation={selectedDeliveryLocation}
+            setSelectedDeliveryLocation={setSelectedDeliveryLocation}
+            autoDistanceKm={autoDistanceKm}
+            onCalculateDistance={handleCalculateDistance}
+            realtimeLoading={realtimeLoading}
+            formatCurrency={formatCurrency}
+          />
+          <ParityResults
+            amount={amount}
+            parity={parity}
+            insurancePremium={insurancePremium}
+            pricing={effectivePricing}
+            port={port}
+            freightReducer={effectiveFreightReducer}
+            commodityNetPrice={commodityNetPrice}
+            showInsurance={showInsurance}
+            formatCurrency={formatCurrency}
+            formatNum={formatNum}
+          />
         </div>
       )}
-    </div>
-  );
-}
-
-function PricingRow({ label, value, highlight }: { label: string; value: string; highlight?: boolean }) {
-  return (
-    <div className="flex justify-between py-0.5">
-      <span className="text-muted-foreground">{label}</span>
-      <span className={highlight ? 'text-warning' : 'text-foreground'}>{value}</span>
     </div>
   );
 }
