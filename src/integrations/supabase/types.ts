@@ -949,6 +949,7 @@ export type Database = {
           active_ingredient: string | null
           boxes_per_pallet: number
           category: string
+          code: string | null
           created_at: string
           currency: string
           dose_per_hectare: number
@@ -959,8 +960,11 @@ export type Database = {
           name: string
           package_sizes: number[] | null
           pallets_per_truck: number
+          price_cash: number | null
           price_per_unit: number
+          price_term: number | null
           price_type: string
+          ref: string | null
           unit_type: string
           units_per_box: number
         }
@@ -968,6 +972,7 @@ export type Database = {
           active_ingredient?: string | null
           boxes_per_pallet?: number
           category: string
+          code?: string | null
           created_at?: string
           currency?: string
           dose_per_hectare?: number
@@ -978,8 +983,11 @@ export type Database = {
           name: string
           package_sizes?: number[] | null
           pallets_per_truck?: number
+          price_cash?: number | null
           price_per_unit?: number
+          price_term?: number | null
           price_type?: string
+          ref?: string | null
           unit_type?: string
           units_per_box?: number
         }
@@ -987,6 +995,7 @@ export type Database = {
           active_ingredient?: string | null
           boxes_per_pallet?: number
           category?: string
+          code?: string | null
           created_at?: string
           currency?: string
           dose_per_hectare?: number
@@ -997,8 +1006,11 @@ export type Database = {
           name?: string
           package_sizes?: number[] | null
           pallets_per_truck?: number
+          price_cash?: number | null
           price_per_unit?: number
+          price_term?: number | null
           price_type?: string
+          ref?: string | null
           unit_type?: string
           units_per_box?: number
         }

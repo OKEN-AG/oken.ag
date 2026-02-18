@@ -1,248 +1,264 @@
-import { useState } from 'react';
+import { useState, useRef, useCallback } from 'react';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
-import { Switch } from '@/components/ui/switch';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Badge } from '@/components/ui/badge';
-import { Plus, Trash2, Link2, Unlink, Edit2, X, Check } from 'lucide-react';
+import { Plus, Trash2, Unlink, Upload, ClipboardPaste } from 'lucide-react';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
+import { Textarea } from '@/components/ui/textarea';
 import { useProducts, useCreateProduct, useDeleteProduct, useUpdateProduct, useCampaignProducts, useLinkProductToCampaign, useUnlinkProductFromCampaign } from '@/hooks/useProducts';
 import { toast } from 'sonner';
-
-const CATEGORIES = ['Herbicida', 'Fungicida', 'Inseticida', 'Adjuvante', 'Fertilizante', 'Biológico', 'Tratamento de Sementes'];
-
-const emptyProduct = {
-  name: '', category: 'Herbicida', active_ingredient: '', unit_type: 'l',
-  package_sizes: [] as number[], units_per_box: 4, boxes_per_pallet: 40, pallets_per_truck: 20,
-  dose_per_hectare: 1, min_dose: 0.1, max_dose: 10, price_per_unit: 0,
-  currency: 'USD', price_type: 'vista', includes_margin: false,
-};
+import * as XLSX from 'xlsx';
 
 type Props = { campaignId?: string };
 
+type EditingCell = { rowId: string; field: string } | null;
+
 export default function ProductsTab({ campaignId }: Props) {
-  const { data: allProducts, isLoading } = useProducts();
-  const { data: linkedProducts } = useCampaignProducts(campaignId);
+  const { data: allProducts } = useProducts();
+  const { data: linkedProducts, isLoading } = useCampaignProducts(campaignId);
   const createMut = useCreateProduct();
   const updateMut = useUpdateProduct();
   const deleteMut = useDeleteProduct();
   const linkMut = useLinkProductToCampaign();
   const unlinkMut = useUnlinkProductFromCampaign();
+  const fileRef = useRef<HTMLInputElement>(null);
 
-  const [showForm, setShowForm] = useState(false);
-  const [editId, setEditId] = useState<string | null>(null);
-  const [form, setForm] = useState(emptyProduct);
-  const [pkgInput, setPkgInput] = useState('');
+  const [editing, setEditing] = useState<EditingCell>(null);
+  const [editValue, setEditValue] = useState('');
+  const [pasteOpen, setPasteOpen] = useState(false);
+  const [pasteText, setPasteText] = useState('');
 
-  const linkedIds = new Set((linkedProducts || []).map((lp: any) => lp.product_id));
+  const products = (linkedProducts || []).map((lp: any) => lp.product).filter(Boolean);
 
-  const onField = (k: string, v: any) => setForm(p => ({ ...p, [k]: v }));
-
-  const addPkg = () => {
-    const n = Number(pkgInput);
-    if (n > 0 && !form.package_sizes.includes(n)) {
-      onField('package_sizes', [...form.package_sizes, n].sort((a, b) => a - b));
-      setPkgInput('');
-    }
+  const startEdit = (rowId: string, field: string, currentValue: any) => {
+    setEditing({ rowId, field });
+    setEditValue(String(currentValue ?? ''));
   };
 
-  const resetForm = () => { setForm(emptyProduct); setEditId(null); setShowForm(false); setPkgInput(''); };
+  const commitEdit = async () => {
+    if (!editing) return;
+    const { rowId, field } = editing;
+    const product = products.find((p: any) => p.id === rowId);
+    if (!product) { setEditing(null); return; }
 
-  const handleSave = async () => {
-    if (!form.name || !form.category) { toast.error('Nome e categoria são obrigatórios'); return; }
+    let val: any = editValue;
+    if (['price_cash', 'price_term', 'price_per_unit', 'units_per_box', 'dose_per_hectare', 'min_dose', 'max_dose', 'boxes_per_pallet'].includes(field)) {
+      val = Number(editValue.replace(',', '.')) || 0;
+    }
+    if (val === product[field]) { setEditing(null); return; }
+
     try {
-      if (editId) {
-        await updateMut.mutateAsync({ id: editId, ...form });
-        toast.success('Produto atualizado');
-      } else {
-        const created = await createMut.mutateAsync(form);
-        if (campaignId) await linkMut.mutateAsync({ campaignId, productId: created.id });
-        toast.success('Produto criado e vinculado');
-      }
-      resetForm();
+      await updateMut.mutateAsync({ id: rowId, [field]: val });
+    } catch (e: any) { toast.error(e.message); }
+    setEditing(null);
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' || e.key === 'Tab') { e.preventDefault(); commitEdit(); }
+    if (e.key === 'Escape') setEditing(null);
+  };
+
+  const addEmptyRow = async () => {
+    if (!campaignId) return;
+    try {
+      const created = await createMut.mutateAsync({
+        name: 'Novo Produto', category: 'Herbicida', code: '', ref: '',
+        price_cash: 0, price_term: 0, price_per_unit: 0, units_per_box: 12,
+        unit_type: 'l', dose_per_hectare: 1, min_dose: 0.1, max_dose: 10,
+        boxes_per_pallet: 40, pallets_per_truck: 20, currency: 'USD',
+        price_type: 'vista', includes_margin: false,
+      });
+      await linkMut.mutateAsync({ campaignId, productId: created.id });
+      toast.success('Linha adicionada');
     } catch (e: any) { toast.error(e.message); }
   };
 
-  const startEdit = (p: any) => {
-    setForm({
-      name: p.name, category: p.category, active_ingredient: p.active_ingredient || '',
-      unit_type: p.unit_type, package_sizes: p.package_sizes || [], units_per_box: p.units_per_box,
-      boxes_per_pallet: p.boxes_per_pallet, pallets_per_truck: p.pallets_per_truck,
-      dose_per_hectare: p.dose_per_hectare, min_dose: p.min_dose, max_dose: p.max_dose,
-      price_per_unit: p.price_per_unit, currency: p.currency, price_type: p.price_type,
-      includes_margin: p.includes_margin,
-    });
-    setEditId(p.id);
-    setShowForm(true);
+  const parseRows = (text: string) => {
+    const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
+    const rows: any[] = [];
+    for (const line of lines) {
+      const parts = line.split(/\t|;/).map(s => s.trim());
+      if (parts.length < 5) continue;
+      // Skip header lines
+      if (parts[0]?.toUpperCase() === '#' || parts[0]?.toUpperCase() === 'CÓDIGO') continue;
+      const num = (s: string) => Number(s.replace(',', '.').replace(/[^\d.-]/g, '')) || 0;
+      rows.push({
+        code: parts[0] || '',
+        name: parts[1] || '',
+        ref: parts[2] || '',
+        price_cash: num(parts[3]),
+        price_term: num(parts[4]),
+        units_per_box: parts[5] ? num(parts[5]) : 12,
+        unit_type: 'l',
+        dose_per_hectare: parts[6] ? num(parts[6]) : 1,
+        category: 'Herbicida',
+        price_per_unit: num(parts[3]),
+        min_dose: 0.1, max_dose: 10,
+        boxes_per_pallet: 40, pallets_per_truck: 20,
+        currency: 'USD', price_type: 'vista', includes_margin: false,
+      });
+    }
+    return rows;
+  };
+
+  const importRows = async (rows: any[]) => {
+    if (!campaignId || rows.length === 0) { toast.error('Nenhum dado válido encontrado'); return; }
+    let count = 0;
+    for (const row of rows) {
+      try {
+        const created = await createMut.mutateAsync(row);
+        await linkMut.mutateAsync({ campaignId, productId: created.id });
+        count++;
+      } catch (e: any) { console.error(e); }
+    }
+    toast.success(`${count} produtos importados`);
+  };
+
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.name.endsWith('.csv') || file.name.endsWith('.txt')) {
+      const text = await file.text();
+      await importRows(parseRows(text));
+    } else {
+      const ab = await file.arrayBuffer();
+      const wb = XLSX.read(ab);
+      const ws = wb.Sheets[wb.SheetNames[0]];
+      const csv = XLSX.utils.sheet_to_csv(ws, { FS: '\t' });
+      await importRows(parseRows(csv));
+    }
+    if (fileRef.current) fileRef.current.value = '';
+  };
+
+  const handlePasteImport = async () => {
+    await importRows(parseRows(pasteText));
+    setPasteText('');
+    setPasteOpen(false);
+  };
+
+  const renderCell = (product: any, field: string, display?: string) => {
+    const isEditing = editing?.rowId === product.id && editing?.field === field;
+    if (isEditing) {
+      return (
+        <Input
+          autoFocus
+          value={editValue}
+          onChange={e => setEditValue(e.target.value)}
+          onBlur={commitEdit}
+          onKeyDown={handleKeyDown}
+          className="h-7 text-xs px-1 bg-background border-primary"
+        />
+      );
+    }
+    return (
+      <div
+        className="cursor-pointer hover:bg-accent/50 rounded px-1 py-0.5 min-h-[28px] flex items-center text-xs"
+        onClick={() => startEdit(product.id, field, product[field])}
+      >
+        {display ?? (product[field] ?? '')}
+      </div>
+    );
   };
 
   if (!campaignId) return <p className="text-center py-8 text-muted-foreground">Salve a campanha primeiro para gerenciar produtos.</p>;
 
   return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <Label className="text-base font-semibold">Produtos da Campanha</Label>
-        <Button size="sm" onClick={() => { resetForm(); setShowForm(true); }}><Plus className="w-4 h-4 mr-1" /> Novo Produto</Button>
+    <div className="space-y-3">
+      <div className="flex items-center justify-between gap-2 flex-wrap">
+        <Label className="text-base font-semibold text-foreground">Portfólio de Produtos</Label>
+        <div className="flex gap-2">
+          <Button size="sm" variant="outline" onClick={() => setPasteOpen(true)}>
+            <ClipboardPaste className="w-4 h-4 mr-1" /> Colar Texto
+          </Button>
+          <Button size="sm" variant="outline" onClick={() => fileRef.current?.click()}>
+            <Upload className="w-4 h-4 mr-1" /> Importar CSV/XLS
+          </Button>
+          <input ref={fileRef} type="file" accept=".csv,.xls,.xlsx,.txt" className="hidden" onChange={handleFileUpload} />
+          <Button size="sm" onClick={addEmptyRow} disabled={createMut.isPending}>
+            <Plus className="w-4 h-4 mr-1" /> Linha
+          </Button>
+        </div>
       </div>
 
-      {showForm && (
-        <div className="border border-border rounded-md p-4 space-y-4 bg-muted/20">
-          <div className="flex items-center justify-between">
-            <Label className="font-semibold">{editId ? 'Editar Produto' : 'Novo Produto'}</Label>
-            <Button variant="ghost" size="icon" onClick={resetForm}><X className="w-4 h-4" /></Button>
-          </div>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-            <div className="space-y-1">
-              <Label className="text-xs">Nome</Label>
-              <Input value={form.name} onChange={e => onField('name', e.target.value)} placeholder="Ex: Glifosato 480 SL" />
-            </div>
-            <div className="space-y-1">
-              <Label className="text-xs">Categoria</Label>
-              <Select value={form.category} onValueChange={v => onField('category', v)}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>{CATEGORIES.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}</SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-1">
-              <Label className="text-xs">Ingrediente Ativo</Label>
-              <Input value={form.active_ingredient} onChange={e => onField('active_ingredient', e.target.value)} />
-            </div>
-            <div className="space-y-1">
-              <Label className="text-xs">Unidade</Label>
-              <Select value={form.unit_type} onValueChange={v => onField('unit_type', v)}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="l">Litro (L)</SelectItem>
-                  <SelectItem value="kg">Quilo (kg)</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-1">
-              <Label className="text-xs">Embalagens ({form.unit_type})</Label>
-              <div className="flex gap-1">
-                <Input value={pkgInput} onChange={e => setPkgInput(e.target.value)} type="number" placeholder="Ex: 5" className="w-20" onKeyDown={e => e.key === 'Enter' && (e.preventDefault(), addPkg())} />
-                <Button variant="outline" size="sm" onClick={addPkg}>+</Button>
-                <div className="flex gap-1 flex-wrap items-center">
-                  {form.package_sizes.map(s => (
-                    <Badge key={s} variant="secondary" className="cursor-pointer" onClick={() => onField('package_sizes', form.package_sizes.filter(x => x !== s))}>
-                      {s}{form.unit_type} ×
-                    </Badge>
-                  ))}
-                </div>
-              </div>
-            </div>
-            <div className="space-y-1">
-              <Label className="text-xs">Unid/Caixa</Label>
-              <Input type="number" value={form.units_per_box} onChange={e => onField('units_per_box', Number(e.target.value))} />
-            </div>
-            <div className="space-y-1">
-              <Label className="text-xs">Caixas/Palet</Label>
-              <Input type="number" value={form.boxes_per_pallet} onChange={e => onField('boxes_per_pallet', Number(e.target.value))} />
-            </div>
-            <div className="space-y-1">
-              <Label className="text-xs">Dose Recomendada/{form.unit_type}/ha</Label>
-              <Input type="number" step="0.1" value={form.dose_per_hectare} onChange={e => onField('dose_per_hectare', Number(e.target.value))} />
-            </div>
-            <div className="grid grid-cols-2 gap-2">
-              <div className="space-y-1">
-                <Label className="text-xs">Dose Mín</Label>
-                <Input type="number" step="0.1" value={form.min_dose} onChange={e => onField('min_dose', Number(e.target.value))} />
-              </div>
-              <div className="space-y-1">
-                <Label className="text-xs">Dose Máx</Label>
-                <Input type="number" step="0.1" value={form.max_dose} onChange={e => onField('max_dose', Number(e.target.value))} />
-              </div>
-            </div>
-            <div className="space-y-1">
-              <Label className="text-xs">Preço Unitário</Label>
-              <Input type="number" step="0.01" value={form.price_per_unit} onChange={e => onField('price_per_unit', Number(e.target.value))} />
-            </div>
-            <div className="space-y-1">
-              <Label className="text-xs">Moeda</Label>
-              <Select value={form.currency} onValueChange={v => onField('currency', v)}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="USD">USD</SelectItem>
-                  <SelectItem value="BRL">BRL</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="flex items-center gap-3 pt-5">
-              <Switch checked={form.includes_margin} onCheckedChange={v => onField('includes_margin', v)} />
-              <Label className="text-xs">Inclui Margem</Label>
-            </div>
-          </div>
-          <div className="flex gap-2 justify-end">
-            <Button variant="outline" onClick={resetForm}>Cancelar</Button>
-            <Button onClick={handleSave} disabled={createMut.isPending || updateMut.isPending}>
-              <Check className="w-4 h-4 mr-1" /> {editId ? 'Atualizar' : 'Criar & Vincular'}
-            </Button>
-          </div>
+      <p className="text-xs text-muted-foreground">Clique em qualquer célula para editar. Enter/Tab para confirmar, Esc para cancelar.</p>
+
+      {isLoading ? <p className="text-sm text-muted-foreground">Carregando...</p> : (
+        <div className="border border-border rounded-md overflow-auto max-h-[70vh]">
+          <Table>
+            <TableHeader>
+              <TableRow className="bg-muted/50">
+                <TableHead className="w-10 text-foreground">#</TableHead>
+                <TableHead className="w-24 text-foreground">Código</TableHead>
+                <TableHead className="min-w-[200px] text-foreground">Produto</TableHead>
+                <TableHead className="w-16 text-foreground">REF</TableHead>
+                <TableHead className="w-28 text-foreground">Preço Cash</TableHead>
+                <TableHead className="w-28 text-foreground">Preço Prazo</TableHead>
+                <TableHead className="w-16 text-foreground">Caixa</TableHead>
+                <TableHead className="w-16 text-foreground">KG/L</TableHead>
+                <TableHead className="w-20 text-foreground">Dose/ha</TableHead>
+                <TableHead className="w-20"></TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {products.map((p: any, idx: number) => (
+                <TableRow key={p.id} className="hover:bg-accent/30">
+                  <TableCell className="text-xs text-muted-foreground font-mono">{idx + 1}</TableCell>
+                  <TableCell>{renderCell(p, 'code')}</TableCell>
+                  <TableCell>{renderCell(p, 'name')}</TableCell>
+                  <TableCell>{renderCell(p, 'ref')}</TableCell>
+                  <TableCell>{renderCell(p, 'price_cash', p.price_cash ? Number(p.price_cash).toFixed(2) : '0.00')}</TableCell>
+                  <TableCell>{renderCell(p, 'price_term', p.price_term ? Number(p.price_term).toFixed(2) : '0.00')}</TableCell>
+                  <TableCell>{renderCell(p, 'units_per_box')}</TableCell>
+                  <TableCell>{renderCell(p, 'dose_per_hectare')}</TableCell>
+                  <TableCell>{renderCell(p, 'min_dose', `${p.min_dose}-${p.max_dose}`)}</TableCell>
+                  <TableCell>
+                    <div className="flex gap-0.5">
+                      <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => unlinkMut.mutate({ campaignId: campaignId!, productId: p.id })}>
+                        <Unlink className="w-3 h-3" />
+                      </Button>
+                      <Button variant="ghost" size="icon" className="h-6 w-6 text-destructive" onClick={() => deleteMut.mutate(p.id)}>
+                        <Trash2 className="w-3 h-3" />
+                      </Button>
+                    </div>
+                  </TableCell>
+                </TableRow>
+              ))}
+              {products.length === 0 && (
+                <TableRow>
+                  <TableCell colSpan={10} className="text-center py-8 text-muted-foreground">
+                    Nenhum produto vinculado. Adicione uma linha ou importe dados.
+                  </TableCell>
+                </TableRow>
+              )}
+            </TableBody>
+          </Table>
         </div>
       )}
 
-      {/* Linked products */}
-      {isLoading ? <p className="text-sm text-muted-foreground">Carregando...</p> : (
-        <>
-          {(linkedProducts || []).length > 0 && (
-            <div className="border border-border rounded-md overflow-hidden">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Nome</TableHead>
-                    <TableHead>Categoria</TableHead>
-                    <TableHead>Preço</TableHead>
-                    <TableHead>Dose/ha</TableHead>
-                    <TableHead className="w-24"></TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {(linkedProducts || []).map((lp: any) => {
-                    const p = lp.product;
-                    if (!p) return null;
-                    return (
-                      <TableRow key={lp.id}>
-                        <TableCell className="font-medium">{p.name}</TableCell>
-                        <TableCell><Badge variant="outline">{p.category}</Badge></TableCell>
-                        <TableCell>{p.currency} {Number(p.price_per_unit).toFixed(2)}</TableCell>
-                        <TableCell>{p.dose_per_hectare} {p.unit_type}/ha</TableCell>
-                        <TableCell className="flex gap-1">
-                          <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => startEdit(p)}><Edit2 className="w-3 h-3" /></Button>
-                          <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => unlinkMut.mutate({ campaignId: campaignId!, productId: p.id })}>
-                            <Unlink className="w-3 h-3" />
-                          </Button>
-                        </TableCell>
-                      </TableRow>
-                    );
-                  })}
-                </TableBody>
-              </Table>
-            </div>
-          )}
-
-          {/* Unlinked products to add */}
-          {(() => {
-            const unlinked = (allProducts || []).filter(p => !linkedIds.has(p.id));
-            if (unlinked.length === 0) return null;
-            return (
-              <div className="space-y-2">
-                <Label className="text-sm text-muted-foreground">Produtos disponíveis (não vinculados)</Label>
-                <div className="border border-dashed border-border rounded-md p-2 max-h-[200px] overflow-y-auto space-y-1">
-                  {unlinked.map(p => (
-                    <div key={p.id} className="flex items-center justify-between py-1 px-2 hover:bg-muted/30 rounded text-sm">
-                      <span>{p.name} <span className="text-muted-foreground">({p.category})</span></span>
-                      <Button variant="ghost" size="sm" onClick={() => linkMut.mutate({ campaignId: campaignId!, productId: p.id })}>
-                        <Link2 className="w-3 h-3 mr-1" /> Vincular
-                      </Button>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            );
-          })()}
-        </>
-      )}
+      {/* Paste dialog */}
+      <Dialog open={pasteOpen} onOpenChange={setPasteOpen}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle className="text-foreground">Colar Dados de Produtos</DialogTitle>
+          </DialogHeader>
+          <p className="text-xs text-muted-foreground">
+            Cole dados separados por TAB ou ponto-e-vírgula no formato:<br />
+            <span className="font-mono">CÓDIGO ; PRODUTO ; REF ; PREÇO CASH ; PREÇO PRAZO ; CAIXA ; KG/L</span>
+          </p>
+          <Textarea
+            value={pasteText}
+            onChange={e => setPasteText(e.target.value)}
+            rows={12}
+            placeholder="Cole aqui os dados da planilha..."
+            className="font-mono text-xs"
+          />
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setPasteOpen(false)}>Cancelar</Button>
+            <Button onClick={handlePasteImport}>Importar</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
