@@ -213,7 +213,7 @@ export default function ParityInputs({
 
         {freightReducer && (
           <div className="text-xs text-muted-foreground">
-            Redutor logístico: <span className="font-mono text-warning">{formatCurrency(freightReducer.totalReducer)}/saca</span>
+            Redutor logístico: <span className="font-mono text-warning">{formatCurrency(freightReducer.totalReducer)}/ton</span>
             <span className="ml-2">({freightReducer.distanceKm.toFixed(0)} km)</span>
           </div>
         )}

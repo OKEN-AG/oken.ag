@@ -46,6 +46,7 @@ export function useCampaignData(campaignId?: string) {
     },
   });
 
+  // Bug #22: Fix N+1 queries - fetch all combos and their products in 2 queries instead of N+1
   const combosQuery = useQuery({
     queryKey: ['campaign-combos-full', campaignId],
     enabled: !!campaignId,
@@ -56,28 +57,38 @@ export function useCampaignData(campaignId?: string) {
         .eq('campaign_id', campaignId!)
         .order('discount_percent', { ascending: false });
       if (error) throw error;
-      
-      // Fetch combo products for each combo (with product ref)
-      const result: ComboDefinition[] = [];
-      for (const combo of combos || []) {
-        const { data: prods } = await supabase
-          .from('combo_products')
-          .select('*, product:products(id, ref, name)')
-          .eq('combo_id', combo.id);
-        result.push({
-          id: combo.id,
-          name: combo.name,
-          discountPercent: combo.discount_percent,
-          priority: combo.discount_percent,
-          isComplementary: /^COMPLEMENTAR/i.test(combo.name),
-          products: (prods || []).map(p => ({
-            ref: ((p as any).product?.ref || (p as any).product?.name || '').toUpperCase(),
-            productId: p.product_id,
-            minDosePerHa: p.min_dose_per_ha,
-            maxDosePerHa: p.max_dose_per_ha,
-          })),
-        });
+      if (!combos || combos.length === 0) return [];
+
+      // Fetch ALL combo_products for all combos in one query
+      const comboIds = combos.map(c => c.id);
+      const { data: allProds, error: prodsError } = await supabase
+        .from('combo_products')
+        .select('*, product:products(id, ref, name)')
+        .in('combo_id', comboIds);
+      if (prodsError) throw prodsError;
+
+      // Group by combo_id
+      const prodsByCombo = new Map<string, any[]>();
+      for (const p of (allProds || [])) {
+        const list = prodsByCombo.get(p.combo_id) || [];
+        list.push(p);
+        prodsByCombo.set(p.combo_id, list);
       }
+
+      const result: ComboDefinition[] = combos.map(combo => ({
+        id: combo.id,
+        name: combo.name,
+        discountPercent: combo.discount_percent,
+        priority: combo.discount_percent,
+        isComplementary: /^COMPLEMENTAR/i.test(combo.name),
+        products: (prodsByCombo.get(combo.id) || []).map(p => ({
+          ref: ((p as any).product?.ref || (p as any).product?.name || '').toUpperCase(),
+          productId: p.product_id,
+          minDosePerHa: p.min_dose_per_ha,
+          maxDosePerHa: p.max_dose_per_ha,
+        })),
+      }));
+
       return result;
     },
   });
@@ -95,8 +106,9 @@ export function useCampaignData(campaignId?: string) {
     },
   });
 
-  const commodityQuery = useQuery({
-    queryKey: ['campaign-commodity-full', campaignId],
+  // Bug #21: Unified commodity query (single query, derived into both formats)
+  const commodityRawQuery = useQuery({
+    queryKey: ['campaign-commodity-unified', campaignId],
     enabled: !!campaignId,
     queryFn: async () => {
       const { data, error } = await supabase
@@ -104,23 +116,7 @@ export function useCampaignData(campaignId?: string) {
         .select('*')
         .eq('campaign_id', campaignId!);
       if (error) throw error;
-      if (!data || data.length === 0) return null;
-      const cp = data[0];
-      return {
-        commodity: cp.commodity as any,
-        exchange: cp.exchange,
-        contract: cp.contract,
-        exchangePrice: cp.exchange_price,
-        optionCost: cp.option_cost || 0,
-        exchangeRateBolsa: cp.exchange_rate_bolsa,
-        exchangeRateOption: cp.exchange_rate_option || cp.exchange_rate_bolsa,
-        basisByPort: (cp.basis_by_port || {}) as Record<string, number>,
-        securityDeltaMarket: cp.security_delta_market || 2,
-        securityDeltaFreight: cp.security_delta_freight || 15,
-        stopLoss: cp.stop_loss || 0,
-        bushelsPerTon: cp.bushels_per_ton || 36.744,
-        pesoSacaKg: cp.peso_saca_kg || 60,
-      } as CommodityPricing;
+      return data || [];
     },
   });
 
@@ -157,18 +153,26 @@ export function useCampaignData(campaignId?: string) {
     },
   });
 
-  const rawCommodityQuery = useQuery({
-    queryKey: ['campaign-commodity-raw', campaignId],
-    enabled: !!campaignId,
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from('commodity_pricing')
-        .select('*')
-        .eq('campaign_id', campaignId!);
-      if (error) throw error;
-      return data || [];
-    },
-  });
+  // Derive commodityPricing from unified query
+  const rawCommodityData = commodityRawQuery.data || [];
+  const commodityPricing: CommodityPricing | null = rawCommodityData.length > 0 ? (() => {
+    const cp = rawCommodityData[0];
+    return {
+      commodity: cp.commodity as any,
+      exchange: cp.exchange,
+      contract: cp.contract,
+      exchangePrice: cp.exchange_price,
+      optionCost: cp.option_cost || 0,
+      exchangeRateBolsa: cp.exchange_rate_bolsa,
+      exchangeRateOption: cp.exchange_rate_option || cp.exchange_rate_bolsa,
+      basisByPort: (cp.basis_by_port || {}) as Record<string, number>,
+      securityDeltaMarket: cp.security_delta_market || 2,
+      securityDeltaFreight: cp.security_delta_freight || 15,
+      stopLoss: cp.stop_loss || 0,
+      bushelsPerTon: cp.bushels_per_ton || 36.744,
+      pesoSacaKg: cp.peso_saca_kg || 60,
+    } as CommodityPricing;
+  })() : null;
 
   // Map DB campaign to engine Campaign type
   const campaign = campaignQuery.data;
@@ -226,8 +230,8 @@ export function useCampaignData(campaignId?: string) {
     rawCampaign: campaignQuery.data,
     products,
     combos: combosQuery.data || [],
-    commodityPricing: commodityQuery.data,
-    rawCommodityPricing: rawCommodityQuery.data || [],
+    commodityPricing,
+    rawCommodityPricing: rawCommodityData,
     freightReducers: freightQuery.data || [],
     deliveryLocations: deliveryLocationsQuery.data || [],
     isLoading,

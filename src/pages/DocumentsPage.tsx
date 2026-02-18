@@ -11,6 +11,7 @@ import { toast } from 'sonner';
 import { buildWagonStages, canAdvance, getBlockingReason } from '@/engines/orchestrator';
 import TrainTrack from '@/components/TrainTrack';
 import type { DocumentType, JourneyModule } from '@/types/barter';
+import { useQuery } from '@tanstack/react-query';
 
 const allDocTypes: { type: DocumentType; label: string; description: string }[] = [
   { type: 'termo_adesao', label: 'Termo de Adesão', description: 'Aceite do distribuidor aos termos da campanha' },
@@ -40,27 +41,43 @@ export default function DocumentsPage() {
 
   const selectedOp = operations?.find(op => op.id === selectedOpId);
 
-  // Build wagon stages using orchestrator
+  // Bug #5: Fetch active_modules from the campaign linked to the selected operation
+  const { data: campaignModules } = useQuery({
+    queryKey: ['campaign-modules-docs', selectedOp?.campaign_id],
+    enabled: !!selectedOp?.campaign_id,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('campaigns')
+        .select('active_modules')
+        .eq('id', selectedOp!.campaign_id)
+        .maybeSingle();
+      if (error) throw error;
+      return (data?.active_modules || []) as JourneyModule[];
+    },
+  });
+
+  // Use dynamic modules from campaign, with sensible fallback
+  const activeModules: JourneyModule[] = campaignModules && campaignModules.length > 0
+    ? campaignModules
+    : ['adesao', 'simulacao', 'formalizacao', 'documentos', 'garantias'];
+
   const wagonStages = useMemo(() => {
     if (!selectedOp || !docs) return [];
-    const activeModules: JourneyModule[] = ['adesao', 'simulacao', 'formalizacao', 'documentos', 'garantias'];
     const docList = (docs || []).map(d => ({ doc_type: d.doc_type, status: d.status }));
     return buildWagonStages(activeModules, selectedOp.status as any, docList);
-  }, [selectedOp, docs]);
+  }, [selectedOp, docs, activeModules]);
 
   const nextStatus = useMemo(() => {
     if (!selectedOp || !docs) return null;
-    const activeModules: JourneyModule[] = ['adesao', 'simulacao', 'formalizacao', 'documentos', 'garantias'];
     const docList = (docs || []).map(d => ({ doc_type: d.doc_type, status: d.status }));
     return canAdvance(activeModules, selectedOp.status as any, docList);
-  }, [selectedOp, docs]);
+  }, [selectedOp, docs, activeModules]);
 
   const blockingReason = useMemo(() => {
     if (!selectedOp || !docs) return null;
-    const activeModules: JourneyModule[] = ['adesao', 'simulacao', 'formalizacao', 'documentos', 'garantias'];
     const docList = (docs || []).map(d => ({ doc_type: d.doc_type, status: d.status }));
     return getBlockingReason(activeModules, selectedOp.status as any, docList);
-  }, [selectedOp, docs]);
+  }, [selectedOp, docs, activeModules]);
 
   const handleEmitDocument = async (docType: DocumentType) => {
     if (!selectedOpId || !user) return;
@@ -139,7 +156,6 @@ export default function DocumentsPage() {
         <div className="glass-card p-8 text-center text-muted-foreground">Selecione uma operação para ver seus documentos.</div>
       ) : (
         <>
-          {/* Train Track - Orchestrator visualization */}
           {wagonStages.length > 0 && (
             <div className="glass-card p-5">
               <div className="flex items-center justify-between mb-4">
@@ -154,7 +170,6 @@ export default function DocumentsPage() {
               </div>
               <TrainTrack stages={wagonStages} />
 
-              {/* Gate controls */}
               <div className="mt-4 flex items-center justify-between">
                 {blockingReason ? (
                   <div className="flex items-center gap-2 text-xs text-warning">
@@ -176,7 +191,6 @@ export default function DocumentsPage() {
             </div>
           )}
 
-          {/* Document cards */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {allDocTypes.map((doc, i) => {
               const existing = docMap.get(doc.type);

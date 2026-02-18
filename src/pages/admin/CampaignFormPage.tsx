@@ -168,7 +168,7 @@ export default function CampaignFormPage() {
       const selectedMunicipios = allMunicipios.filter(m => selectedCities.includes(m.ibge));
       const states = [...new Set(selectedMunicipios.map(m => m.uf))];
       const mesos = [...new Set(selectedMunicipios.map(m => m.mesoName))];
-      const priceFormat = form.currency === 'BRL' ? 'brl_vista' : 'usd_vista';
+      const priceFormat = form.price_list_format || (form.currency === 'BRL' ? 'brl_vista' : 'usd_vista');
 
       const campaignData: any = {
         name: form.name,

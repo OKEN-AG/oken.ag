@@ -48,6 +48,8 @@ export default function CampaignsListPage() {
               <div>
                 <div className="font-semibold text-foreground">{c.name}</div>
                 <div className="text-xs text-muted-foreground">
+                  {c.code_auto && <span className="font-mono mr-1">{c.code_auto}</span>}
+                  {c.code_custom && <span className="mr-1">[{c.code_custom}]</span>}
                   Safra {c.season} · {c.target} · {c.price_list_format}
                 </div>
               </div>

@@ -1,20 +1,25 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { useActiveCampaigns, useCampaignData } from '@/hooks/useActiveCampaign';
-import { Settings, MapPin, Percent, Calendar, Layers, DollarSign } from 'lucide-react';
+import { Settings, MapPin, Percent, Calendar, Layers, DollarSign, Edit } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Button } from '@/components/ui/button';
 
 export default function CampaignPage() {
+  const navigate = useNavigate();
   const { data: campaigns, isLoading: loadingList } = useActiveCampaigns();
   const [selectedId, setSelectedId] = useState<string>('');
 
-  // Auto-select first
-  if (!selectedId && campaigns && campaigns.length > 0) {
-    setSelectedId(campaigns[0].id);
-  }
+  // Bug #2: Fix setState in render body → useEffect
+  useEffect(() => {
+    if (!selectedId && campaigns && campaigns.length > 0) {
+      setSelectedId(campaigns[0].id);
+    }
+  }, [campaigns, selectedId]);
 
   const { campaign, combos, products, isLoading } = useCampaignData(selectedId || undefined);
 
@@ -36,6 +41,12 @@ export default function CampaignPage() {
             </SelectContent>
           </Select>
           {campaign && <Badge variant="default" className="bg-success/10 text-success border-success/20">{campaign.active ? '● Ativa' : '○ Inativa'}</Badge>}
+          {/* Bug #15: Add edit button */}
+          {selectedId && (
+            <Button variant="outline" size="sm" onClick={() => navigate(`/admin/campanhas/${selectedId}`)}>
+              <Edit className="w-4 h-4 mr-1" /> Editar
+            </Button>
+          )}
         </div>
       </div>
 
