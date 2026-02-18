@@ -1,179 +1,144 @@
-# Plano: Tornar o Sistema Vivo - Modulo por Modulo
+# Diagnostico e Plano: Conectar Admin e Operacao
 
-## Problema
+## O Problema
 
-Todo o sistema atual e estatico. As 6 paginas leem dados de um arquivo `mock-data.ts` hardcoded. O banco de dados ja existe com as tabelas corretas mas nenhuma pagina se conecta a ele. Nao existe nenhuma tela de criacao ou edicao de dados.
+O sistema tem dois mundos completamente desconectados:
 
-## Estrategia
+1. **Mundo Admin** (parcialmente vivo): A tela `/admin/campanhas/:id` salva dados no banco, mas as abas Produtos, Combos e Commodities sao placeholders vazios com "Disponivel apos implementacao do Modulo X".
+2. **Mundo Operacional** (100% estatico): Todas as 5 telas operacionais (Dashboard, Campanha, Simulacao, Paridade, Documentos, Monitoramento) leem exclusivamente de `mock-data.ts` com dados hardcoded. Nenhuma delas consulta o banco.
 
-Vamos atacar modulo por modulo, para cada um: (1) criar tela de CRUD admin e (2) conectar a tela operacional ao banco de dados real. Cada modulo sera entregue em uma mensagem para manter o escopo gerenciavel.
+O resultado: o administrador configura campanhas reais no banco, mas o operador nunca ve esses dados. As duas jornadas nao se comunicam.
 
----
+## A Jornada Correta
 
-## Modulo 1: Campanha (Fundacao)
+```text
+ADMINISTRADOR                          OPERADOR
+    |                                      |
+    v                                      v
+Cria Campanha (Geral, Financeiro,    Abre Simulacao
+Elegibilidade, Modulos)                    |
+    |                                      v
+    v                                 Seleciona Campanha ativa (dropdown)
+Cadastra Produtos (aba Produtos)           |
+    |                                      v
+    v                                 Ve produtos da campanha (do banco)
+Configura Combos (aba Combos)              |
+    |                                      v
+    v                                 Monta pedido, combos aplicam automaticamente
+Configura Commodities (aba)                |
+    |                                      v
+    v                                 Escolhe pagamento -> Barter -> Paridade
+Publica campanha (ativa = true)            |
+                                           v
+                                      Salva operacao no banco
+                                           |
+                                           v
+                                      Dashboard mostra dados reais
+```
 
-**CRUD Admin:**
+## Plano de Implementacao
 
-- Tela de listagem de campanhas com botao "Nova Campanha"
-- Formulario de criacao/edicao com todos os campos, separados em abas especificas para cada topico abaixo:
-  - Nome Campanha, Commodities, safra, Publico Alvo, target,
-  - Moeda da campanha, Meios de Pagamento, Cambio de Conversao produtos, 
-  - Juros,  Prazos de pagamento, Datas de Vencimento Unico, Desconto Geral para Lista, Desconto Máximo para Time Comercial Interno , Desconto Máximo para Time Comercial Distribuição
-  - Elegibilidade: Seleção de Municipios elegíveis do Brasil a partir da seleção das Regiões, Estados, Mesorregioes, Municio, segmentos
-- Criação de segmentos com campo livre com seleção de qual segmento será alvo e campo de Incremento ou Desconto % sobre lista para o Segmento. 
-- Botao ativar/desativar campanha
+### Etapa 1: Ativar abas internas da Campanha (Admin)
 
-**Conexao ao banco:**
+As abas "Produtos", "Combos" e "Commodities" dentro do formulario de campanha (`CampaignFormPage`) estao desabilitadas. Vamos ativa-las:
 
-- Hook `useCampaigns` com React Query para listar/criar/atualizar
-- Hook `useChannelMargins` para margens vinculadas a campanha
-- Remover import de `mockCampaign` em CampaignPage e SimulationPage
+**Aba Produtos (dentro da campanha):**
 
-**Rota:** `/admin/campanhas` (listagem) e `/admin/campanhas/:id` (edicao)
+- Criar componente `ProductsTab` que lista/adiciona/edita produtos vinculados a campanha
+- Formulario inline com: nome, categoria, ingrediente ativo, tipo unidade, tamanhos de embalagem, unidades/caixa, caixas/palet, dose recomendada/min/max, preco unitario, moeda, tipo preco, inclui margem
+- Hook `useProducts` com React Query buscando da tabela `products`
+- Necessario criar tabela de vinculo `campaign_products` (ou usar products com campaign_id) para vincular produtos a campanhas especificas
 
----
+**Aba Combos (dentro da campanha):**
 
-## Modulo 2: Produtos (Catalogo)
+- Criar componente `CombosTab` com listagem de combos da campanha
+- Formulario: nome do combo, desconto %, adicionar/remover produtos com dose min/max
+- Hook `useCombos` e `useComboProducts` lendo das tabelas `combos` e `combo_products`
+- Calculo automatico de prioridade baseado no desconto medio ponderado
+- Modelos de gatilhos de desconto: volume minimo, tamanho de area, cashback por pagamento
 
-**CRUD Admin:**
+**Aba Commodities (dentro da campanha):**
 
-- Tela de listagem de produtos com filtro por categoria
-- Formulario de criacao/edicao:
-  - Nome, categoria, ingrediente ativo, Referencia para Desconto ( Mesmos produtos com diferentes embalagens deve ter o mesmo nome mãe) 
-  - Tipo unidade (kg/l), Tamanhos(kg/l) de embalagem
-  - Unidades/caixa, caixas/palet, palets/caminhao
-  - Dose recomendada, min, max por hectare
-  - Preco unitario, moeda, tipo preco, inclui margem
-
-**Conexao ao banco:**
-
-- Hook `useProducts` com React Query
-- SimulationPage busca produtos do banco em vez de `mockProducts`
-
-**Rota:** `/admin/produtos`
-
----
-
-## Modulo 3: Combos (Cascata de Descontos)
-
-**CRUD Admin:**
-
-- Tela de Criação de combos para campanha
-- Formulario: incluir item por Referencia para desconto, desconto %, dose min e dose max no no combo
-- Adicionar/remover produtos no combo dinamicamente
-- Visualizacao da ordem de prioridade (cascata) automaticamente estabelecida com base no desconto médio ponderado ao valor total da oferta para 1 ha tratado. Sistema deve multiplicar dose minima pelo preço da lista para cada produto, estabelecer o monante com desconto , comparar com a mesma conta mas sem desconto e ver qual o total ponderado de desconto para cada oferta e assim organizar  as prioridades de forma decrescente ( maior desconto primeiro )
-
-**Conexao ao banco:**
-
-- Hook `useCombos` e `useComboProducts` com React Query
-- SimulationPage busca combos do banco
-
-**Rota:** `/admin/combos`
-
----
-
-## Modulo 4: Commodities e Fretes (Precificacao)
-
-**CRUD Admin:**
-
-- Tela de configuracao de commodity por campanha:
-  - Bolsa, contrato, preco, custo opcao
-  - Cambios Moedas
-  - Premio de OpçÕes ( seguro
-  - Basis por porto (formulario dinamico para add/remover portos) ou Mercado Formador de Preço
-  - Deltas de seguranca, stop loss, volatilidade por contrato
-- Tela de redutores de frete:
-  - Listagem editavel com origem, destino, distancia, custo/km, ajuste
-
-**Conexao ao banco:**
-
+- Criar componente `CommoditiesTab` com configuracao de precificacao
+- Campos: bolsa, contrato, preco, custo opcao, cambios, basis por porto, deltas de seguranca, stop loss, volatilidade
+- Sub-secao de Fretes: tabela editavel de redutores (origem, destino, distancia, custo/km, ajuste)
 - Hooks `useCommodityPricing` e `useFreightReducers`
-- ParityPage busca dados reais
 
-**Rota:** `/admin/commodities` e `/admin/fretes`
+**Migracao de banco necessaria:**
 
----
+- Criar tabela `campaign_products` para vincular produtos a campanhas (a tabela `products` existe mas nao tem `campaign_id`)
+- Adicionar RLS permissiva para as novas tabelas
 
-## Modulo 5: Simulacao e Operacoes Conectadas
+### Etapa 2: Conectar paginas operacionais ao banco
 
-**Ajustes na SimulationPage:**
+**SimulationPage:**
 
-- Seletor de campanha ativa no topo (dropdown de lista elegível ao usuário)
-- Informação de Area a ser tratada
-- Seleção de produtos do portifolio ( em dose / ha ou diretamente em quantidade)
-- Acompanhamento de progresso entre desconto obtido e máximo possível ( barra )
-- Produtos, combos e parametros vem do banco
-- Ao finalizar simulacao, salvar como `operation` no banco com status `simulacao`
-- Aba ao salvar simulação deve-se progredir para meio de pagamento onde aparece opções de condição a vista, a prazo (para cada data de vencimento possível) e Opção de Barter
-- Clicando na opção de barter deve -se ir para tela de paridade aonde é formada a paridade. Para isso, precisamos de dados da commodity  para formação de preço indicativo com parametros de commodity. O preço pode ser sobreposto pelo usuário. A paridade será uma divisão simples entre  montante com descontos, incluindo eventual desconto especifico para barter e o preço do campo de preço que pode ser o indicativo calculado ou informado pelo usuário. Tambem deve-se mostrar a quantidade de commodity para a conte sem desconto e comparar a diferença de quantidade entre uma e outra. tambem deve ser formado o preço equivalente do barter onde o montante sem deseconto é dividido pelo quantidade de sacas final ( com desconto) e um preço valorizado aparecerá . Deve mostrar a % da valorização equivalente ao preço original e a diferença nominal de preço. 
-- Gerar log no `operation_logs`
+- Substituir `mockProducts`, `mockCampaign`, `mockCombos` por queries ao banco
+- Adicionar dropdown de campanha ativa no topo da pagina
+- Ao selecionar campanha, carregar: parametros financeiros, produtos vinculados, combos
+- Os engines (`agronomic`, `combo-cascade`, `pricing`) continuam funcionando igual, apenas recebem dados reais em vez de mock
 
-**Ajustes na ParityPage:**
+**CampaignPage (visao do operador):**
 
-- Receber operation_id via rota em vez de via state
-- Buscar/salvar dados de paridade na operation
-- Commodity pricing e fretes do banco
+- Substituir `mockCampaign` e `mockCombos` por dados reais da campanha selecionada
+- Exibir parametros, elegibilidade, margens e modulos da campanha ativa
 
----
+**ParityPage:**
 
-## Modulo 6: Documentos e Dashboard Vivos
-
-**DocumentsPage:**
-
-- Listar documentos reais da operation selecionada do banco
-- Botoes de "Emitir" e "Marcar como Assinado"
+- Substituir `mockCommodityPricing` e `mockFreightReducers` por dados reais do banco
+- Receber `campaign_id` para buscar commodity pricing e fretes da campanha
 
 **Dashboard:**
 
-- Dados reais: contagem de operacoes, volume total, sacas comprometidas
-- Listagem de operacoes recentes do banco
-- TrainTrack conectado a operacao real
+- Substituir dados mock por queries reais a tabela `operations`
+- Contagem de operacoes, volume total, sacas comprometidas
+- Listagem de operacoes recentes
 
----
+**DocumentsPage e MonitoringPage:**
 
-## Estrutura de Navegacao Atualizada
+- Conectar a operacoes reais do banco
+- Manter estrutura visual, trocar fonte de dados
 
-```text
-Sidebar:
-  - Dashboard (/)
-  - Simulacao (/simulacao)
-  - Paridade (/paridade/:operationId)
-  - Documentos (/documentos/:operationId)
-  - Monitoramento (/monitoramento)
-  ---
-  Administracao:
-  - Campanhas (/admin/campanhas)
-  - Produtos (/admin/produtos)
-  - Combos (/admin/combos)
-  - Commodities (/admin/commodities)
-  - Fretes (/admin/fretes)
-```
+### Etapa 3: Fluxo de salvamento de operacoes
 
----
+- Ao finalizar simulacao, botao "Salvar como Operacao" cria registro em `operations` com status `simulacao`
+- Progresso para selecao de pagamento, depois para paridade barter
+- Cada etapa atualiza a operacao no banco e gera log em `operation_logs`
+- Dashboard reflete operacoes reais
+
+Etapa 4: excluir abas de administração que estão fora de campanha , uma vez que já estão dentro da campanha
 
 ## Detalhes Tecnicos
 
-### Hooks padrao (React Query)
+### Migracao de banco
 
-Cada modulo tera hooks como:
+- Criar tabela `campaign_products` (campaign_id, product_id, com RLS permissiva)
+- Isso permite que o mesmo produto esteja em multiplas campanhas
 
-```text
-useQuery    -> listar dados
-useMutation -> criar/atualizar/deletar
-invalidateQueries -> atualizar lista apos mutacao
-```
+### Novos hooks
+
+- `useProducts()` - lista todos os produtos
+- `useCampaignProducts(campaignId)` - produtos vinculados a uma campanha
+- `useCombos(campaignId)` - combos de uma campanha com seus produtos
+- `useCommodityPricing(campaignId)` - precificacao de commodity
+- `useFreightReducers(campaignId)` - redutores de frete
+- `useOperations()` - operacoes do usuario
+
+### Novos componentes
+
+- `src/components/campaign/ProductsTab.tsx`
+- `src/components/campaign/CombosTab.tsx`
+- `src/components/campaign/CommoditiesTab.tsx`
 
 ### Arquivo mock-data.ts
 
-Sera mantido temporariamente como fallback mas progressivamente substituido. Ao final dos 6 modulos, sera removido completamente.
+Sera mantido temporariamente como fallback para telas ainda nao conectadas, mas progressivamente eliminado a cada etapa.
 
-### Ordem de execucao sugerida
+### Ordem de execucao
 
-1. Modulo 1 - Campanha (e a base de todos os outros)
-2. Modulo 2 - Produtos
-3. Modulo 3 - Combos
-4. Modulo 4 - Commodities e Fretes
-5. Modulo 5 - Simulacao conectada
-6. Modulo 6 - Documentos e Dashboard
+Dado o tamanho, sera implementado em 4 mensagens:
 
-Cada modulo sera entregue em uma mensagem separada para manter qualidade e permitir testes incrementais.
+1. **Mensagem 1**: Etapa 1 (ativar abas admin - Produtos, Combos, Commodities)
+2. **Mensagem 2**: Etapa 2 (conectar SimulationPage, CampaignPage, ParityPage ao banco)
+3. **Mensagem 3**: Etapa 3 (fluxo de operacoes, Dashboard e Documentos vivos)
+4. Mensagem 4: Etapa 4 ( reestruturação de abas e manutenção das funcionais)
