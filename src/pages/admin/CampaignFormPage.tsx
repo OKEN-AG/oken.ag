@@ -13,6 +13,9 @@ import { getAllMunicipios } from '@/data/municipios';
 import GeneralTab, { type ClientRow } from '@/components/campaign/GeneralTab';
 import FinancialTab, { type PaymentMethodRow, type DueDateRow } from '@/components/campaign/FinancialTab';
 import EligibilityTab, { type SegmentRow } from '@/components/campaign/EligibilityTab';
+import ProductsTab from '@/components/campaign/ProductsTab';
+import CombosTab from '@/components/campaign/CombosTab';
+import CommoditiesTab from '@/components/campaign/CommoditiesTab';
 
 const JOURNEY_MODULES = [
   { value: 'adesao', label: 'Termo de Adesão' },
@@ -220,9 +223,9 @@ export default function CampaignFormPage() {
           <TabsTrigger value="financeiro">Financeiro</TabsTrigger>
           <TabsTrigger value="elegibilidade">Elegibilidade</TabsTrigger>
           <TabsTrigger value="modulos">Módulos</TabsTrigger>
-          <TabsTrigger value="produtos" disabled>Produtos</TabsTrigger>
-          <TabsTrigger value="combos" disabled>Combos</TabsTrigger>
-          <TabsTrigger value="commodities" disabled>Commodities</TabsTrigger>
+          <TabsTrigger value="produtos" disabled={isNew}>Produtos</TabsTrigger>
+          <TabsTrigger value="combos" disabled={isNew}>Combos</TabsTrigger>
+          <TabsTrigger value="commodities" disabled={isNew}>Commodities</TabsTrigger>
         </TabsList>
 
         <TabsContent value="geral" className="mt-4">
@@ -271,24 +274,15 @@ export default function CampaignFormPage() {
         </TabsContent>
 
         <TabsContent value="produtos" className="mt-4">
-          <div className="text-center py-12 text-muted-foreground border border-dashed border-border rounded-md">
-            <p className="text-lg font-medium">Produtos</p>
-            <p className="text-sm">Disponível após implementação do Módulo 2</p>
-          </div>
+          <ProductsTab campaignId={isNew ? undefined : id} />
         </TabsContent>
 
         <TabsContent value="combos" className="mt-4">
-          <div className="text-center py-12 text-muted-foreground border border-dashed border-border rounded-md">
-            <p className="text-lg font-medium">Combos</p>
-            <p className="text-sm">Disponível após implementação do Módulo 3</p>
-          </div>
+          <CombosTab campaignId={isNew ? undefined : id} />
         </TabsContent>
 
         <TabsContent value="commodities" className="mt-4">
-          <div className="text-center py-12 text-muted-foreground border border-dashed border-border rounded-md">
-            <p className="text-lg font-medium">Commodities & Fretes</p>
-            <p className="text-sm">Disponível após implementação do Módulo 4</p>
-          </div>
+          <CommoditiesTab campaignId={isNew ? undefined : id} campaignCommodities={form.commodities} />
         </TabsContent>
       </Tabs>
     </div>
