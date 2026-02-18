@@ -142,6 +142,32 @@ export function useCampaignData(campaignId?: string) {
     },
   });
 
+  const deliveryLocationsQuery = useQuery({
+    queryKey: ['campaign-delivery-locations', campaignId],
+    enabled: !!campaignId,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('campaign_delivery_locations')
+        .select('*')
+        .eq('campaign_id', campaignId!);
+      if (error) throw error;
+      return data || [];
+    },
+  });
+
+  const rawCommodityQuery = useQuery({
+    queryKey: ['campaign-commodity-raw', campaignId],
+    enabled: !!campaignId,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('commodity_pricing')
+        .select('*')
+        .eq('campaign_id', campaignId!);
+      if (error) throw error;
+      return data || [];
+    },
+  });
+
   // Map DB campaign to engine Campaign type
   const campaign = campaignQuery.data;
   const margins = marginsQuery.data;
@@ -199,7 +225,9 @@ export function useCampaignData(campaignId?: string) {
     products,
     combos: combosQuery.data || [],
     commodityPricing: commodityQuery.data,
+    rawCommodityPricing: rawCommodityQuery.data || [],
     freightReducers: freightQuery.data || [],
+    deliveryLocations: deliveryLocationsQuery.data || [],
     isLoading,
   };
 }
