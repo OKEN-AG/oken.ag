@@ -1085,6 +1085,7 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      can_manage_campaign: { Args: { _campaign_id: string }; Returns: boolean }
       has_role: {
         Args: {
           _role: Database["public"]["Enums"]["app_role"]
