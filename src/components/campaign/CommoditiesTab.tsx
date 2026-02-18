@@ -1,12 +1,23 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
+import * as XLSX from 'xlsx';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Switch } from '@/components/ui/switch';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
-import { Plus, Trash2, Save } from 'lucide-react';
-import { useCommodityPricing, useUpsertCommodityPricing, useDeleteCommodityPricing, useFreightReducers, useUpsertFreightReducer, useDeleteFreightReducer } from '@/hooks/useCommodityPricing';
+import { Textarea } from '@/components/ui/textarea';
+import { Plus, Trash2, Save, Upload, ClipboardPaste } from 'lucide-react';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Calendar } from '@/components/ui/calendar';
+import { format } from 'date-fns';
+import { cn } from '@/lib/utils';
+import { useCommodityPricing, useUpsertCommodityPricing, useFreightReducers, useUpsertFreightReducer, useDeleteFreightReducer } from '@/hooks/useCommodityPricing';
+import { supabase } from '@/integrations/supabase/client';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 
 const COMMODITIES = [
@@ -16,15 +27,95 @@ const COMMODITIES = [
   { value: 'algodao', label: 'Algodão' },
 ];
 
-type Props = { campaignId?: string; campaignCommodities?: string[] };
+const PRICE_TYPES = [
+  { value: 'pre_existente', label: 'Pré-Existente' },
+  { value: 'fixo_no_ato', label: 'Fixo no Ato' },
+  { value: 'a_fixar', label: 'A Fixar' },
+];
 
+const COUNTERPARTY_TYPES = [
+  { value: 'terceiros_pre_aprovados', label: 'Terceiros Pré-Aprovados' },
+  { value: 'terceiros_sob_demanda', label: 'Terceiros Aprovados Sob Demanda' },
+  { value: 'nomeados_credor', label: 'Nomeados Pelo Credor' },
+  { value: 'originacao_propria', label: 'Originação Própria' },
+];
+
+const INCENTIVE_TYPES = [
+  { value: 'desconto_direto', label: 'Desconto Direto' },
+  { value: 'credito_apos_liberacao', label: 'Crédito Após Liberação' },
+  { value: 'credito_apos_liquidacao', label: 'Crédito Após Liquidação' },
+];
+
+type Props = { campaignId?: string; campaignCommodities?: string[] };
 type BasisPort = { port: string; basis: number };
+type DeliveryLocation = {
+  id?: string; cda: string; warehouse_name: string; address: string; city: string; state: string;
+  phone: string; email: string; location_type: string; capacity_tons: number; latitude: number; longitude: number;
+};
+type IndicativePrice = {
+  id?: string; culture: string; price_type: string; month: string; state: string; market_place: string;
+  price_per_saca: number; variation_percent: number; direction: string; updated_at: string; tax_rate: number;
+};
+type Valorization = { id?: string; commodity: string; nominal_value: number; percent_value: number; use_percent: boolean };
+type Buyer = { id?: string; buyer_name: string; fee: number };
+
+// Hooks for new tables
+function useDeliveryLocations(campaignId?: string) {
+  return useQuery({ queryKey: ['delivery-locations', campaignId], enabled: !!campaignId,
+    queryFn: async () => { const { data, error } = await (supabase as any).from('campaign_delivery_locations').select('*').eq('campaign_id', campaignId!); if (error) throw error; return data as DeliveryLocation[]; },
+  });
+}
+function useIndicativePrices(campaignId?: string) {
+  return useQuery({ queryKey: ['indicative-prices', campaignId], enabled: !!campaignId,
+    queryFn: async () => { const { data, error } = await (supabase as any).from('campaign_indicative_prices').select('*').eq('campaign_id', campaignId!); if (error) throw error; return data as IndicativePrice[]; },
+  });
+}
+function useValorizations(campaignId?: string) {
+  return useQuery({ queryKey: ['valorizations', campaignId], enabled: !!campaignId,
+    queryFn: async () => { const { data, error } = await (supabase as any).from('campaign_commodity_valorizations').select('*').eq('campaign_id', campaignId!); if (error) throw error; return data as Valorization[]; },
+  });
+}
+function useBuyers(campaignId?: string) {
+  return useQuery({ queryKey: ['buyers', campaignId], enabled: !!campaignId,
+    queryFn: async () => { const { data, error } = await (supabase as any).from('campaign_buyers').select('*').eq('campaign_id', campaignId!); if (error) throw error; return data as Buyer[]; },
+  });
+}
+
+function DateField({ label, value, onChange }: { label: string; value: string; onChange: (v: string) => void }) {
+  const date = value ? new Date(value + 'T00:00:00') : undefined;
+  return (
+    <div className="space-y-1">
+      <Label className="text-xs">{label}</Label>
+      <Popover>
+        <PopoverTrigger asChild>
+          <Button variant="outline" size="sm" className={cn("w-full justify-start text-left font-normal text-xs", !date && "text-muted-foreground")}>
+            {date ? format(date, 'dd/MM/yyyy') : 'Selecionar'}
+          </Button>
+        </PopoverTrigger>
+        <PopoverContent className="w-auto p-0" align="start">
+          <Calendar mode="single" selected={date} onSelect={d => onChange(d ? format(d, 'yyyy-MM-dd') : '')} className="p-3 pointer-events-auto" />
+        </PopoverContent>
+      </Popover>
+    </div>
+  );
+}
+
+function parseCSVRows<T>(text: string, mapper: (parts: string[]) => T): T[] {
+  return text.trim().split('\n').slice(1).map(line => {
+    const parts = line.split(/[;\t,]/).map(p => p.trim());
+    return mapper(parts);
+  });
+}
 
 export default function CommoditiesTab({ campaignId, campaignCommodities = [] }: Props) {
-  const { data: pricingList, isLoading: loadingPricing } = useCommodityPricing(campaignId);
+  const qc = useQueryClient();
+  const { data: pricingList } = useCommodityPricing(campaignId);
   const { data: freightList, isLoading: loadingFreight } = useFreightReducers(campaignId);
+  const { data: deliveryLocations = [] } = useDeliveryLocations(campaignId);
+  const { data: indicativePrices = [] } = useIndicativePrices(campaignId);
+  const { data: valorizations = [] } = useValorizations(campaignId);
+  const { data: buyers = [] } = useBuyers(campaignId);
   const upsertPricing = useUpsertCommodityPricing();
-  const deletePricing = useDeleteCommodityPricing();
   const upsertFreight = useUpsertFreightReducer();
   const deleteFreight = useDeleteFreightReducer();
 
@@ -33,38 +124,58 @@ export default function CommoditiesTab({ campaignId, campaignCommodities = [] }:
   const [basisPorts, setBasisPorts] = useState<BasisPort[]>([]);
   const [newPort, setNewPort] = useState('');
   const [newBasis, setNewBasis] = useState(0);
-
-  // Freight state
   const [newFreight, setNewFreight] = useState({ origin: '', destination: '', distance_km: 0, cost_per_km: 0.10, adjustment: 0 });
 
-  // Load pricing for selected commodity
+  // Campaign-level fields (stored on campaigns table via parent form, but also locally for commodity config)
+  const [deliveryStart, setDeliveryStart] = useState('');
+  const [deliveryEnd, setDeliveryEnd] = useState('');
+  const [priceTypes, setPriceTypes] = useState<string[]>([]);
+  const [counterparties, setCounterparties] = useState<string[]>([]);
+  const [earlyDiscount, setEarlyDiscount] = useState(false);
+  const [incentiveType, setIncentiveType] = useState('desconto_direto');
+  const [incentive1, setIncentive1] = useState(0);
+  const [incentive2, setIncentive2] = useState(0);
+  const [incentive3, setIncentive3] = useState(0);
+
+  // New buyer
+  const [newBuyerName, setNewBuyerName] = useState('');
+  const [newBuyerFee, setNewBuyerFee] = useState(0);
+
+  // Paste/import modes
+  const [locPasteMode, setLocPasteMode] = useState(false);
+  const [locPasteText, setLocPasteText] = useState('');
+  const [pricePasteMode, setPricePasteMode] = useState(false);
+  const [pricePasteText, setPricePasteText] = useState('');
+  const locFileRef = useRef<HTMLInputElement>(null);
+  const priceFileRef = useRef<HTMLInputElement>(null);
+
+  // Load campaign-level commodity settings
+  useEffect(() => {
+    if (campaignId) {
+      (supabase as any).from('campaigns').select('delivery_start_date,delivery_end_date,price_types,accepted_counterparties,early_discount_enabled,global_incentive_type,global_incentive_1,global_incentive_2,global_incentive_3').eq('id', campaignId).single().then(({ data }: any) => {
+        if (data) {
+          setDeliveryStart(data.delivery_start_date || '');
+          setDeliveryEnd(data.delivery_end_date || '');
+          setPriceTypes(data.price_types || []);
+          setCounterparties(data.accepted_counterparties || []);
+          setEarlyDiscount(data.early_discount_enabled || false);
+          setIncentiveType(data.global_incentive_type || 'desconto_direto');
+          setIncentive1(Number(data.global_incentive_1 || 0));
+          setIncentive2(Number(data.global_incentive_2 || 0));
+          setIncentive3(Number(data.global_incentive_3 || 0));
+        }
+      });
+    }
+  }, [campaignId]);
+
   useEffect(() => {
     if (pricingList) {
       const existing = pricingList.find((p: any) => p.commodity === selectedCommodity);
       if (existing) {
-        setPricingForm({
-          id: existing.id,
-          exchange: existing.exchange,
-          contract: existing.contract,
-          exchange_price: existing.exchange_price,
-          exchange_rate_bolsa: existing.exchange_rate_bolsa,
-          exchange_rate_option: existing.exchange_rate_option,
-          option_cost: existing.option_cost,
-          security_delta_market: existing.security_delta_market,
-          security_delta_freight: existing.security_delta_freight,
-          stop_loss: existing.stop_loss,
-          volatility: existing.volatility,
-        });
+        setPricingForm({ id: existing.id, exchange: existing.exchange, contract: existing.contract, exchange_price: existing.exchange_price, exchange_rate_bolsa: existing.exchange_rate_bolsa, exchange_rate_option: existing.exchange_rate_option, option_cost: existing.option_cost, security_delta_market: existing.security_delta_market, security_delta_freight: existing.security_delta_freight, stop_loss: existing.stop_loss, volatility: existing.volatility });
         const bp = existing.basis_by_port as any;
-        if (bp && typeof bp === 'object') {
-          setBasisPorts(Object.entries(bp).map(([port, basis]) => ({ port, basis: Number(basis) })));
-        } else {
-          setBasisPorts([]);
-        }
-      } else {
-        setPricingForm(null);
-        setBasisPorts([]);
-      }
+        setBasisPorts(bp && typeof bp === 'object' ? Object.entries(bp).map(([port, basis]) => ({ port, basis: Number(basis) })) : []);
+      } else { setPricingForm(null); setBasisPorts([]); }
     }
   }, [pricingList, selectedCommodity]);
 
@@ -75,22 +186,24 @@ export default function CommoditiesTab({ campaignId, campaignCommodities = [] }:
     const basisObj: any = {};
     basisPorts.forEach(bp => { basisObj[bp.port] = bp.basis; });
     try {
-      await upsertPricing.mutateAsync({
-        ...pricingForm,
-        campaign_id: campaignId,
-        commodity: selectedCommodity,
-        basis_by_port: basisObj,
-      });
+      await upsertPricing.mutateAsync({ ...pricingForm, campaign_id: campaignId, commodity: selectedCommodity, basis_by_port: basisObj });
       toast.success('Precificação salva');
     } catch (e: any) { toast.error(e.message); }
   };
 
-  const addBasisPort = () => {
-    if (!newPort.trim()) return;
-    setBasisPorts(prev => [...prev, { port: newPort.trim(), basis: newBasis }]);
-    setNewPort('');
-    setNewBasis(0);
+  const saveCampaignCommoditySettings = async () => {
+    if (!campaignId) return;
+    try {
+      await (supabase as any).from('campaigns').update({
+        delivery_start_date: deliveryStart || null, delivery_end_date: deliveryEnd || null,
+        price_types: priceTypes, accepted_counterparties: counterparties, early_discount_enabled: earlyDiscount,
+        global_incentive_type: incentiveType, global_incentive_1: incentive1, global_incentive_2: incentive2, global_incentive_3: incentive3,
+      }).eq('id', campaignId);
+      toast.success('Configurações salvas');
+    } catch (e: any) { toast.error(e.message); }
   };
+
+  const addBasisPort = () => { if (!newPort.trim()) return; setBasisPorts(prev => [...prev, { port: newPort.trim(), basis: newBasis }]); setNewPort(''); setNewBasis(0); };
 
   const addFreightReducer = async () => {
     if (!newFreight.origin || !newFreight.destination || !campaignId) return;
@@ -102,13 +215,115 @@ export default function CommoditiesTab({ campaignId, campaignCommodities = [] }:
     } catch (e: any) { toast.error(e.message); }
   };
 
+  // CRUD helpers
+  const addBuyer = async () => {
+    if (!newBuyerName.trim() || !campaignId) return;
+    await (supabase as any).from('campaign_buyers').insert({ campaign_id: campaignId, buyer_name: newBuyerName.trim(), fee: newBuyerFee });
+    setNewBuyerName(''); setNewBuyerFee(0);
+    qc.invalidateQueries({ queryKey: ['buyers', campaignId] });
+  };
+  const deleteBuyer = async (id: string) => {
+    await (supabase as any).from('campaign_buyers').delete().eq('id', id);
+    qc.invalidateQueries({ queryKey: ['buyers', campaignId] });
+  };
+
+  const addValorization = async (commodity: string) => {
+    if (!campaignId) return;
+    await (supabase as any).from('campaign_commodity_valorizations').insert({ campaign_id: campaignId, commodity });
+    qc.invalidateQueries({ queryKey: ['valorizations', campaignId] });
+  };
+  const updateValorization = async (id: string, field: string, value: any) => {
+    await (supabase as any).from('campaign_commodity_valorizations').update({ [field]: value }).eq('id', id);
+    qc.invalidateQueries({ queryKey: ['valorizations', campaignId] });
+  };
+  const deleteValorization = async (id: string) => {
+    await (supabase as any).from('campaign_commodity_valorizations').delete().eq('id', id);
+    qc.invalidateQueries({ queryKey: ['valorizations', campaignId] });
+  };
+
+  const bulkInsertLocations = async (locations: Omit<DeliveryLocation, 'id'>[]) => {
+    if (!campaignId) return;
+    await (supabase as any).from('campaign_delivery_locations').insert(locations.map(l => ({ ...l, campaign_id: campaignId })));
+    qc.invalidateQueries({ queryKey: ['delivery-locations', campaignId] });
+  };
+  const deleteLocation = async (id: string) => {
+    await (supabase as any).from('campaign_delivery_locations').delete().eq('id', id);
+    qc.invalidateQueries({ queryKey: ['delivery-locations', campaignId] });
+  };
+
+  const bulkInsertPrices = async (prices: Omit<IndicativePrice, 'id'>[]) => {
+    if (!campaignId) return;
+    await (supabase as any).from('campaign_indicative_prices').insert(prices.map(p => ({ ...p, campaign_id: campaignId })));
+    qc.invalidateQueries({ queryKey: ['indicative-prices', campaignId] });
+  };
+  const deletePrice = async (id: string) => {
+    await (supabase as any).from('campaign_indicative_prices').delete().eq('id', id);
+    qc.invalidateQueries({ queryKey: ['indicative-prices', campaignId] });
+  };
+
+  const handleLocFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    if (file.name.endsWith('.csv') || file.name.endsWith('.txt')) {
+      reader.onload = (ev) => {
+        const rows = parseCSVRows(ev.target?.result as string, parts => ({
+          cda: parts[0] || '', warehouse_name: parts[1] || '', address: parts[2] || '', city: parts[3] || '', state: parts[4] || '',
+          phone: parts[5] || '', email: parts[6] || '', location_type: parts[7] || '', capacity_tons: Number(parts[8] || 0),
+          latitude: Number(parts[9] || 0), longitude: Number(parts[10] || 0),
+        }));
+        bulkInsertLocations(rows);
+      };
+      reader.readAsText(file);
+    } else {
+      reader.onload = (ev) => {
+        const data = new Uint8Array(ev.target?.result as ArrayBuffer);
+        const wb = XLSX.read(data, { type: 'array' });
+        const rows = (XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1 }) as any[][]).slice(1).map(r => ({
+          cda: String(r[0] || ''), warehouse_name: String(r[1] || ''), address: String(r[2] || ''), city: String(r[3] || ''), state: String(r[4] || ''),
+          phone: String(r[5] || ''), email: String(r[6] || ''), location_type: String(r[7] || ''), capacity_tons: Number(r[8] || 0),
+          latitude: Number(r[9] || 0), longitude: Number(r[10] || 0),
+        }));
+        bulkInsertLocations(rows);
+      };
+      reader.readAsArrayBuffer(file);
+    }
+    e.target.value = '';
+  };
+
+  const handlePriceFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    if (file.name.endsWith('.csv') || file.name.endsWith('.txt')) {
+      reader.onload = (ev) => {
+        const rows = parseCSVRows(ev.target?.result as string, parts => ({
+          culture: parts[0] || '', price_type: parts[1] || '', month: parts[2] || '', state: parts[3] || '', market_place: parts[4] || '',
+          price_per_saca: Number(parts[5] || 0), variation_percent: Number(parts[6] || 0), direction: parts[7] || '',
+          updated_at: parts[8] || '', tax_rate: Number(parts[9] || 0),
+        }));
+        bulkInsertPrices(rows);
+      };
+      reader.readAsText(file);
+    } else {
+      reader.onload = (ev) => {
+        const data = new Uint8Array(ev.target?.result as ArrayBuffer);
+        const wb = XLSX.read(data, { type: 'array' });
+        const rows = (XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1 }) as any[][]).slice(1).map(r => ({
+          culture: String(r[0] || ''), price_type: String(r[1] || ''), month: String(r[2] || ''), state: String(r[3] || ''), market_place: String(r[4] || ''),
+          price_per_saca: Number(r[5] || 0), variation_percent: Number(r[6] || 0), direction: String(r[7] || ''),
+          updated_at: String(r[8] || ''), tax_rate: Number(r[9] || 0),
+        }));
+        bulkInsertPrices(rows);
+      };
+      reader.readAsArrayBuffer(file);
+    }
+    e.target.value = '';
+  };
+
   if (!campaignId) return <p className="text-center py-8 text-muted-foreground">Salve a campanha primeiro para configurar commodities.</p>;
 
-  const defaultForm = {
-    exchange: 'CBOT', contract: 'K', exchange_price: 0, exchange_rate_bolsa: 5.40,
-    exchange_rate_option: 5.40, option_cost: 0, security_delta_market: 2,
-    security_delta_freight: 15, stop_loss: 0, volatility: 25,
-  };
+  const defaultForm = { exchange: 'CBOT', contract: 'K', exchange_price: 0, exchange_rate_bolsa: 5.40, exchange_rate_option: 5.40, option_cost: 0, security_delta_market: 2, security_delta_freight: 15, stop_loss: 0, volatility: 25 };
   const f = pricingForm || defaultForm;
 
   return (
@@ -125,149 +340,284 @@ export default function CommoditiesTab({ campaignId, campaignCommodities = [] }:
         </div>
       </div>
 
-      {/* Pricing Form */}
-      <div className="border border-border rounded-md p-4 space-y-4">
-        <Label className="font-semibold">Precificação - {COMMODITIES.find(x => x.value === selectedCommodity)?.label}</Label>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-          <div className="space-y-1">
-            <Label className="text-xs">Bolsa</Label>
-            <Input value={f.exchange} onChange={e => onPricingField('exchange', e.target.value)} />
-          </div>
-          <div className="space-y-1">
-            <Label className="text-xs">Contrato</Label>
-            <Input value={f.contract} onChange={e => onPricingField('contract', e.target.value)} />
-          </div>
-          <div className="space-y-1">
-            <Label className="text-xs">Preço Bolsa (USD)</Label>
-            <Input type="number" step="0.01" value={f.exchange_price} onChange={e => onPricingField('exchange_price', Number(e.target.value))} />
-          </div>
-          <div className="space-y-1">
-            <Label className="text-xs">Câmbio Bolsa</Label>
-            <Input type="number" step="0.01" value={f.exchange_rate_bolsa} onChange={e => onPricingField('exchange_rate_bolsa', Number(e.target.value))} />
-          </div>
-          <div className="space-y-1">
-            <Label className="text-xs">Câmbio Opção</Label>
-            <Input type="number" step="0.01" value={f.exchange_rate_option} onChange={e => onPricingField('exchange_rate_option', Number(e.target.value))} />
-          </div>
-          <div className="space-y-1">
-            <Label className="text-xs">Custo Opção</Label>
-            <Input type="number" step="0.01" value={f.option_cost} onChange={e => onPricingField('option_cost', Number(e.target.value))} />
-          </div>
-          <div className="space-y-1">
-            <Label className="text-xs">Delta Mercado (%)</Label>
-            <Input type="number" step="0.1" value={f.security_delta_market} onChange={e => onPricingField('security_delta_market', Number(e.target.value))} />
-          </div>
-          <div className="space-y-1">
-            <Label className="text-xs">Delta Frete (R$/sc)</Label>
-            <Input type="number" step="0.1" value={f.security_delta_freight} onChange={e => onPricingField('security_delta_freight', Number(e.target.value))} />
-          </div>
-          <div className="space-y-1">
-            <Label className="text-xs">Stop Loss (%)</Label>
-            <Input type="number" step="0.1" value={f.stop_loss} onChange={e => onPricingField('stop_loss', Number(e.target.value))} />
-          </div>
-          <div className="space-y-1">
-            <Label className="text-xs">Volatilidade (%)</Label>
-            <Input type="number" step="0.1" value={f.volatility} onChange={e => onPricingField('volatility', Number(e.target.value))} />
-          </div>
-        </div>
+      <Tabs defaultValue="precificacao" className="w-full">
+        <TabsList className="bg-muted border border-border flex-wrap h-auto">
+          <TabsTrigger value="precificacao">Precificação</TabsTrigger>
+          <TabsTrigger value="configuracao">Configuração</TabsTrigger>
+          <TabsTrigger value="valorizacao">Valorização</TabsTrigger>
+          <TabsTrigger value="incentivos">Incentivos</TabsTrigger>
+          <TabsTrigger value="compradores">Compradores</TabsTrigger>
+          <TabsTrigger value="locais">Locais de Entrega</TabsTrigger>
+          <TabsTrigger value="precos_indicativos">Preços Indicativos</TabsTrigger>
+          <TabsTrigger value="fretes">Fretes</TabsTrigger>
+        </TabsList>
 
-        {/* Basis by Port */}
-        <div className="space-y-2">
-          <Label className="text-sm font-medium">Basis por Porto / Mercado Formador</Label>
-          <div className="flex gap-2 items-end">
-            <div className="flex-1 space-y-1">
-              <Label className="text-xs">Porto/Local</Label>
-              <Input value={newPort} onChange={e => setNewPort(e.target.value)} placeholder="Ex: Paranaguá" />
-            </div>
-            <div className="w-32 space-y-1">
-              <Label className="text-xs">Basis (R$/sc)</Label>
-              <Input type="number" step="0.1" value={newBasis} onChange={e => setNewBasis(Number(e.target.value))} />
-            </div>
-            <Button variant="outline" size="sm" onClick={addBasisPort}><Plus className="w-3 h-3" /></Button>
-          </div>
-          {basisPorts.length > 0 && (
-            <div className="flex gap-2 flex-wrap">
-              {basisPorts.map((bp, i) => (
-                <Badge key={i} variant="secondary" className="cursor-pointer" onClick={() => setBasisPorts(prev => prev.filter((_, j) => j !== i))}>
-                  {bp.port}: R${bp.basis}/sc ×
-                </Badge>
+        {/* Pricing Tab */}
+        <TabsContent value="precificacao" className="mt-4">
+          <div className="border border-border rounded-md p-4 space-y-4">
+            <Label className="font-semibold">Precificação - {COMMODITIES.find(x => x.value === selectedCommodity)?.label}</Label>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              {[
+                ['Bolsa', 'exchange', f.exchange, 'text'],
+                ['Contrato', 'contract', f.contract, 'text'],
+                ['Preço Bolsa (USD)', 'exchange_price', f.exchange_price, 'number'],
+                ['Câmbio Bolsa', 'exchange_rate_bolsa', f.exchange_rate_bolsa, 'number'],
+                ['Câmbio Opção', 'exchange_rate_option', f.exchange_rate_option, 'number'],
+                ['Custo Opção', 'option_cost', f.option_cost, 'number'],
+                ['Delta Mercado (%)', 'security_delta_market', f.security_delta_market, 'number'],
+                ['Delta Frete (R$/sc)', 'security_delta_freight', f.security_delta_freight, 'number'],
+                ['Stop Loss (%)', 'stop_loss', f.stop_loss, 'number'],
+                ['Volatilidade (%)', 'volatility', f.volatility, 'number'],
+              ].map(([label, key, val, type]) => (
+                <div key={key as string} className="space-y-1">
+                  <Label className="text-xs">{label as string}</Label>
+                  <Input type={type as string} step="0.01" value={val as any} onChange={e => onPricingField(key as string, type === 'number' ? Number(e.target.value) : e.target.value)} />
+                </div>
               ))}
             </div>
-          )}
-        </div>
+            <div className="space-y-2">
+              <Label className="text-sm font-medium">Basis por Porto</Label>
+              <div className="flex gap-2 items-end">
+                <div className="flex-1 space-y-1"><Label className="text-xs">Porto</Label><Input value={newPort} onChange={e => setNewPort(e.target.value)} placeholder="Ex: Paranaguá" /></div>
+                <div className="w-32 space-y-1"><Label className="text-xs">Basis (R$/sc)</Label><Input type="number" step="0.1" value={newBasis} onChange={e => setNewBasis(Number(e.target.value))} /></div>
+                <Button variant="outline" size="sm" onClick={addBasisPort}><Plus className="w-3 h-3" /></Button>
+              </div>
+              {basisPorts.length > 0 && <div className="flex gap-2 flex-wrap">{basisPorts.map((bp, i) => (<Badge key={i} variant="secondary" className="cursor-pointer" onClick={() => setBasisPorts(prev => prev.filter((_, j) => j !== i))}>{bp.port}: R${bp.basis}/sc ×</Badge>))}</div>}
+            </div>
+            <Button onClick={savePricing} disabled={upsertPricing.isPending}><Save className="w-4 h-4 mr-1" /> Salvar Precificação</Button>
+          </div>
+        </TabsContent>
 
-        <Button onClick={savePricing} disabled={upsertPricing.isPending}>
-          <Save className="w-4 h-4 mr-1" /> Salvar Precificação
-        </Button>
-      </div>
-
-      {/* Freight Reducers */}
-      <div className="border border-border rounded-md p-4 space-y-4">
-        <Label className="font-semibold">Redutores de Frete</Label>
-
-        <div className="flex gap-2 items-end flex-wrap">
-          <div className="space-y-1">
-            <Label className="text-xs">Origem</Label>
-            <Input value={newFreight.origin} onChange={e => setNewFreight(p => ({ ...p, origin: e.target.value }))} placeholder="Ex: Sorriso-MT" className="w-36" />
-          </div>
-          <div className="space-y-1">
-            <Label className="text-xs">Destino</Label>
-            <Input value={newFreight.destination} onChange={e => setNewFreight(p => ({ ...p, destination: e.target.value }))} placeholder="Ex: Paranaguá-PR" className="w-36" />
-          </div>
-          <div className="space-y-1">
-            <Label className="text-xs">Distância (km)</Label>
-            <Input type="number" value={newFreight.distance_km} onChange={e => setNewFreight(p => ({ ...p, distance_km: Number(e.target.value) }))} className="w-28" />
-          </div>
-          <div className="space-y-1">
-            <Label className="text-xs">R$/km</Label>
-            <Input type="number" step="0.01" value={newFreight.cost_per_km} onChange={e => setNewFreight(p => ({ ...p, cost_per_km: Number(e.target.value) }))} className="w-24" />
-          </div>
-          <div className="space-y-1">
-            <Label className="text-xs">Ajuste</Label>
-            <Input type="number" step="0.1" value={newFreight.adjustment} onChange={e => setNewFreight(p => ({ ...p, adjustment: Number(e.target.value) }))} className="w-24" />
-          </div>
-          <Button onClick={addFreightReducer} disabled={upsertFreight.isPending}><Plus className="w-4 h-4 mr-1" /> Add</Button>
-        </div>
-
-        {loadingFreight ? <p className="text-sm text-muted-foreground">Carregando...</p> : (
-          (freightList || []).length > 0 ? (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Origem</TableHead>
-                  <TableHead>Destino</TableHead>
-                  <TableHead>Distância</TableHead>
-                  <TableHead>R$/km</TableHead>
-                  <TableHead>Ajuste</TableHead>
-                  <TableHead>Total R$/sc</TableHead>
-                  <TableHead className="w-12"></TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {(freightList || []).map((f: any) => (
-                  <TableRow key={f.id}>
-                    <TableCell>{f.origin}</TableCell>
-                    <TableCell>{f.destination}</TableCell>
-                    <TableCell>{f.distance_km} km</TableCell>
-                    <TableCell>R$ {Number(f.cost_per_km).toFixed(2)}</TableCell>
-                    <TableCell>R$ {Number(f.adjustment || 0).toFixed(2)}</TableCell>
-                    <TableCell className="font-medium">R$ {Number(f.total_reducer).toFixed(2)}</TableCell>
-                    <TableCell>
-                      <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => deleteFreight.mutate(f.id)}>
-                        <Trash2 className="w-3 h-3" />
-                      </Button>
-                    </TableCell>
-                  </TableRow>
+        {/* Configuration Tab */}
+        <TabsContent value="configuracao" className="mt-4">
+          <div className="border border-border rounded-md p-4 space-y-4">
+            <Label className="font-semibold">Configuração de Commodity</Label>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <DateField label="Período de Entrega - Início" value={deliveryStart} onChange={setDeliveryStart} />
+              <DateField label="Período de Entrega - Fim" value={deliveryEnd} onChange={setDeliveryEnd} />
+            </div>
+            <div className="space-y-2">
+              <Label className="text-sm font-medium">Tipos de Preço</Label>
+              <div className="flex gap-4 flex-wrap">
+                {PRICE_TYPES.map(pt => (
+                  <label key={pt.value} className="flex items-center gap-2 text-sm">
+                    <Checkbox checked={priceTypes.includes(pt.value)} onCheckedChange={() => setPriceTypes(prev => prev.includes(pt.value) ? prev.filter(v => v !== pt.value) : [...prev, pt.value])} />
+                    {pt.label}
+                  </label>
                 ))}
-              </TableBody>
-            </Table>
-          ) : (
-            <p className="text-sm text-muted-foreground text-center py-4 border border-dashed border-border rounded-md">
-              Nenhum redutor de frete configurado.
-            </p>
-          )
-        )}
-      </div>
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label className="text-sm font-medium">Contrapartes Aceitas</Label>
+              <div className="flex gap-4 flex-wrap">
+                {COUNTERPARTY_TYPES.map(ct => (
+                  <label key={ct.value} className="flex items-center gap-2 text-sm">
+                    <Checkbox checked={counterparties.includes(ct.value)} onCheckedChange={() => setCounterparties(prev => prev.includes(ct.value) ? prev.filter(v => v !== ct.value) : [...prev, ct.value])} />
+                    {ct.label}
+                  </label>
+                ))}
+              </div>
+            </div>
+            <div className="flex items-center gap-3">
+              <Switch checked={earlyDiscount} onCheckedChange={setEarlyDiscount} />
+              <Label>Desconto de Antecipação Habilitado</Label>
+            </div>
+            <Button onClick={saveCampaignCommoditySettings}><Save className="w-4 h-4 mr-1" /> Salvar Configuração</Button>
+          </div>
+        </TabsContent>
+
+        {/* Valorization Tab */}
+        <TabsContent value="valorizacao" className="mt-4">
+          <div className="border border-border rounded-md p-4 space-y-4">
+            <div className="flex items-center justify-between">
+              <Label className="font-semibold">Valorização Padrão por Commodity</Label>
+            </div>
+            {(campaignCommodities.length > 0 ? campaignCommodities : COMMODITIES.map(c => c.value)).map(comm => {
+              const val = valorizations.find((v: any) => v.commodity === comm);
+              return (
+                <div key={comm} className="flex items-center gap-3 p-3 border border-border rounded-md">
+                  <span className="font-medium text-sm w-24">{COMMODITIES.find(c => c.value === comm)?.label || comm}</span>
+                  {val ? (
+                    <>
+                      <div className="space-y-1"><Label className="text-xs">Nominal</Label><Input type="number" step="0.01" value={val.nominal_value} onChange={e => updateValorization(val.id!, 'nominal_value', Number(e.target.value))} className="w-28 h-8" disabled={val.use_percent} /></div>
+                      <div className="space-y-1"><Label className="text-xs">%</Label><Input type="number" step="0.1" value={val.percent_value} onChange={e => updateValorization(val.id!, 'percent_value', Number(e.target.value))} className="w-24 h-8" disabled={!val.use_percent} /></div>
+                      <label className="flex items-center gap-1 text-xs"><Switch checked={val.use_percent} onCheckedChange={v => updateValorization(val.id!, 'use_percent', v)} />Usar %</label>
+                      <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => deleteValorization(val.id!)}><Trash2 className="w-3 h-3" /></Button>
+                    </>
+                  ) : (
+                    <Button variant="outline" size="sm" onClick={() => addValorization(comm)}><Plus className="w-3 h-3 mr-1" /> Configurar</Button>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </TabsContent>
+
+        {/* Incentives Tab */}
+        <TabsContent value="incentivos" className="mt-4">
+          <div className="border border-border rounded-md p-4 space-y-4">
+            <Label className="font-semibold">Incentivos Globais</Label>
+            <div className="space-y-2">
+              <Label className="text-sm">Tipo de Incentivo Selecionado</Label>
+              <Select value={incentiveType} onValueChange={setIncentiveType}>
+                <SelectTrigger className="max-w-xs"><SelectValue /></SelectTrigger>
+                <SelectContent>{INCENTIVE_TYPES.map(t => <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>)}</SelectContent>
+              </Select>
+            </div>
+            <div className="grid grid-cols-3 gap-4">
+              <div className="space-y-1"><Label className="text-xs">Incentivo 1 (%)</Label><Input type="number" step="0.1" value={incentive1} onChange={e => setIncentive1(Number(e.target.value))} /></div>
+              <div className="space-y-1"><Label className="text-xs">Incentivo 2 (%)</Label><Input type="number" step="0.1" value={incentive2} onChange={e => setIncentive2(Number(e.target.value))} /></div>
+              <div className="space-y-1"><Label className="text-xs">Incentivo 3 (%)</Label><Input type="number" step="0.1" value={incentive3} onChange={e => setIncentive3(Number(e.target.value))} /></div>
+            </div>
+            <p className="text-xs text-muted-foreground">Esses % serão aplicados sobre o montante do pedido.</p>
+            <Button onClick={saveCampaignCommoditySettings}><Save className="w-4 h-4 mr-1" /> Salvar Incentivos</Button>
+          </div>
+        </TabsContent>
+
+        {/* Buyers Tab */}
+        <TabsContent value="compradores" className="mt-4">
+          <div className="border border-border rounded-md p-4 space-y-4">
+            <Label className="font-semibold">Compradores Pré-Cadastrados</Label>
+            <div className="flex gap-2 items-end">
+              <div className="flex-1 space-y-1"><Label className="text-xs">Nome do Comprador</Label><Input value={newBuyerName} onChange={e => setNewBuyerName(e.target.value)} /></div>
+              <div className="w-32 space-y-1"><Label className="text-xs">Fee (%)</Label><Input type="number" step="0.1" value={newBuyerFee} onChange={e => setNewBuyerFee(Number(e.target.value))} /></div>
+              <Button onClick={addBuyer}><Plus className="w-4 h-4" /></Button>
+            </div>
+            {buyers.length > 0 && (
+              <Table>
+                <TableHeader><TableRow><TableHead>Comprador</TableHead><TableHead>Fee (%)</TableHead><TableHead className="w-12"></TableHead></TableRow></TableHeader>
+                <TableBody>
+                  {buyers.map((b: any) => (
+                    <TableRow key={b.id}><TableCell>{b.buyer_name}</TableCell><TableCell>{b.fee}%</TableCell><TableCell><Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => deleteBuyer(b.id)}><Trash2 className="w-3 h-3" /></Button></TableCell></TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            )}
+          </div>
+        </TabsContent>
+
+        {/* Delivery Locations Tab */}
+        <TabsContent value="locais" className="mt-4">
+          <div className="border border-border rounded-md p-4 space-y-4">
+            <div className="flex items-center justify-between">
+              <Label className="font-semibold">Locais de Entrega (Armazéns)</Label>
+              <div className="flex gap-2">
+                <Button variant="outline" size="sm" onClick={() => setLocPasteMode(!locPasteMode)}><ClipboardPaste className="w-3 h-3 mr-1" /> Colar</Button>
+                <Button variant="outline" size="sm" onClick={() => locFileRef.current?.click()}><Upload className="w-3 h-3 mr-1" /> Importar</Button>
+                <input ref={locFileRef} type="file" accept=".csv,.xls,.xlsx,.txt" className="hidden" onChange={handleLocFileUpload} />
+              </div>
+            </div>
+            {locPasteMode && (
+              <div className="space-y-2 p-3 border border-border rounded-md bg-muted/30">
+                <Label className="text-xs text-muted-foreground">Formato: CDA;Armazenador;Endereço;Município;UF;Telefone;E-mail;Tipo;CAP.(t);Latitude;Longitude</Label>
+                <Textarea value={locPasteText} onChange={e => setLocPasteText(e.target.value)} rows={4} />
+                <Button size="sm" onClick={() => {
+                  const rows = parseCSVRows(locPasteText, parts => ({
+                    cda: parts[0] || '', warehouse_name: parts[1] || '', address: parts[2] || '', city: parts[3] || '', state: parts[4] || '',
+                    phone: parts[5] || '', email: parts[6] || '', location_type: parts[7] || '', capacity_tons: Number(parts[8] || 0),
+                    latitude: Number(parts[9] || 0), longitude: Number(parts[10] || 0),
+                  }));
+                  bulkInsertLocations(rows); setLocPasteText(''); setLocPasteMode(false);
+                }}>Importar</Button>
+              </div>
+            )}
+            {deliveryLocations.length > 0 ? (
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>CDA</TableHead><TableHead>Armazenador</TableHead><TableHead>Município</TableHead><TableHead>UF</TableHead><TableHead>Tipo</TableHead><TableHead>Cap.(t)</TableHead><TableHead className="w-12"></TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {deliveryLocations.map((l: any) => (
+                      <TableRow key={l.id}>
+                        <TableCell className="text-xs">{l.cda}</TableCell><TableCell>{l.warehouse_name}</TableCell><TableCell>{l.city}</TableCell><TableCell>{l.state}</TableCell><TableCell>{l.location_type}</TableCell><TableCell>{l.capacity_tons}</TableCell>
+                        <TableCell><Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => deleteLocation(l.id)}><Trash2 className="w-3 h-3" /></Button></TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            ) : <p className="text-sm text-muted-foreground text-center py-4 border border-dashed border-border rounded-md">Nenhum local de entrega. Importe via CSV/XLS ou cole texto.</p>}
+          </div>
+        </TabsContent>
+
+        {/* Indicative Prices Tab */}
+        <TabsContent value="precos_indicativos" className="mt-4">
+          <div className="border border-border rounded-md p-4 space-y-4">
+            <div className="flex items-center justify-between">
+              <Label className="font-semibold">Base de Preços Indicativos</Label>
+              <div className="flex gap-2">
+                <Button variant="outline" size="sm" onClick={() => setPricePasteMode(!pricePasteMode)}><ClipboardPaste className="w-3 h-3 mr-1" /> Colar</Button>
+                <Button variant="outline" size="sm" onClick={() => priceFileRef.current?.click()}><Upload className="w-3 h-3 mr-1" /> Importar</Button>
+                <input ref={priceFileRef} type="file" accept=".csv,.xls,.xlsx,.txt" className="hidden" onChange={handlePriceFileUpload} />
+              </div>
+            </div>
+            {pricePasteMode && (
+              <div className="space-y-2 p-3 border border-border rounded-md bg-muted/30">
+                <Label className="text-xs text-muted-foreground">Formato: Cultura;Tipo;Mês;Estado;Praça;Preço(R$/sc);Variação(%);Direção;Data Atualização;Alíquota(%)</Label>
+                <Textarea value={pricePasteText} onChange={e => setPricePasteText(e.target.value)} rows={4} />
+                <Button size="sm" onClick={() => {
+                  const rows = parseCSVRows(pricePasteText, parts => ({
+                    culture: parts[0] || '', price_type: parts[1] || '', month: parts[2] || '', state: parts[3] || '', market_place: parts[4] || '',
+                    price_per_saca: Number(parts[5] || 0), variation_percent: Number(parts[6] || 0), direction: parts[7] || '',
+                    updated_at: parts[8] || '', tax_rate: Number(parts[9] || 0),
+                  }));
+                  bulkInsertPrices(rows); setPricePasteText(''); setPricePasteMode(false);
+                }}>Importar</Button>
+              </div>
+            )}
+            {indicativePrices.length > 0 ? (
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Cultura</TableHead><TableHead>Tipo</TableHead><TableHead>Mês</TableHead><TableHead>Estado</TableHead><TableHead>Praça</TableHead>
+                      <TableHead>R$/sc</TableHead><TableHead>Var.(%)</TableHead><TableHead>Dir.</TableHead><TableHead>Alíq.(%)</TableHead><TableHead className="w-12"></TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {indicativePrices.map((p: any) => (
+                      <TableRow key={p.id}>
+                        <TableCell>{p.culture}</TableCell><TableCell>{p.price_type}</TableCell><TableCell>{p.month}</TableCell><TableCell>{p.state}</TableCell><TableCell>{p.market_place}</TableCell>
+                        <TableCell>R$ {Number(p.price_per_saca).toFixed(2)}</TableCell><TableCell>{p.variation_percent}%</TableCell><TableCell>{p.direction}</TableCell><TableCell>{p.tax_rate}%</TableCell>
+                        <TableCell><Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => deletePrice(p.id)}><Trash2 className="w-3 h-3" /></Button></TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            ) : <p className="text-sm text-muted-foreground text-center py-4 border border-dashed border-border rounded-md">Nenhum preço indicativo. Importe via CSV/XLS ou cole texto.</p>}
+          </div>
+        </TabsContent>
+
+        {/* Freight Tab */}
+        <TabsContent value="fretes" className="mt-4">
+          <div className="border border-border rounded-md p-4 space-y-4">
+            <Label className="font-semibold">Redutores de Frete</Label>
+            <div className="flex gap-2 items-end flex-wrap">
+              <div className="space-y-1"><Label className="text-xs">Origem</Label><Input value={newFreight.origin} onChange={e => setNewFreight(p => ({ ...p, origin: e.target.value }))} className="w-36" /></div>
+              <div className="space-y-1"><Label className="text-xs">Destino</Label><Input value={newFreight.destination} onChange={e => setNewFreight(p => ({ ...p, destination: e.target.value }))} className="w-36" /></div>
+              <div className="space-y-1"><Label className="text-xs">Dist.(km)</Label><Input type="number" value={newFreight.distance_km} onChange={e => setNewFreight(p => ({ ...p, distance_km: Number(e.target.value) }))} className="w-28" /></div>
+              <div className="space-y-1"><Label className="text-xs">R$/km</Label><Input type="number" step="0.01" value={newFreight.cost_per_km} onChange={e => setNewFreight(p => ({ ...p, cost_per_km: Number(e.target.value) }))} className="w-24" /></div>
+              <div className="space-y-1"><Label className="text-xs">Ajuste</Label><Input type="number" step="0.1" value={newFreight.adjustment} onChange={e => setNewFreight(p => ({ ...p, adjustment: Number(e.target.value) }))} className="w-24" /></div>
+              <Button onClick={addFreightReducer} disabled={upsertFreight.isPending}><Plus className="w-4 h-4 mr-1" /> Add</Button>
+            </div>
+            {loadingFreight ? <p className="text-sm text-muted-foreground">Carregando...</p> : (freightList || []).length > 0 ? (
+              <Table>
+                <TableHeader><TableRow><TableHead>Origem</TableHead><TableHead>Destino</TableHead><TableHead>Dist.</TableHead><TableHead>R$/km</TableHead><TableHead>Ajuste</TableHead><TableHead>Total</TableHead><TableHead className="w-12"></TableHead></TableRow></TableHeader>
+                <TableBody>
+                  {(freightList || []).map((fr: any) => (
+                    <TableRow key={fr.id}><TableCell>{fr.origin}</TableCell><TableCell>{fr.destination}</TableCell><TableCell>{fr.distance_km}km</TableCell><TableCell>R${Number(fr.cost_per_km).toFixed(2)}</TableCell><TableCell>R${Number(fr.adjustment || 0).toFixed(2)}</TableCell><TableCell className="font-medium">R${Number(fr.total_reducer).toFixed(2)}</TableCell>
+                      <TableCell><Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => deleteFreight.mutate(fr.id)}><Trash2 className="w-3 h-3" /></Button></TableCell></TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            ) : <p className="text-sm text-muted-foreground text-center py-4 border border-dashed border-border rounded-md">Nenhum redutor de frete.</p>}
+          </div>
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }

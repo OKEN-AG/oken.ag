@@ -9,13 +9,17 @@ import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Trash2, Plus, Upload, ClipboardPaste } from 'lucide-react';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Calendar } from '@/components/ui/calendar';
+import { format } from 'date-fns';
+import { cn } from '@/lib/utils';
 
 export type ClientRow = { document: string; name: string };
 
 const TARGETS = [
-  { value: 'produtor', label: 'Produtor' },
-  { value: 'distribuidor', label: 'Distribuidor' },
-  { value: 'venda_direta', label: 'Venda Direta' },
+  { value: 'venda_direta_consumidor', label: 'Venda Direta ao Consumidor' },
+  { value: 'venda_canal_distribuicao', label: 'Venda ao Canal de Distribuição' },
+  { value: 'venda_indireta_consumidor', label: 'Venda Indireta ao Consumidor' },
 ];
 
 const COMMODITIES = [
@@ -23,6 +27,12 @@ const COMMODITIES = [
   { value: 'milho', label: 'Milho' },
   { value: 'cafe', label: 'Café' },
   { value: 'algodao', label: 'Algodão' },
+];
+
+const CAMPAIGN_TYPES = [
+  { value: 'vendas', label: 'Vendas' },
+  { value: 'cobranca_preventiva', label: 'Cobrança - Preventiva' },
+  { value: 'cobranca_renegociacao', label: 'Cobrança - Renegociação' },
 ];
 
 type Props = {
@@ -33,11 +43,39 @@ type Props = {
     target: string;
     active: boolean;
     commodities: string[];
+    code_custom: string;
+    code_auto: string;
+    company_name: string;
+    division: string;
+    description: string;
+    start_date: string;
+    end_date: string;
+    billing_deadline: string;
+    campaign_type: string;
   };
   onFieldChange: (key: string, value: any) => void;
   clients: ClientRow[];
   onClientsChange: (clients: ClientRow[]) => void;
 };
+
+function DatePickerField({ label, value, onChange }: { label: string; value: string; onChange: (v: string) => void }) {
+  const date = value ? new Date(value + 'T00:00:00') : undefined;
+  return (
+    <div className="space-y-2">
+      <Label>{label}</Label>
+      <Popover>
+        <PopoverTrigger asChild>
+          <Button variant="outline" className={cn("w-full justify-start text-left font-normal", !date && "text-muted-foreground")}>
+            {date ? format(date, 'dd/MM/yyyy') : 'Selecionar data'}
+          </Button>
+        </PopoverTrigger>
+        <PopoverContent className="w-auto p-0" align="start">
+          <Calendar mode="single" selected={date} onSelect={d => onChange(d ? format(d, 'yyyy-MM-dd') : '')} className="p-3 pointer-events-auto" />
+        </PopoverContent>
+      </Popover>
+    </div>
+  );
+}
 
 export default function GeneralTab({ form, onFieldChange, clients, onClientsChange }: Props) {
   const [newDoc, setNewDoc] = useState('');
@@ -53,18 +91,13 @@ export default function GeneralTab({ form, onFieldChange, clients, onClientsChan
     setNewName('');
   };
 
-  const removeClient = (idx: number) => {
-    onClientsChange(clients.filter((_, i) => i !== idx));
-  };
+  const removeClient = (idx: number) => onClientsChange(clients.filter((_, i) => i !== idx));
 
   const handlePaste = () => {
     if (!pasteText.trim()) return;
     const lines = pasteText.trim().split('\n');
     const newClients = lines
-      .map(line => {
-        const parts = line.split(/[;\t,]/).map(p => p.trim());
-        return { document: parts[0] || '', name: parts[1] || '' };
-      })
+      .map(line => { const parts = line.split(/[;\t,]/).map(p => p.trim()); return { document: parts[0] || '', name: parts[1] || '' }; })
       .filter(c => c.document || c.name);
     onClientsChange([...clients, ...newClients]);
     setPasteText('');
@@ -74,18 +107,12 @@ export default function GeneralTab({ form, onFieldChange, clients, onClientsChan
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-
     if (file.name.endsWith('.csv') || file.name.endsWith('.txt')) {
       const reader = new FileReader();
       reader.onload = (ev) => {
         const text = ev.target?.result as string;
         const lines = text.trim().split('\n').slice(1);
-        const newClients = lines
-          .map(line => {
-            const parts = line.split(/[;\t,]/).map(p => p.trim());
-            return { document: parts[0] || '', name: parts[1] || '' };
-          })
-          .filter(c => c.document || c.name);
+        const newClients = lines.map(line => { const parts = line.split(/[;\t,]/).map(p => p.trim()); return { document: parts[0] || '', name: parts[1] || '' }; }).filter(c => c.document || c.name);
         onClientsChange([...clients, ...newClients]);
       };
       reader.readAsText(file);
@@ -96,12 +123,7 @@ export default function GeneralTab({ form, onFieldChange, clients, onClientsChan
         const workbook = XLSX.read(data, { type: 'array' });
         const sheet = workbook.Sheets[workbook.SheetNames[0]];
         const rows = XLSX.utils.sheet_to_json(sheet, { header: 1 }) as string[][];
-        const newClients = rows.slice(1)
-          .map(row => ({
-            document: String(row[0] || '').trim(),
-            name: String(row[1] || '').trim(),
-          }))
-          .filter(c => c.document || c.name);
+        const newClients = rows.slice(1).map(row => ({ document: String(row[0] || '').trim(), name: String(row[1] || '').trim() })).filter(c => c.document || c.name);
         onClientsChange([...clients, ...newClients]);
       };
       reader.readAsArrayBuffer(file);
@@ -111,23 +133,48 @@ export default function GeneralTab({ form, onFieldChange, clients, onClientsChan
 
   const toggleCommodity = (value: string) => {
     const current = form.commodities || [];
-    onFieldChange(
-      'commodities',
-      current.includes(value) ? current.filter(c => c !== value) : [...current, value]
-    );
+    onFieldChange('commodities', current.includes(value) ? current.filter(c => c !== value) : [...current, value]);
   };
 
   return (
     <div className="space-y-6">
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+      {/* Identification */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="space-y-2">
+          <Label>Código (automático)</Label>
+          <Input value={form.code_auto || ''} disabled placeholder="Gerado ao salvar" className="bg-muted/50" />
+        </div>
+        <div className="space-y-2">
+          <Label>Código (livre)</Label>
+          <Input value={form.code_custom || ''} onChange={e => onFieldChange('code_custom', e.target.value)} placeholder="Ex: CAMP-SOJA-2026" />
+        </div>
         <div className="space-y-2">
           <Label>Nome da Campanha</Label>
           <Input value={form.name} onChange={e => onFieldChange('name', e.target.value)} placeholder="Ex: Safra 2025/26 Barter Soja" />
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="space-y-2">
+          <Label>Empresa Responsável</Label>
+          <Input value={form.company_name || ''} onChange={e => onFieldChange('company_name', e.target.value)} placeholder="Ex: AgroCorp S.A." />
+        </div>
+        <div className="space-y-2">
+          <Label>Divisão / BU / Foco</Label>
+          <Input value={form.division || ''} onChange={e => onFieldChange('division', e.target.value)} placeholder="Ex: Proteção de Cultivos" />
         </div>
         <div className="space-y-2">
           <Label>Safra</Label>
           <Input value={form.season} onChange={e => onFieldChange('season', e.target.value)} placeholder="Ex: 2025/26" />
         </div>
+      </div>
+
+      <div className="space-y-2">
+        <Label>Descritivo da Campanha</Label>
+        <Textarea value={form.description || ''} onChange={e => onFieldChange('description', e.target.value)} rows={3} placeholder="Descreva o objetivo e escopo da campanha..." />
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <div className="space-y-2">
           <Label>Moeda da Campanha</Label>
           <Select value={form.currency} onValueChange={v => onFieldChange('currency', v)}>
@@ -148,14 +195,31 @@ export default function GeneralTab({ form, onFieldChange, clients, onClientsChan
           </Select>
         </div>
         <div className="space-y-2">
+          <Label>Enquadramento</Label>
+          <Select value={form.campaign_type || 'vendas'} onValueChange={v => onFieldChange('campaign_type', v)}>
+            <SelectTrigger><SelectValue /></SelectTrigger>
+            <SelectContent>
+              {CAMPAIGN_TYPES.map(t => <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>)}
+            </SelectContent>
+          </Select>
+        </div>
+      </div>
+
+      {/* Dates */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <DatePickerField label="Vigência - Início (Emissão)" value={form.start_date || ''} onChange={v => onFieldChange('start_date', v)} />
+        <DatePickerField label="Vigência - Fim (Emissão)" value={form.end_date || ''} onChange={v => onFieldChange('end_date', v)} />
+        <DatePickerField label="Limite de Faturamento" value={form.billing_deadline || ''} onChange={v => onFieldChange('billing_deadline', v)} />
+      </div>
+
+      {/* Commodities & Active */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="space-y-2">
           <Label>Commodities</Label>
           <div className="flex gap-4 flex-wrap">
             {COMMODITIES.map(c => (
               <label key={c.value} className="flex items-center gap-2 text-sm">
-                <Checkbox
-                  checked={(form.commodities || []).includes(c.value)}
-                  onCheckedChange={() => toggleCommodity(c.value)}
-                />
+                <Checkbox checked={(form.commodities || []).includes(c.value)} onCheckedChange={() => toggleCommodity(c.value)} />
                 {c.label}
               </label>
             ))}
@@ -225,7 +289,7 @@ export default function GeneralTab({ form, onFieldChange, clients, onClientsChan
           </div>
         ) : (
           <p className="text-sm text-muted-foreground text-center py-4 border border-dashed border-border rounded-md">
-            Nenhum cliente na whitelist. Adicione individualmente, cole texto ou importe CSV/XLS.
+            Nenhum cliente na whitelist.
           </p>
         )}
       </div>
