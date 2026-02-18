@@ -144,8 +144,9 @@ export function applyComboCascade(
   }
 
   // Process complementary combos
-  // Complementary combos apply proportionally to hectares of activated offers
-  const hasActivatedOffers = activations.some(a => a.applied);
+  // Complementary: selecting just ONE product with valid dose activates the discount
+  // for that product, proportional to sum of hectares from activated main offers
+  const hasActivatedOffers = activations.some(a => a.applied && !a.isComplementary);
 
   for (const combo of complementaryCombos) {
     if (!hasActivatedOffers) {
@@ -160,35 +161,36 @@ export function applyComboCascade(
       continue;
     }
 
-    // For complementary: check if any of its REFs are present in selections
-    // (they don't need to be "available" - complementary don't consume from main pool)
+    // For complementary: ANY single product match activates the combo
+    // (they don't consume from main pool)
     const matchedRefs: string[] = [];
-    let allMatch = true;
 
     for (const rule of combo.products) {
       const ruleRef = (rule.ref || '').toUpperCase().trim();
-      if (!ruleRef) { allMatch = false; break; }
+      if (!ruleRef) continue;
 
       const sel = selections.find(s => getSelectionRef(s) === ruleRef);
-      if (!sel) { allMatch = false; break; }
+      if (!sel) continue;
 
       const doseInRange =
         sel.dosePerHectare >= rule.minDosePerHa &&
         sel.dosePerHectare <= rule.maxDosePerHa;
 
-      if (!doseInRange) { allMatch = false; break; }
-
-      matchedRefs.push(ruleRef);
+      if (doseInRange) {
+        matchedRefs.push(ruleRef);
+      }
     }
+
+    const activated = matchedRefs.length > 0;
 
     activations.push({
       comboId: combo.id,
       comboName: combo.name,
       discountPercent: combo.discountPercent,
-      matchedProducts: allMatch ? matchedRefs : [],
-      applied: allMatch,
+      matchedProducts: matchedRefs,
+      applied: activated,
       isComplementary: true,
-      proportionalHectares: allMatch ? totalActivatedHectares : undefined,
+      proportionalHectares: activated ? totalActivatedHectares : undefined,
     });
   }
 
@@ -196,17 +198,28 @@ export function applyComboCascade(
 }
 
 /**
- * Calculate max possible discount from all combos
+ * Calculate max possible discount (highest single combo, since they're not cumulative)
  */
 export function getMaxPossibleDiscount(combos: ComboDefinition[]): number {
-  return combos.reduce((sum, c) => sum + c.discountPercent, 0);
+  const mainCombos = combos.filter(c => !c.isComplementary && !/^COMPLEMENTAR/i.test(c.name));
+  if (mainCombos.length === 0) return 0;
+  return Math.max(...mainCombos.map(c => c.discountPercent));
 }
 
 /**
- * Calculate current activated discount
+ * Calculate current activated discount (highest activated combo, not sum)
  */
 export function getActivatedDiscount(activations: ComboActivation[]): number {
+  const activatedMain = activations.filter(a => a.applied && !a.isComplementary);
+  if (activatedMain.length === 0) return 0;
+  return Math.max(...activatedMain.map(a => a.discountPercent));
+}
+
+/**
+ * Get total complementary discount from activated complementary combos
+ */
+export function getComplementaryDiscount(activations: ComboActivation[]): number {
   return activations
-    .filter(a => a.applied)
+    .filter(a => a.applied && a.isComplementary)
     .reduce((sum, a) => sum + a.discountPercent, 0);
 }

@@ -4,7 +4,7 @@ import { useActiveCampaigns, useCampaignData } from '@/hooks/useActiveCampaign';
 import { useCreateOperation, useCreateOperationItems, useCreateOperationLog } from '@/hooks/useOperations';
 import { useAuth } from '@/contexts/AuthContext';
 import { calculateAgronomicSelection } from '@/engines/agronomic';
-import { applyComboCascade, getMaxPossibleDiscount, getActivatedDiscount, getSuggestedDoseForRef } from '@/engines/combo-cascade';
+import { applyComboCascade, getMaxPossibleDiscount, getActivatedDiscount, getComplementaryDiscount, getSuggestedDoseForRef } from '@/engines/combo-cascade';
 import { decomposePricing, calculateGrossToNet } from '@/engines/pricing';
 import type { AgronomicSelection, ChannelSegment, Product } from '@/types/barter';
 import { Plus, Minus, Wheat, ShoppingCart, TrendingUp, AlertCircle, Save, Loader2 } from 'lucide-react';
@@ -79,6 +79,7 @@ export default function SimulationPage() {
 
   const maxDiscount = getMaxPossibleDiscount(combos);
   const activatedDiscount = getActivatedDiscount(comboActivations);
+  const complementaryDiscount = getComplementaryDiscount(comboActivations);
   const discountProgress = maxDiscount > 0 ? (activatedDiscount / maxDiscount) * 100 : 0;
 
   const pricingResults = useMemo(() => {
@@ -227,7 +228,10 @@ export default function SimulationPage() {
                 <span className="text-sm font-semibold text-foreground flex items-center gap-2">
                   <TrendingUp className="w-4 h-4 text-success" /> Ativação de Combos
                 </span>
-                <span className="font-mono text-sm text-success font-bold">{activatedDiscount.toFixed(1)}% / {maxDiscount}%</span>
+                <span className="font-mono text-sm text-success font-bold">
+                  Oferta: {activatedDiscount.toFixed(1)}% / {maxDiscount}%
+                  {complementaryDiscount > 0 && <span className="ml-2 text-info">+ Compl: {complementaryDiscount.toFixed(1)}%</span>}
+                </span>
               </div>
               <Progress value={discountProgress} className="h-3 bg-muted" />
               <div className="flex flex-wrap gap-2 mt-3">
