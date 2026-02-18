@@ -10,13 +10,19 @@
 
 @import url("https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&display=swap");
 
+@import url("https://fonts.googleapis.com/css2?family=Inter&display=swap");
+
+@import url("https://fonts.googleapis.com/css2?family=Lora&display=swap");
+
+@import url("https://fonts.googleapis.com/css2?family=Space+Mono&display=swap");
+
 @layer base {
   :root {
     --background: 209 40% 96%;
     --foreground: 222 47% 11%;
 
     --card: 210 40% 98%;
-    --card-foreground: 222 47% 11%;
+    --card-foreground: 26 90.4762% 37.0588%;
 
     --popover: 214 31% 91%;
     --popover-foreground: 222 47% 11%;
@@ -24,7 +30,7 @@
     --primary: 200 98% 39%;
     --primary-foreground: 204 100% 97%;
 
-    --secondary: 215 24% 26%;
+    --secondary: 215 20.2247% 65.098%;
     --secondary-foreground: 210 40% 98%;
 
     --muted: 215 20% 65%;
@@ -36,7 +42,7 @@
     --destructive: 0 72% 50%;
     --destructive-foreground: 0 85% 97%;
 
-    --border: 212 26% 83%;
+    --border: 35 91.6667% 32.9412%;
     --input: 212 26% 83%;
     --ring: 200 98% 39%;
 
@@ -74,8 +80,8 @@
     --font-display: 'Inter', sans-serif;
     --font-mono: 'Space Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;
     --chart-1: 198 93% 59%;
-    --chart-2: 213 93% 67%;
-    --chart-3: 215 20% 65%;
+    --chart-2: 35 91.6667% 32.9412%;
+    --chart-3: 32 94.6188% 43.7255%;
     --chart-4: 215 16% 46%;
     --chart-5: 215 19% 34%;
     --sidebar: 210 40% 98%;
