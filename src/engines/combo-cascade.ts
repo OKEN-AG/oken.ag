@@ -19,8 +19,12 @@ import type { ComboDefinition, ComboActivation, AgronomicSelection } from '@/typ
  * Resolve the effective REF for a selection.
  * Groups all product presentations under the same "Nome Mãe".
  */
+// Bug #12: Fallback to product name when ref is empty
 function getSelectionRef(sel: AgronomicSelection): string {
-  return (sel.ref || sel.product?.ref || '').toUpperCase().trim();
+  const ref = (sel.ref || sel.product?.ref || '').toUpperCase().trim();
+  if (ref) return ref;
+  // Fallback: use product name as REF identifier
+  return (sel.product?.name || '').toUpperCase().trim();
 }
 
 /**

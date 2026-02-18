@@ -23,13 +23,15 @@ export default function SimulationPage() {
   const { user } = useAuth();
   const { data: activeCampaigns, isLoading: loadingCampaigns } = useActiveCampaigns();
   const [selectedCampaignId, setSelectedCampaignId] = useState<string>('');
-  const { campaign, products, combos, isLoading: loadingData } = useCampaignData(selectedCampaignId || undefined);
+  const { campaign, rawCampaign, products, combos, isLoading: loadingData } = useCampaignData(selectedCampaignId || undefined);
 
   const [area, setArea] = useState(500);
   const [segment, setSegment] = useState<ChannelSegment>('distribuidor');
   const [dueMonths, setDueMonths] = useState(12);
   const [clientName, setClientName] = useState('');
+  const [selectedCommodity, setSelectedCommodity] = useState<string>('soja');
   const [selectedProducts, setSelectedProducts] = useState<Map<string, number>>(new Map());
+  const [eligibilityWarning, setEligibilityWarning] = useState<string | null>(null);
 
   const createOperation = useCreateOperation();
   const createItems = useCreateOperationItems();
@@ -182,6 +184,7 @@ export default function SimulationPage() {
       net_revenue: grossToNet.netRevenue,
       financial_revenue: grossToNet.financialRevenue,
       distributor_margin: grossToNet.distributorMargin,
+      commodity: selectedCommodity as any, // Bug #24: Save selected commodity
       status: 'simulacao' as const,
     });
 
@@ -260,7 +263,7 @@ export default function SimulationPage() {
       </div>
 
       {/* Campaign selector + config */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-4">
         <div className="glass-card p-4 lg:col-span-2">
           <label className="stat-label">Campanha</label>
           <Select value={selectedCampaignId} onValueChange={setSelectedCampaignId}>
@@ -296,6 +299,18 @@ export default function SimulationPage() {
             <SelectContent>
               {dueDateOptions.map(opt => (
                 <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        {/* Bug #24: Commodity selector */}
+        <div className="glass-card p-4">
+          <label className="stat-label">Commodity (Barter)</label>
+          <Select value={selectedCommodity} onValueChange={setSelectedCommodity}>
+            <SelectTrigger className="mt-2 bg-muted border-border text-foreground"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              {(rawCampaign?.commodities?.length ? rawCampaign.commodities : ['soja', 'milho', 'cafe', 'algodao']).map((c: string) => (
+                <SelectItem key={c} value={c} className="capitalize">{c}</SelectItem>
               ))}
             </SelectContent>
           </Select>

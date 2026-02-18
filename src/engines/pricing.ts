@@ -10,15 +10,25 @@ export function normalizePrice(
   targetSegment: ChannelSegment,
   dueMonths: number
 ): number {
-  let price = product.pricePerUnit;
+  // Bug #11: Use price_cash or price_term when available
+  let price: number;
+  if (product.priceType === 'prazo' && product.priceTerm && product.priceTerm > 0) {
+    // Already a term price — no interest needed
+    price = product.priceTerm;
+  } else if (product.priceType === 'vista' && product.priceCash && product.priceCash > 0) {
+    price = product.priceCash;
+  } else {
+    price = product.pricePerUnit;
+  }
 
   // Step 1: Convert USD → BRL if needed
   if (product.currency === 'USD') {
     price *= campaign.exchangeRateProducts;
   }
 
-  // Step 2: Convert vista → prazo if needed
-  if (product.priceType === 'vista' && dueMonths > 0) {
+  // Step 2: Convert vista → prazo if needed (skip if already term price)
+  const isAlreadyTermPrice = product.priceType === 'prazo' && product.priceTerm && product.priceTerm > 0;
+  if (!isAlreadyTermPrice && product.priceType === 'vista' && dueMonths > 0) {
     price *= Math.pow(1 + campaign.interestRate / 100, dueMonths);
   }
 
@@ -43,12 +53,21 @@ export function decomposePricing(
   dueMonths: number,
   quantity: number
 ): PricingResult {
-  let basePrice = product.pricePerUnit;
+  // Bug #11: Use price_cash or price_term when available
+  let basePrice: number;
+  const isAlreadyTermPrice = product.priceType === 'prazo' && product.priceTerm && product.priceTerm > 0;
+  if (isAlreadyTermPrice) {
+    basePrice = product.priceTerm!;
+  } else if (product.priceType === 'vista' && product.priceCash && product.priceCash > 0) {
+    basePrice = product.priceCash;
+  } else {
+    basePrice = product.pricePerUnit;
+  }
   if (product.currency === 'USD') {
     basePrice *= campaign.exchangeRateProducts;
   }
 
-  const interestMultiplier = product.priceType === 'vista' && dueMonths > 0
+  const interestMultiplier = (!isAlreadyTermPrice && product.priceType === 'vista' && dueMonths > 0)
     ? Math.pow(1 + campaign.interestRate / 100, dueMonths) - 1
     : 0;
 
