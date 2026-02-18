@@ -15,14 +15,30 @@ export type SegmentRow = {
   price_adjustment_percent: number;
 };
 
+const CLIENT_TYPES = [
+  { value: 'pf', label: 'Pessoa Física (PF)' },
+  { value: 'pj', label: 'Pessoa Jurídica (PJ)' },
+];
+
 type Props = {
   selectedCities: string[];
   onSelectedCitiesChange: (cities: string[]) => void;
   segments: SegmentRow[];
   onSegmentsChange: (segments: SegmentRow[]) => void;
+  clientType: string[];
+  onClientTypeChange: (types: string[]) => void;
+  minOrderAmount: number;
+  onMinOrderAmountChange: (v: number) => void;
+  currency: string;
 };
 
-export default function EligibilityTab({ selectedCities, onSelectedCitiesChange, segments, onSegmentsChange }: Props) {
+export default function EligibilityTab({
+  selectedCities, onSelectedCitiesChange,
+  segments, onSegmentsChange,
+  clientType, onClientTypeChange,
+  minOrderAmount, onMinOrderAmountChange,
+  currency,
+}: Props) {
   const [expandedUFs, setExpandedUFs] = useState<Set<string>>(new Set());
   const [expandedMesos, setExpandedMesos] = useState<Set<string>>(new Set());
   const [searchTerm, setSearchTerm] = useState('');
@@ -107,8 +123,40 @@ export default function EligibilityTab({ selectedCities, onSelectedCitiesChange,
     onSegmentsChange(updated);
   };
 
+  const toggleClientType = (val: string) => {
+    onClientTypeChange(
+      clientType.includes(val) ? clientType.filter(v => v !== val) : [...clientType, val]
+    );
+  };
+
   return (
     <div className="space-y-6">
+      {/* Client Type & Min Order */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="space-y-2">
+          <Label className="text-base font-semibold">Tipo de Cliente</Label>
+          <div className="flex gap-4">
+            {CLIENT_TYPES.map(ct => (
+              <label key={ct.value} className="flex items-center gap-2 text-sm">
+                <Checkbox checked={clientType.includes(ct.value)} onCheckedChange={() => toggleClientType(ct.value)} />
+                {ct.label}
+              </label>
+            ))}
+          </div>
+        </div>
+        <div className="space-y-2">
+          <Label className="text-base font-semibold">Montante Mínimo de Pedido ({currency})</Label>
+          <Input
+            type="number"
+            step="0.01"
+            value={minOrderAmount}
+            onChange={e => onMinOrderAmountChange(Number(e.target.value))}
+            placeholder="0.00"
+            className="max-w-xs"
+          />
+        </div>
+      </div>
+
       {/* Municipality Selection */}
       <div className="space-y-3">
         <div className="flex items-center justify-between">
@@ -120,11 +168,7 @@ export default function EligibilityTab({ selectedCities, onSelectedCitiesChange,
             )}
           </div>
         </div>
-        <Input
-          placeholder="Buscar UF, mesorregião ou município..."
-          value={searchTerm}
-          onChange={e => setSearchTerm(e.target.value)}
-        />
+        <Input placeholder="Buscar UF, mesorregião ou município..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
         <div className="max-h-[400px] overflow-y-auto border border-border rounded-md p-2 space-y-0.5">
           {filteredUFs.map(uf => {
             const ufCityCount = allMunicipios.filter(m => m.uf === uf).length;
@@ -144,9 +188,7 @@ export default function EligibilityTab({ selectedCities, onSelectedCitiesChange,
                   >
                     {expandedUFs.has(uf) ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
                     {uf}
-                    <span className="text-xs text-muted-foreground ml-1">
-                      ({ufSelectedCount}/{ufCityCount})
-                    </span>
+                    <span className="text-xs text-muted-foreground ml-1">({ufSelectedCount}/{ufCityCount})</span>
                   </button>
                 </div>
                 {expandedUFs.has(uf) && getMesosByUF(uf).map(meso => {
@@ -158,29 +200,21 @@ export default function EligibilityTab({ selectedCities, onSelectedCitiesChange,
                   return (
                     <div key={meso.code} className="ml-6">
                       <div className="flex items-center gap-2 py-1 px-2 hover:bg-muted/30 rounded">
-                        <Checkbox
-                          checked={isMesoFullySelected(meso.code)}
-                          onCheckedChange={() => toggleMesoSelection(meso.code)}
-                        />
+                        <Checkbox checked={isMesoFullySelected(meso.code)} onCheckedChange={() => toggleMesoSelection(meso.code)} />
                         <button
                           onClick={() => toggleExpand(expandedMesos, meso.code, setExpandedMesos)}
                           className="flex items-center gap-1 flex-1 text-sm text-left"
                         >
                           {expandedMesos.has(meso.code) ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
                           {meso.name}
-                          <span className="text-xs text-muted-foreground ml-1">
-                            ({mesoSelectedCount}/{mesoCities.length})
-                          </span>
+                          <span className="text-xs text-muted-foreground ml-1">({mesoSelectedCount}/{mesoCities.length})</span>
                         </button>
                       </div>
                       {expandedMesos.has(meso.code) && mesoCities
                         .filter(c => !search || c.name.toLowerCase().includes(search))
                         .map(city => (
                           <div key={city.ibge} className="ml-6 flex items-center gap-2 py-0.5 px-2 hover:bg-muted/20 rounded">
-                            <Checkbox
-                              checked={selectedCities.includes(city.ibge)}
-                              onCheckedChange={() => toggleCity(city.ibge)}
-                            />
+                            <Checkbox checked={selectedCities.includes(city.ibge)} onCheckedChange={() => toggleCity(city.ibge)} />
                             <span className="text-sm">{city.name}</span>
                             <span className="text-xs text-muted-foreground">{city.ibge}</span>
                           </div>
@@ -198,12 +232,7 @@ export default function EligibilityTab({ selectedCities, onSelectedCitiesChange,
       <div className="space-y-3">
         <Label className="text-base font-semibold">Segmentos de Cliente</Label>
         <div className="flex gap-2">
-          <Input
-            placeholder="Nome do segmento (ex: Grande, Médio, Pequeno)"
-            value={newSegment}
-            onChange={e => setNewSegment(e.target.value)}
-            onKeyDown={e => e.key === 'Enter' && (e.preventDefault(), addSegment())}
-          />
+          <Input placeholder="Nome do segmento" value={newSegment} onChange={e => setNewSegment(e.target.value)} onKeyDown={e => e.key === 'Enter' && (e.preventDefault(), addSegment())} />
           <Button variant="outline" onClick={addSegment}><Plus className="w-4 h-4" /></Button>
         </div>
         {segments.length > 0 ? (
@@ -225,14 +254,7 @@ export default function EligibilityTab({ selectedCities, onSelectedCitiesChange,
                       <Switch checked={s.active} onCheckedChange={v => updateSegment(i, 'active', v)} />
                     </TableCell>
                     <TableCell>
-                      <Input
-                        type="number"
-                        step="0.1"
-                        value={s.price_adjustment_percent}
-                        onChange={e => updateSegment(i, 'price_adjustment_percent', Number(e.target.value))}
-                        className="h-8"
-                        placeholder="+5 ou -3"
-                      />
+                      <Input type="number" step="0.1" value={s.price_adjustment_percent} onChange={e => updateSegment(i, 'price_adjustment_percent', Number(e.target.value))} className="h-8" />
                     </TableCell>
                     <TableCell>
                       <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => onSegmentsChange(segments.filter((_, j) => j !== i))}>
@@ -240,13 +262,14 @@ export default function EligibilityTab({ selectedCities, onSelectedCitiesChange,
                       </Button>
                     </TableCell>
                   </TableRow>
-                ))}
+                        ))}
+
               </TableBody>
             </Table>
           </div>
         ) : (
           <p className="text-sm text-muted-foreground text-center py-4 border border-dashed border-border rounded-md">
-            Nenhum segmento criado. Adicione segmentos para configurar ajustes de preço por tipo de cliente.
+            Nenhum segmento criado.
           </p>
         )}
       </div>

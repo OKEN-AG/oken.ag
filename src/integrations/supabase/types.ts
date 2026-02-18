@@ -14,6 +14,35 @@ export type Database = {
   }
   public: {
     Tables: {
+      campaign_buyers: {
+        Row: {
+          buyer_name: string
+          campaign_id: string
+          fee: number | null
+          id: string
+        }
+        Insert: {
+          buyer_name?: string
+          campaign_id: string
+          fee?: number | null
+          id?: string
+        }
+        Update: {
+          buyer_name?: string
+          campaign_id?: string
+          fee?: number | null
+          id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "campaign_buyers_campaign_id_fkey"
+            columns: ["campaign_id"]
+            isOneToOne: false
+            referencedRelation: "campaigns"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       campaign_clients: {
         Row: {
           campaign_id: string
@@ -36,6 +65,97 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "campaign_clients_campaign_id_fkey"
+            columns: ["campaign_id"]
+            isOneToOne: false
+            referencedRelation: "campaigns"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      campaign_commodity_valorizations: {
+        Row: {
+          campaign_id: string
+          commodity: string
+          id: string
+          nominal_value: number | null
+          percent_value: number | null
+          use_percent: boolean | null
+        }
+        Insert: {
+          campaign_id: string
+          commodity: string
+          id?: string
+          nominal_value?: number | null
+          percent_value?: number | null
+          use_percent?: boolean | null
+        }
+        Update: {
+          campaign_id?: string
+          commodity?: string
+          id?: string
+          nominal_value?: number | null
+          percent_value?: number | null
+          use_percent?: boolean | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "campaign_commodity_valorizations_campaign_id_fkey"
+            columns: ["campaign_id"]
+            isOneToOne: false
+            referencedRelation: "campaigns"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      campaign_delivery_locations: {
+        Row: {
+          address: string | null
+          campaign_id: string
+          capacity_tons: number | null
+          cda: string | null
+          city: string | null
+          email: string | null
+          id: string
+          latitude: number | null
+          location_type: string | null
+          longitude: number | null
+          phone: string | null
+          state: string | null
+          warehouse_name: string
+        }
+        Insert: {
+          address?: string | null
+          campaign_id: string
+          capacity_tons?: number | null
+          cda?: string | null
+          city?: string | null
+          email?: string | null
+          id?: string
+          latitude?: number | null
+          location_type?: string | null
+          longitude?: number | null
+          phone?: string | null
+          state?: string | null
+          warehouse_name?: string
+        }
+        Update: {
+          address?: string | null
+          campaign_id?: string
+          capacity_tons?: number | null
+          cda?: string | null
+          city?: string | null
+          email?: string | null
+          id?: string
+          latitude?: number | null
+          location_type?: string | null
+          longitude?: number | null
+          phone?: string | null
+          state?: string | null
+          warehouse_name?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "campaign_delivery_locations_campaign_id_fkey"
             columns: ["campaign_id"]
             isOneToOne: false
             referencedRelation: "campaigns"
@@ -68,6 +188,59 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "campaign_due_dates_campaign_id_fkey"
+            columns: ["campaign_id"]
+            isOneToOne: false
+            referencedRelation: "campaigns"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      campaign_indicative_prices: {
+        Row: {
+          campaign_id: string
+          culture: string | null
+          direction: string | null
+          id: string
+          market_place: string | null
+          month: string | null
+          price_per_saca: number | null
+          price_type: string | null
+          state: string | null
+          tax_rate: number | null
+          updated_at: string | null
+          variation_percent: number | null
+        }
+        Insert: {
+          campaign_id: string
+          culture?: string | null
+          direction?: string | null
+          id?: string
+          market_place?: string | null
+          month?: string | null
+          price_per_saca?: number | null
+          price_type?: string | null
+          state?: string | null
+          tax_rate?: number | null
+          updated_at?: string | null
+          variation_percent?: number | null
+        }
+        Update: {
+          campaign_id?: string
+          culture?: string | null
+          direction?: string | null
+          id?: string
+          market_place?: string | null
+          month?: string | null
+          price_per_saca?: number | null
+          price_type?: string | null
+          state?: string | null
+          tax_rate?: number | null
+          updated_at?: string | null
+          variation_percent?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "campaign_indicative_prices_campaign_id_fkey"
             columns: ["campaign_id"]
             isOneToOne: false
             referencedRelation: "campaigns"
@@ -180,13 +353,26 @@ export type Database = {
       }
       campaigns: {
         Row: {
+          accepted_counterparties: string[] | null
           active: boolean
           active_modules: string[] | null
           available_due_dates: string[] | null
+          billing_deadline: string | null
+          campaign_subtype: string | null
+          campaign_type: string | null
+          client_type: string[] | null
+          code_auto: string | null
+          code_custom: string | null
           commodities: string[]
+          company_name: string | null
           created_at: string
           created_by: string | null
           currency: string
+          delivery_end_date: string | null
+          delivery_start_date: string | null
+          description: string | null
+          division: string | null
+          early_discount_enabled: boolean | null
           eligible_cities: string[] | null
           eligible_client_segments: string[] | null
           eligible_distributor_segments:
@@ -194,26 +380,47 @@ export type Database = {
             | null
           eligible_mesoregions: string[] | null
           eligible_states: string[] | null
+          end_date: string | null
           exchange_rate_barter: number
           exchange_rate_products: number
+          global_incentive_1: number | null
+          global_incentive_2: number | null
+          global_incentive_3: number | null
+          global_incentive_type: string | null
           id: string
           interest_rate: number
           max_discount_internal: number
           max_discount_reseller: number
+          min_order_amount: number | null
           name: string
           price_list_format: Database["public"]["Enums"]["price_list_format"]
+          price_types: string[] | null
           season: string
+          start_date: string | null
           target: Database["public"]["Enums"]["campaign_target"]
           updated_at: string
         }
         Insert: {
+          accepted_counterparties?: string[] | null
           active?: boolean
           active_modules?: string[] | null
           available_due_dates?: string[] | null
+          billing_deadline?: string | null
+          campaign_subtype?: string | null
+          campaign_type?: string | null
+          client_type?: string[] | null
+          code_auto?: string | null
+          code_custom?: string | null
           commodities?: string[]
+          company_name?: string | null
           created_at?: string
           created_by?: string | null
           currency?: string
+          delivery_end_date?: string | null
+          delivery_start_date?: string | null
+          description?: string | null
+          division?: string | null
+          early_discount_enabled?: boolean | null
           eligible_cities?: string[] | null
           eligible_client_segments?: string[] | null
           eligible_distributor_segments?:
@@ -221,26 +428,47 @@ export type Database = {
             | null
           eligible_mesoregions?: string[] | null
           eligible_states?: string[] | null
+          end_date?: string | null
           exchange_rate_barter?: number
           exchange_rate_products?: number
+          global_incentive_1?: number | null
+          global_incentive_2?: number | null
+          global_incentive_3?: number | null
+          global_incentive_type?: string | null
           id?: string
           interest_rate?: number
           max_discount_internal?: number
           max_discount_reseller?: number
+          min_order_amount?: number | null
           name: string
           price_list_format?: Database["public"]["Enums"]["price_list_format"]
+          price_types?: string[] | null
           season: string
+          start_date?: string | null
           target?: Database["public"]["Enums"]["campaign_target"]
           updated_at?: string
         }
         Update: {
+          accepted_counterparties?: string[] | null
           active?: boolean
           active_modules?: string[] | null
           available_due_dates?: string[] | null
+          billing_deadline?: string | null
+          campaign_subtype?: string | null
+          campaign_type?: string | null
+          client_type?: string[] | null
+          code_auto?: string | null
+          code_custom?: string | null
           commodities?: string[]
+          company_name?: string | null
           created_at?: string
           created_by?: string | null
           currency?: string
+          delivery_end_date?: string | null
+          delivery_start_date?: string | null
+          description?: string | null
+          division?: string | null
+          early_discount_enabled?: boolean | null
           eligible_cities?: string[] | null
           eligible_client_segments?: string[] | null
           eligible_distributor_segments?:
@@ -248,15 +476,23 @@ export type Database = {
             | null
           eligible_mesoregions?: string[] | null
           eligible_states?: string[] | null
+          end_date?: string | null
           exchange_rate_barter?: number
           exchange_rate_products?: number
+          global_incentive_1?: number | null
+          global_incentive_2?: number | null
+          global_incentive_3?: number | null
+          global_incentive_type?: string | null
           id?: string
           interest_rate?: number
           max_discount_internal?: number
           max_discount_reseller?: number
+          min_order_amount?: number | null
           name?: string
           price_list_format?: Database["public"]["Enums"]["price_list_format"]
+          price_types?: string[] | null
           season?: string
+          start_date?: string | null
           target?: Database["public"]["Enums"]["campaign_target"]
           updated_at?: string
         }
@@ -847,7 +1083,13 @@ export type Database = {
     }
     Enums: {
       app_role: "admin" | "manager" | "sales" | "distributor" | "client"
-      campaign_target: "produtor" | "distribuidor" | "venda_direta"
+      campaign_target:
+        | "produtor"
+        | "distribuidor"
+        | "venda_direta"
+        | "venda_direta_consumidor"
+        | "venda_canal_distribuicao"
+        | "venda_indireta_consumidor"
       channel_segment: "direto" | "distribuidor" | "cooperativa"
       commodity_type: "soja" | "milho" | "cafe" | "algodao"
       document_status: "pendente" | "emitido" | "assinado" | "validado"
@@ -1009,7 +1251,14 @@ export const Constants = {
   public: {
     Enums: {
       app_role: ["admin", "manager", "sales", "distributor", "client"],
-      campaign_target: ["produtor", "distribuidor", "venda_direta"],
+      campaign_target: [
+        "produtor",
+        "distribuidor",
+        "venda_direta",
+        "venda_direta_consumidor",
+        "venda_canal_distribuicao",
+        "venda_indireta_consumidor",
+      ],
       channel_segment: ["direto", "distribuidor", "cooperativa"],
       commodity_type: ["soja", "milho", "cafe", "algodao"],
       document_status: ["pendente", "emitido", "assinado", "validado"],
