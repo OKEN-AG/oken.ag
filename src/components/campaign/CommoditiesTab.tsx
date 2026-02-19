@@ -177,7 +177,7 @@ export default function CommoditiesTab({ campaignId, campaignCommodities = [] }:
     if (pricingList) {
       const existing = pricingList.find((p: any) => p.commodity === selectedCommodity);
       if (existing) {
-        setPricingForm({ id: existing.id, exchange: existing.exchange, contract: existing.contract, exchange_price: existing.exchange_price, exchange_rate_bolsa: existing.exchange_rate_bolsa, exchange_rate_option: existing.exchange_rate_option, option_cost: existing.option_cost, security_delta_market: existing.security_delta_market, security_delta_freight: existing.security_delta_freight, stop_loss: existing.stop_loss, volatility: existing.volatility });
+        setPricingForm({ id: existing.id, exchange: existing.exchange, contract: existing.contract, exchange_price: existing.exchange_price, exchange_rate_bolsa: existing.exchange_rate_bolsa, exchange_rate_option: existing.exchange_rate_option, option_cost: existing.option_cost, security_delta_market: existing.security_delta_market, security_delta_freight: existing.security_delta_freight, stop_loss: existing.stop_loss, volatility: existing.volatility, risk_free_rate: (existing as any).risk_free_rate ?? 0.1175 });
         const bp = existing.basis_by_port as any;
         setBasisPorts(bp && typeof bp === 'object' ? Object.entries(bp).map(([port, basis]) => ({ port, basis: Number(basis) })) : []);
         setApiConfig({
@@ -419,7 +419,7 @@ export default function CommoditiesTab({ campaignId, campaignCommodities = [] }:
 
   if (!campaignId) return <p className="text-center py-8 text-muted-foreground">Salve a campanha primeiro para configurar commodities.</p>;
 
-  const defaultForm = { exchange: 'CBOT', contract: 'K', exchange_price: 0, exchange_rate_bolsa: 5.40, exchange_rate_option: 5.40, option_cost: 0, security_delta_market: 2, security_delta_freight: 15, stop_loss: 0, volatility: 25 };
+  const defaultForm = { exchange: 'CBOT', contract: 'K', exchange_price: 0, exchange_rate_bolsa: 5.40, exchange_rate_option: 5.40, option_cost: 0, security_delta_market: 2, security_delta_freight: 15, stop_loss: 0, volatility: 25, risk_free_rate: 0.1175 };
   const f = pricingForm || defaultForm;
 
   return (
@@ -465,6 +465,7 @@ export default function CommoditiesTab({ campaignId, campaignCommodities = [] }:
                 ['Delta Frete (R$/sc)', 'security_delta_freight', f.security_delta_freight, 'number'],
                 ['Stop Loss (%)', 'stop_loss', f.stop_loss, 'number'],
                 ['Volatilidade (%)', 'volatility', f.volatility, 'number'],
+                ['Taxa Livre Risco (SELIC)', 'risk_free_rate', f.risk_free_rate ?? 0.1175, 'number'],
               ].map(([label, key, val, type]) => (
                 <div key={key as string} className="space-y-1">
                   <Label className="text-xs">{label as string}</Label>

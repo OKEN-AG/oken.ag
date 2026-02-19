@@ -42,13 +42,6 @@ export function useRealtimePricing() {
     setLoading(true);
     setError(null);
     try {
-      const { data, error: fnError } = await supabase.functions.invoke('realtime-pricing', {
-        body: { ...body, _endpoint: endpoint },
-        headers: { 'x-endpoint': endpoint },
-      });
-
-      // The edge function routes by path, but supabase.functions.invoke doesn't support paths well.
-      // We'll use a direct fetch instead.
       const projectId = import.meta.env.VITE_SUPABASE_PROJECT_ID || 'iezoyqbrcfebdzwjxfbd';
       const session = await supabase.auth.getSession();
       const token = session.data.session?.access_token;

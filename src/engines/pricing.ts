@@ -31,9 +31,10 @@ export function normalizePrice(
     price *= campaign.exchangeRateProducts;
   }
 
-  // Step 2: Convert vista → prazo if needed
+  // Step 2: Convert vista → prazo if needed (pro-rata by days/30)
   const isAlreadyTermPrice = product.priceType === 'prazo' && product.priceTerm && product.priceTerm > 0;
   if (!isAlreadyTermPrice && product.priceType === 'vista' && dueMonths > 0) {
+    // Use dueMonths as fractional months for pro-rata calculation
     price *= Math.pow(1 + campaign.interestRate / 100, dueMonths);
   }
 

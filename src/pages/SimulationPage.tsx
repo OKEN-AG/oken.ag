@@ -143,8 +143,10 @@ export default function SimulationPage() {
       return uniqueDates.map(d => {
         const date = new Date(d + 'T00:00:00');
         const now = new Date();
-        const diffMonths = Math.round((date.getTime() - now.getTime()) / (1000 * 60 * 60 * 24 * 30));
-        return { value: String(Math.max(diffMonths, 1)), label: date.toLocaleDateString('pt-BR'), date: d };
+        // Pro-rata: use days/30 for fractional months
+        const diffDays = Math.max(Math.round((date.getTime() - now.getTime()) / (1000 * 60 * 60 * 24)), 1);
+        const diffMonths = diffDays / 30;
+        return { value: String(parseFloat(diffMonths.toFixed(4))), label: `${date.toLocaleDateString('pt-BR')} (${diffDays}d)`, date: d };
       });
     }
     if (campaign?.availableDueDates && campaign.availableDueDates.length > 0) {
@@ -244,8 +246,31 @@ export default function SimulationPage() {
 
   const formatCurrency = (v: number) => v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 
+  // #5: Check block_ineligible
+  const isBlockedByEligibility = !!(rawCampaign as any)?.block_ineligible && eligibilityWarning && eligibilityWarning.length > 0;
+
+  // #7: Check min_order_amount
+  const minOrderAmount = (rawCampaign as any)?.min_order_amount || 0;
+  const isBelowMinOrder = minOrderAmount > 0 && grossToNet.grossRevenue > 0 && grossToNet.grossRevenue < minOrderAmount;
+
+  // #8: Warning margin zero
+  const marginZeroWarning = useMemo(() => {
+    if (!campaign || !rawCampaign) return false;
+    const target = rawCampaign.target;
+    if (target === 'venda_direta' || target === 'venda_direta_consumidor') return false;
+    return grossToNet.distributorMargin === 0 && selections.length > 0;
+  }, [campaign, rawCampaign, grossToNet, selections]);
+
   const doSave = async () => {
     if (!user || !selectedCampaignId || selections.length === 0) return null;
+    if (isBlockedByEligibility) {
+      toast.error('Operação bloqueada: cliente/região não elegível para esta campanha.');
+      return null;
+    }
+    if (isBelowMinOrder) {
+      toast.error(`Pedido mínimo: ${minOrderAmount.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}. Valor atual: ${grossToNet.grossRevenue.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}`);
+      return null;
+    }
     const op = await createOperation.mutateAsync({
       campaign_id: selectedCampaignId,
       user_id: user.id,
@@ -432,12 +457,25 @@ export default function SimulationPage() {
       {/* Warnings */}
       {campaign && (
         <div className="space-y-2">
-          {/* I4: Eligibility warnings */}
+          {/* I4: Eligibility warnings (blocking if configured) */}
           {eligibilityWarning && eligibilityWarning.map((w, i) => (
-            <div key={i} className="flex items-center gap-2 text-xs text-destructive bg-destructive/10 border border-destructive/20 rounded-md px-3 py-2">
+            <div key={i} className={`flex items-center gap-2 text-xs ${isBlockedByEligibility ? 'text-destructive bg-destructive/10 border border-destructive/20' : 'text-warning bg-warning/10 border border-warning/20'} rounded-md px-3 py-2`}>
               <MapPin className="w-3.5 h-3.5 shrink-0" /> {w}
+              {isBlockedByEligibility && <span className="ml-auto font-semibold">⛔ BLOQUEANTE</span>}
             </div>
           ))}
+          {/* #7: Min order amount warning */}
+          {isBelowMinOrder && (
+            <div className="flex items-center gap-2 text-xs text-destructive bg-destructive/10 border border-destructive/20 rounded-md px-3 py-2">
+              <AlertCircle className="w-3.5 h-3.5 shrink-0" /> Pedido mínimo: {minOrderAmount.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}. Valor atual insuficiente.
+            </div>
+          )}
+          {/* #8: Margin zero warning */}
+          {marginZeroWarning && (
+            <div className="flex items-center gap-2 text-xs text-warning bg-warning/10 border border-warning/20 rounded-md px-3 py-2">
+              <AlertCircle className="w-3.5 h-3.5 shrink-0" /> Margem do distribuidor = 0%. Verifique as margens de canal na configuração da campanha.
+            </div>
+          )}
           {dueDateOptions.length === 0 && (
             <div className="flex items-center gap-2 text-xs text-warning bg-warning/10 border border-warning/20 rounded-md px-3 py-2">
               <AlertCircle className="w-3.5 h-3.5 shrink-0" /> Nenhuma data de vencimento configurada para esta campanha.
@@ -620,11 +658,11 @@ export default function SimulationPage() {
 
               {/* Save buttons */}
               <div className="flex justify-end gap-3 mt-6">
-                <Button onClick={handleSaveOnly} disabled={createOperation.isPending} variant="outline" className="border-primary text-primary hover:bg-primary/10">
+                <Button onClick={handleSaveOnly} disabled={createOperation.isPending || isBlockedByEligibility || isBelowMinOrder} variant="outline" className="border-primary text-primary hover:bg-primary/10">
                   {createOperation.isPending ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Save className="w-4 h-4 mr-2" />}
                   Salvar Operação
                 </Button>
-                <Button onClick={handleSaveAndParity} disabled={createOperation.isPending} className="bg-primary text-primary-foreground hover:bg-primary/90">
+                <Button onClick={handleSaveAndParity} disabled={createOperation.isPending || isBlockedByEligibility || isBelowMinOrder} className="bg-primary text-primary-foreground hover:bg-primary/90">
                   <Wheat className="w-4 h-4 mr-2" /> Salvar & Calcular Paridade →
                 </Button>
               </div>

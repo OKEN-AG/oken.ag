@@ -198,6 +198,18 @@ export default function FinancialTab({ form, onFieldChange, paymentMethods, onPa
         )}
       </div>
 
+      {/* Default freight cost per km */}
+      <div className="space-y-3">
+        <Label className="text-base font-semibold">Parâmetros de Frete</Label>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="space-y-2">
+            <Label>Custo Padrão Frete (R$/km)</Label>
+            <Input type="number" step="0.01" value={(form as any).default_freight_cost_per_km ?? 0.11} onChange={e => onFieldChange('default_freight_cost_per_km', Number(e.target.value))} />
+            <p className="text-[10px] text-muted-foreground">Usado como fallback quando não há redutor logístico configurado.</p>
+          </div>
+        </div>
+      </div>
+
       {/* Credit types placeholder */}
       <div className="space-y-2">
         <Label className="text-base font-semibold">Tipos de Crédito</Label>
