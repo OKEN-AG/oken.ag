@@ -2,7 +2,8 @@ import type { Product, AgronomicSelection } from '@/types/barter';
 
 /**
  * AGRONOMIC ENGINE
- * Calculates volumes based on area × dose and rounds to full boxes
+ * Calculates volumes based on area × dose and rounds to full boxes.
+ * FIX: Now tests all package sizes and picks the one that minimizes waste.
  */
 export function calculateAgronomicSelection(
   product: Product,
@@ -12,14 +13,23 @@ export function calculateAgronomicSelection(
   const dose = dosePerHectare ?? product.dosePerHectare;
   const rawQuantity = areaHectares * dose;
 
-  // Find best package size
-  const bestPackage = product.packageSizes.sort((a, b) => b - a)[0] || 1;
-  const unitsPerBox = product.unitsPerBox * bestPackage;
+  const packageSizes = [...(product.packageSizes || [])].filter(s => s > 0);
+  if (packageSizes.length === 0) packageSizes.push(1);
 
-  // Round up to full boxes
-  const boxes = Math.ceil(rawQuantity / unitsPerBox);
-  const roundedQuantity = boxes * unitsPerBox;
-  const pallets = Math.ceil(boxes / product.boxesPerPallet);
+  // Test each package size, pick the one with minimum waste
+  let bestResult = { packageSize: 1, boxes: 0, roundedQuantity: 0, waste: Infinity, pallets: 0 };
+
+  for (const pkgSize of packageSizes) {
+    const unitsPerBox = product.unitsPerBox * pkgSize;
+    const boxes = Math.ceil(rawQuantity / unitsPerBox);
+    const rounded = boxes * unitsPerBox;
+    const waste = rounded - rawQuantity;
+    const pallets = Math.ceil(boxes / product.boxesPerPallet);
+
+    if (waste < bestResult.waste || (waste === bestResult.waste && boxes < bestResult.boxes)) {
+      bestResult = { packageSize: pkgSize, boxes, roundedQuantity: rounded, waste, pallets };
+    }
+  }
 
   return {
     productId: product.id,
@@ -28,9 +38,9 @@ export function calculateAgronomicSelection(
     areaHectares,
     dosePerHectare: dose,
     rawQuantity,
-    roundedQuantity,
-    boxes,
-    pallets,
+    roundedQuantity: bestResult.roundedQuantity,
+    boxes: bestResult.boxes,
+    pallets: bestResult.pallets,
   };
 }
 

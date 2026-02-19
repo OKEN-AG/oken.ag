@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react';
 import { motion } from 'framer-motion';
-import { FileText, CheckCircle, Clock, AlertTriangle, Lock, Train, ArrowRight } from 'lucide-react';
+import { FileText, CheckCircle, Clock, AlertTriangle, Lock, Train, ArrowRight, PenLine, ShieldCheck } from 'lucide-react';
 import { useOperations, useOperationDocuments } from '@/hooks/useOperations';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -11,7 +11,7 @@ import { toast } from 'sonner';
 import { buildWagonStages, canAdvance, getBlockingReason } from '@/engines/orchestrator';
 import TrainTrack from '@/components/TrainTrack';
 import type { DocumentType, JourneyModule } from '@/types/barter';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 
 const allDocTypes: { type: DocumentType; label: string; description: string }[] = [
   { type: 'termo_adesao', label: 'Termo de Adesão', description: 'Aceite do distribuidor aos termos da campanha' },
@@ -34,6 +34,7 @@ const statusConfig = {
 
 export default function DocumentsPage() {
   const { user } = useAuth();
+  const queryClient = useQueryClient();
   const { data: operations, isLoading } = useOperations();
   const [selectedOpId, setSelectedOpId] = useState<string>('');
   const { data: docs, refetch: refetchDocs } = useOperationDocuments(selectedOpId || undefined);
@@ -41,7 +42,6 @@ export default function DocumentsPage() {
 
   const selectedOp = operations?.find(op => op.id === selectedOpId);
 
-  // Bug #5: Fetch active_modules from the campaign linked to the selected operation
   const { data: campaignModules } = useQuery({
     queryKey: ['campaign-modules-docs', selectedOp?.campaign_id],
     enabled: !!selectedOp?.campaign_id,
@@ -56,7 +56,6 @@ export default function DocumentsPage() {
     },
   });
 
-  // Use dynamic modules from campaign, with sensible fallback
   const activeModules: JourneyModule[] = campaignModules && campaignModules.length > 0
     ? campaignModules
     : ['adesao', 'simulacao', 'formalizacao', 'documentos', 'garantias'];
@@ -98,10 +97,8 @@ export default function DocumentsPage() {
         });
       }
       await supabase.from('operation_logs').insert({
-        operation_id: selectedOpId,
-        user_id: user.id,
-        action: `documento_emitido_${docType}`,
-        details: { doc_type: docType },
+        operation_id: selectedOpId, user_id: user.id,
+        action: `documento_emitido_${docType}`, details: { doc_type: docType },
       });
       toast.success(`Documento "${docType}" emitido com sucesso`);
       refetchDocs();
@@ -112,14 +109,68 @@ export default function DocumentsPage() {
     }
   };
 
+  // FIX: Sign document action
+  const handleSignDocument = async (docType: DocumentType) => {
+    if (!selectedOpId || !user) return;
+    setEmitting(docType);
+    try {
+      const existing = docs?.find(d => d.doc_type === docType);
+      if (!existing) return;
+      await supabase
+        .from('operation_documents')
+        .update({ status: 'assinado', signed_at: new Date().toISOString() })
+        .eq('id', existing.id);
+      await supabase.from('operation_logs').insert({
+        operation_id: selectedOpId, user_id: user.id,
+        action: `documento_assinado_${docType}`, details: { doc_type: docType },
+      });
+      toast.success(`Documento "${docType}" assinado`);
+      refetchDocs();
+    } catch (e: any) {
+      toast.error('Erro: ' + e.message);
+    } finally {
+      setEmitting(null);
+    }
+  };
+
+  // FIX: Validate document action
+  const handleValidateDocument = async (docType: DocumentType) => {
+    if (!selectedOpId || !user) return;
+    setEmitting(docType);
+    try {
+      const existing = docs?.find(d => d.doc_type === docType);
+      if (!existing) return;
+      await supabase
+        .from('operation_documents')
+        .update({ status: 'validado', validated_at: new Date().toISOString() } as any)
+        .eq('id', existing.id);
+      await supabase.from('operation_logs').insert({
+        operation_id: selectedOpId, user_id: user.id,
+        action: `documento_validado_${docType}`, details: { doc_type: docType },
+      });
+      toast.success(`Documento "${docType}" validado`);
+      refetchDocs();
+    } catch (e: any) {
+      toast.error('Erro: ' + e.message);
+    } finally {
+      setEmitting(null);
+    }
+  };
+
   const handleAdvance = async () => {
-    if (!selectedOpId || !nextStatus) return;
+    if (!selectedOpId || !nextStatus || !user) return;
     try {
       await supabase
         .from('operations')
         .update({ status: nextStatus })
         .eq('id', selectedOpId);
+      await supabase.from('operation_logs').insert({
+        operation_id: selectedOpId, user_id: user.id,
+        action: `status_avancado_${nextStatus}`, details: { from: selectedOp?.status, to: nextStatus },
+      });
       toast.success(`Operação avançada para: ${nextStatus}`);
+      queryClient.invalidateQueries({ queryKey: ['operations'] });
+      refetchDocs();
     } catch (e: any) {
       toast.error('Erro: ' + e.message);
     }
@@ -207,17 +258,28 @@ export default function DocumentsPage() {
                     <span className={`engine-badge ${config.bg} ${config.color}`}><Icon className="w-3 h-3 inline mr-1" />{config.label}</span>
                   </div>
                   <p className="text-xs text-muted-foreground mb-3">{doc.description}</p>
-                  {status === 'pendente' && (
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="w-full text-xs border-primary/30 text-primary hover:bg-primary/10"
-                      disabled={emitting === doc.type}
-                      onClick={() => handleEmitDocument(doc.type)}
-                    >
-                      {emitting === doc.type ? 'Emitindo...' : 'Emitir Documento'}
-                    </Button>
-                  )}
+
+                  {/* Actions based on current status */}
+                  <div className="flex gap-2">
+                    {status === 'pendente' && (
+                      <Button size="sm" variant="outline" className="flex-1 text-xs border-primary/30 text-primary hover:bg-primary/10"
+                        disabled={emitting === doc.type} onClick={() => handleEmitDocument(doc.type)}>
+                        {emitting === doc.type ? 'Emitindo...' : 'Emitir Documento'}
+                      </Button>
+                    )}
+                    {status === 'emitido' && (
+                      <Button size="sm" variant="outline" className="flex-1 text-xs border-primary/30 text-primary hover:bg-primary/10"
+                        disabled={emitting === doc.type} onClick={() => handleSignDocument(doc.type)}>
+                        <PenLine className="w-3 h-3 mr-1" /> {emitting === doc.type ? 'Assinando...' : 'Assinar'}
+                      </Button>
+                    )}
+                    {status === 'assinado' && (
+                      <Button size="sm" variant="outline" className="flex-1 text-xs border-success/30 text-success hover:bg-success/10"
+                        disabled={emitting === doc.type} onClick={() => handleValidateDocument(doc.type)}>
+                        <ShieldCheck className="w-3 h-3 mr-1" /> {emitting === doc.type ? 'Validando...' : 'Validar'}
+                      </Button>
+                    )}
+                  </div>
                 </motion.div>
               );
             })}

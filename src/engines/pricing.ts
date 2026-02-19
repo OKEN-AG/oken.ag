@@ -2,20 +2,14 @@ import type { Product, Campaign, PricingResult, AgronomicSelection, ChannelSegme
 
 /**
  * PRICING NORMALIZATION ENGINE
- * Normalizes prices from 8 possible formats to target format
- * 
- * I1: Now accepts paymentMethodMarkup (from campaign_payment_methods)
- * I2: Now accepts segmentAdjustmentPercent (from campaign_segments)
+ * I1: paymentMethodMarkup, I2: segmentAdjustmentPercent
  */
 export function normalizePrice(
   product: Product,
   campaign: Campaign,
   targetSegment: ChannelSegment,
   dueMonths: number,
-  options?: {
-    paymentMethodMarkup?: number; // % markup from payment method
-    segmentAdjustmentPercent?: number; // % adjustment from segment config
-  }
+  options?: { paymentMethodMarkup?: number; segmentAdjustmentPercent?: number }
 ): number {
   let price: number;
   if (product.priceType === 'prazo' && product.priceTerm && product.priceTerm > 0) {
@@ -26,43 +20,29 @@ export function normalizePrice(
     price = product.pricePerUnit;
   }
 
-  // Step 1: Convert USD → BRL if needed
-  if (product.currency === 'USD') {
-    price *= campaign.exchangeRateProducts;
-  }
+  if (product.currency === 'USD') price *= campaign.exchangeRateProducts;
 
-  // Step 2: Convert vista → prazo if needed (pro-rata by days/30)
   const isAlreadyTermPrice = product.priceType === 'prazo' && product.priceTerm && product.priceTerm > 0;
   if (!isAlreadyTermPrice && product.priceType === 'vista' && dueMonths > 0) {
-    // Use dueMonths as fractional months for pro-rata calculation
     price *= Math.pow(1 + campaign.interestRate / 100, dueMonths);
   }
 
-  // Step 3: Add margin if not included and selling to end consumer
   if (!product.includesMargin && targetSegment !== 'direto') {
     const margin = campaign.margins.find(m => m.segment === targetSegment);
-    if (margin) {
-      price *= (1 + margin.marginPercent / 100);
-    }
+    if (margin) price *= (1 + margin.marginPercent / 100);
   }
 
-  // I2: Apply segment price adjustment
   const segAdj = options?.segmentAdjustmentPercent ?? 0;
-  if (segAdj !== 0) {
-    price *= (1 + segAdj / 100);
-  }
+  if (segAdj !== 0) price *= (1 + segAdj / 100);
 
-  // I1: Apply payment method markup
   const pmMarkup = options?.paymentMethodMarkup ?? 0;
-  if (pmMarkup !== 0) {
-    price *= (1 + pmMarkup / 100);
-  }
+  if (pmMarkup !== 0) price *= (1 + pmMarkup / 100);
 
   return price;
 }
 
 /**
- * Decompose price into components (with audit trail)
+ * Decompose price into components
  */
 export function decomposePricing(
   product: Product,
@@ -70,10 +50,7 @@ export function decomposePricing(
   targetSegment: ChannelSegment,
   dueMonths: number,
   quantity: number,
-  options?: {
-    paymentMethodMarkup?: number;
-    segmentAdjustmentPercent?: number;
-  }
+  options?: { paymentMethodMarkup?: number; segmentAdjustmentPercent?: number }
 ): PricingResult {
   let basePrice: number;
   const isAlreadyTermPrice = product.priceType === 'prazo' && product.priceTerm && product.priceTerm > 0;
@@ -84,13 +61,10 @@ export function decomposePricing(
   } else {
     basePrice = product.pricePerUnit;
   }
-  if (product.currency === 'USD') {
-    basePrice *= campaign.exchangeRateProducts;
-  }
+  if (product.currency === 'USD') basePrice *= campaign.exchangeRateProducts;
 
   const interestMultiplier = (!isAlreadyTermPrice && product.priceType === 'vista' && dueMonths > 0)
-    ? Math.pow(1 + campaign.interestRate / 100, dueMonths) - 1
-    : 0;
+    ? Math.pow(1 + campaign.interestRate / 100, dueMonths) - 1 : 0;
 
   const margin = campaign.margins.find(m => m.segment === targetSegment);
   const marginPercent = (!product.includesMargin && margin) ? margin.marginPercent / 100 : 0;
@@ -119,19 +93,21 @@ export function decomposePricing(
 
 /**
  * Calculate Gross-to-Net analysis
- * I7: Now accepts global incentive parameters
+ * FIX: Combo discount applied line-by-line based on eligible REFs, not globally.
+ * Now receives `selections` to determine which products are eligible for which combo.
  */
 export function calculateGrossToNet(
   pricingResults: PricingResult[],
   comboActivations: ComboActivation[],
   barterDiscountPercent: number = 0,
   options?: {
-    globalIncentiveType?: string; // 'desconto_direto' | 'credito_liberacao' | 'credito_liquidacao'
+    globalIncentiveType?: string;
     globalIncentive1?: number;
     globalIncentive2?: number;
     globalIncentive3?: number;
-    valorizationPercent?: number; // I6: valorization bonus
-  }
+    valorizationPercent?: number;
+  },
+  selections?: AgronomicSelection[]
 ): GrossToNet {
   const grossRevenue = pricingResults.reduce((sum, p) => sum + p.subtotal, 0);
   const totalInterest = pricingResults.reduce((sum, p) => sum + p.interestComponent * p.quantity, 0);
@@ -139,37 +115,70 @@ export function calculateGrossToNet(
   const totalSegAdj = pricingResults.reduce((sum, p) => sum + (p.segmentAdjustmentComponent || 0) * p.quantity, 0);
   const totalPmMarkup = pricingResults.reduce((sum, p) => sum + (p.paymentMethodComponent || 0) * p.quantity, 0);
 
-  // Non-cumulative combo discount
-  const mainActivated = comboActivations.filter(c => c.applied && !c.isComplementary);
-  const mainDiscountPercent = mainActivated.length > 0
-    ? Math.max(...mainActivated.map(c => c.discountPercent))
-    : 0;
-  const complementaryPercent = comboActivations
-    .filter(c => c.applied && c.isComplementary)
-    .reduce((sum, c) => sum + c.discountPercent, 0);
-  const comboDiscountPercent = mainDiscountPercent + complementaryPercent;
+  // Build set of eligible REFs per activated combo
+  const activatedMain = comboActivations.filter(c => c.applied && !c.isComplementary);
+  const activatedComplementary = comboActivations.filter(c => c.applied && c.isComplementary);
 
-  const comboDiscount = grossRevenue * comboDiscountPercent / 100;
+  // All REFs matched by any activated main combo
+  const mainEligibleRefs = new Set<string>();
+  let mainDiscountPercent = 0;
+  for (const ca of activatedMain) {
+    for (const ref of ca.matchedProducts) mainEligibleRefs.add(ref.toUpperCase().trim());
+    mainDiscountPercent = Math.max(mainDiscountPercent, ca.discountPercent);
+  }
+
+  // Complementary eligible REFs
+  const compEligibleRefs = new Set<string>();
+  let compDiscountPercent = 0;
+  for (const ca of activatedComplementary) {
+    for (const ref of ca.matchedProducts) compEligibleRefs.add(ref.toUpperCase().trim());
+    compDiscountPercent += ca.discountPercent;
+  }
+
+  // Calculate combo discount line-by-line
+  let comboDiscount = 0;
+
+  if (selections && selections.length > 0) {
+    for (const pr of pricingResults) {
+      const sel = selections.find(s => s.productId === pr.productId);
+      if (!sel) continue;
+      const ref = (sel.ref || sel.product?.ref || sel.product?.name || '').toUpperCase().trim();
+
+      // Main combo discount
+      if (mainEligibleRefs.has(ref) && mainDiscountPercent > 0) {
+        comboDiscount += pr.subtotal * mainDiscountPercent / 100;
+      }
+
+      // Complementary discount (proportional to activated hectares if available)
+      if (compEligibleRefs.has(ref) && compDiscountPercent > 0) {
+        const proportionalCa = activatedComplementary.find(ca =>
+          ca.matchedProducts.some(r => r.toUpperCase().trim() === ref)
+        );
+        if (proportionalCa?.proportionalHectares && sel.areaHectares > 0) {
+          const ratio = Math.min(1, proportionalCa.proportionalHectares / sel.areaHectares);
+          comboDiscount += pr.subtotal * compDiscountPercent / 100 * ratio;
+        } else {
+          comboDiscount += pr.subtotal * compDiscountPercent / 100;
+        }
+      }
+    }
+  } else {
+    // Fallback: global discount (backwards compatible)
+    const totalDiscountPercent = mainDiscountPercent + compDiscountPercent;
+    comboDiscount = grossRevenue * totalDiscountPercent / 100;
+  }
+
   const barterDiscount = (grossRevenue - comboDiscount) * barterDiscountPercent / 100;
 
   // I7: Global incentives
   const incentiveType = options?.globalIncentiveType || '';
-  const incentiveTotal = (options?.globalIncentive1 || 0)
-    + (options?.globalIncentive2 || 0)
-    + (options?.globalIncentive3 || 0);
-  
-  // desconto_direto reduces the net amount immediately
+  const incentiveTotal = (options?.globalIncentive1 || 0) + (options?.globalIncentive2 || 0) + (options?.globalIncentive3 || 0);
   const directIncentiveDiscount = incentiveType === 'desconto_direto'
-    ? (grossRevenue - comboDiscount) * incentiveTotal / 100
-    : 0;
-
-  // Credits after billing/settlement are tracked but don't reduce net
+    ? (grossRevenue - comboDiscount) * incentiveTotal / 100 : 0;
   const creditLiberacao = incentiveType === 'credito_liberacao'
-    ? (grossRevenue - comboDiscount) * incentiveTotal / 100
-    : 0;
+    ? (grossRevenue - comboDiscount) * incentiveTotal / 100 : 0;
   const creditLiquidacao = incentiveType === 'credito_liquidacao'
-    ? (grossRevenue - comboDiscount) * incentiveTotal / 100
-    : 0;
+    ? (grossRevenue - comboDiscount) * incentiveTotal / 100 : 0;
 
   const netRevenue = grossRevenue - comboDiscount - barterDiscount - directIncentiveDiscount;
 

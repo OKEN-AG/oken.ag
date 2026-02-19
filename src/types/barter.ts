@@ -109,6 +109,7 @@ export interface ComboActivation {
   applied: boolean;
   isComplementary: boolean;
   proportionalHectares?: number;
+  activatedHectares?: number;
 }
 
 // === PRICING ENGINE ===

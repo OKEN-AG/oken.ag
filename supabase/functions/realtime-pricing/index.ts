@@ -65,8 +65,10 @@ serve(async (req: Request) => {
 
   try {
     const url = new URL(req.url);
-    const path = url.pathname.split('/').pop();
     const body = await req.json();
+    // Support both URL path routing and body.endpoint for supabase.functions.invoke
+    const urlPath = url.pathname.split('/').pop();
+    const path = body.endpoint || (urlPath !== 'realtime-pricing' ? urlPath : null);
 
     // Auth check
     const authHeader = req.headers.get('Authorization');
