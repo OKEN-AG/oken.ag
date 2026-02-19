@@ -358,6 +358,7 @@ export type Database = {
           active_modules: string[] | null
           available_due_dates: string[] | null
           billing_deadline: string | null
+          block_ineligible: boolean | null
           campaign_subtype: string | null
           campaign_type: string | null
           client_type: string[] | null
@@ -368,6 +369,7 @@ export type Database = {
           created_at: string
           created_by: string | null
           currency: string
+          default_freight_cost_per_km: number | null
           delivery_end_date: string | null
           delivery_start_date: string | null
           description: string | null
@@ -406,6 +408,7 @@ export type Database = {
           active_modules?: string[] | null
           available_due_dates?: string[] | null
           billing_deadline?: string | null
+          block_ineligible?: boolean | null
           campaign_subtype?: string | null
           campaign_type?: string | null
           client_type?: string[] | null
@@ -416,6 +419,7 @@ export type Database = {
           created_at?: string
           created_by?: string | null
           currency?: string
+          default_freight_cost_per_km?: number | null
           delivery_end_date?: string | null
           delivery_start_date?: string | null
           description?: string | null
@@ -454,6 +458,7 @@ export type Database = {
           active_modules?: string[] | null
           available_due_dates?: string[] | null
           billing_deadline?: string | null
+          block_ineligible?: boolean | null
           campaign_subtype?: string | null
           campaign_type?: string | null
           client_type?: string[] | null
@@ -464,6 +469,7 @@ export type Database = {
           created_at?: string
           created_by?: string | null
           currency?: string
+          default_freight_cost_per_km?: number | null
           delivery_end_date?: string | null
           delivery_start_date?: string | null
           description?: string | null
@@ -615,6 +621,7 @@ export type Database = {
           market: string | null
           option_cost: number | null
           peso_saca_kg: number | null
+          risk_free_rate: number | null
           security_delta_freight: number | null
           security_delta_market: number | null
           stop_loss: number | null
@@ -640,6 +647,7 @@ export type Database = {
           market?: string | null
           option_cost?: number | null
           peso_saca_kg?: number | null
+          risk_free_rate?: number | null
           security_delta_freight?: number | null
           security_delta_market?: number | null
           stop_loss?: number | null
@@ -665,6 +673,7 @@ export type Database = {
           market?: string | null
           option_cost?: number | null
           peso_saca_kg?: number | null
+          risk_free_rate?: number | null
           security_delta_freight?: number | null
           security_delta_market?: number | null
           stop_loss?: number | null
@@ -961,6 +970,44 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "operations_campaign_id_fkey"
+            columns: ["campaign_id"]
+            isOneToOne: false
+            referencedRelation: "campaigns"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      ports: {
+        Row: {
+          campaign_id: string | null
+          id: string
+          is_global: boolean
+          latitude: number
+          longitude: number
+          port_name: string
+          state: string
+        }
+        Insert: {
+          campaign_id?: string | null
+          id?: string
+          is_global?: boolean
+          latitude?: number
+          longitude?: number
+          port_name: string
+          state?: string
+        }
+        Update: {
+          campaign_id?: string | null
+          id?: string
+          is_global?: boolean
+          latitude?: number
+          longitude?: number
+          port_name?: string
+          state?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ports_campaign_id_fkey"
             columns: ["campaign_id"]
             isOneToOne: false
             referencedRelation: "campaigns"

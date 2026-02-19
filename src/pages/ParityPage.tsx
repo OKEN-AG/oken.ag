@@ -74,9 +74,9 @@ export default function ParityPage() {
         stopLoss: match.stop_loss || 0,
         bushelsPerTon: match.bushels_per_ton || 36.744,
         pesoSacaKg: match.peso_saca_kg || 60,
-        // H3: B&S params from config
+        // H3: B&S params from config (risk_free_rate from DB)
         volatility: match.volatility || 25,
-        riskFreeRate: 0.1175, // SELIC - could be parameterized further
+        riskFreeRate: (match as any).risk_free_rate || 0.1175,
       } as CommodityPricing;
     }
     return commodityPricingAll;
@@ -157,14 +157,14 @@ export default function ParityPage() {
         const autoTotal = autoDistanceKm * freightReducer.costPerKm + (freightReducer.adjustment || 0);
         return { ...freightReducer, distanceKm: autoDistanceKm, totalReducer: autoTotal };
       }
-      const defaultCostPerKm = 0.11;
+      const campaignFreightCostPerKm = (rawCampaign as any)?.default_freight_cost_per_km || 0.11;
       return {
         origin: 'Auto',
         destination: port,
         distanceKm: autoDistanceKm,
-        costPerKm: defaultCostPerKm,
+        costPerKm: campaignFreightCostPerKm,
         adjustment: 0,
-        totalReducer: autoDistanceKm * defaultCostPerKm,
+        totalReducer: autoDistanceKm * campaignFreightCostPerKm,
       };
     }
     return freightReducer;
@@ -218,39 +218,57 @@ export default function ParityPage() {
     }
   }, [rawCommodity, fetchLivePrice, fetchExchangeRate]);
 
-  // H4: Port coordinates from delivery_locations + basis_by_port instead of hardcoded
+  // H4: Port coordinates from DB `ports` table
+  const { data: portsFromDB } = useQuery({
+    queryKey: ['ports', selectedCampaignId],
+    enabled: !!selectedCampaignId,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('ports')
+        .select('*')
+        .or(`is_global.eq.true,campaign_id.eq.${selectedCampaignId}`);
+      if (error) throw error;
+      return data || [];
+    },
+  });
+
   const portCoordinates = useMemo<Record<string, { lat: number; lng: number }>>(() => {
     const coords: Record<string, { lat: number; lng: number }> = {};
-    // Try to derive from delivery locations that match port names
+    // From ports table
+    for (const p of (portsFromDB || [])) {
+      // Match port names in basis_by_port
+      for (const portName of ports) {
+        if (portName.toLowerCase().includes(p.port_name.toLowerCase()) ||
+            p.port_name.toLowerCase().includes(portName.split(' ')[0].toLowerCase())) {
+          coords[portName] = { lat: Number(p.latitude), lng: Number(p.longitude) };
+        }
+      }
+    }
+    // Also try delivery locations as fallback
     for (const loc of deliveryLocations) {
       if (loc.latitude && loc.longitude && loc.warehouse_name) {
-        // Check if this location name matches a port in basis_by_port
         for (const portName of ports) {
-          if (portName.toLowerCase().includes((loc.city || '').toLowerCase()) ||
-              loc.warehouse_name.toLowerCase().includes(portName.split(' ')[0].toLowerCase())) {
+          if (!coords[portName] && (
+            portName.toLowerCase().includes((loc.city || '').toLowerCase()) ||
+            loc.warehouse_name.toLowerCase().includes(portName.split(' ')[0].toLowerCase())
+          )) {
             coords[portName] = { lat: loc.latitude, lng: loc.longitude };
           }
         }
       }
     }
-    // H4: Fallback known port coordinates (only if not found from data)
-    const defaultPortCoords: Record<string, { lat: number; lng: number }> = {
-      'Paranaguá (PR)': { lat: -25.5163, lng: -48.5164 },
-      'Santarem (PA)': { lat: -2.4388, lng: -54.7089 },
-      'Itaqui (MA)': { lat: -2.5614, lng: -44.3683 },
-      'Ilhéus (BA)': { lat: -14.7936, lng: -39.0463 },
-      'Santos (SP)': { lat: -23.9535, lng: -46.3338 },
-      'Rio Grande (RS)': { lat: -32.0349, lng: -52.0986 },
-    };
-    for (const [name, coord] of Object.entries(defaultPortCoords)) {
-      if (!coords[name]) coords[name] = coord;
-    }
     return coords;
-  }, [deliveryLocations, ports]);
+  }, [portsFromDB, deliveryLocations, ports]);
 
-  // G2: Validate delivery locations lat/lng
+  // G2: Validate delivery locations lat/lng within Brazil bounds
+  const isValidBrazilCoord = (lat: number, lng: number) =>
+    lat >= -35 && lat <= 6 && lng >= -74 && lng <= -34;
+
   const locationsWithoutCoords = useMemo(() => {
-    return deliveryLocations.filter(l => !l.latitude || !l.longitude || l.latitude === 0 || l.longitude === 0);
+    return deliveryLocations.filter(l =>
+      !l.latitude || !l.longitude || l.latitude === 0 || l.longitude === 0 ||
+      !isValidBrazilCoord(l.latitude, l.longitude)
+    );
   }, [deliveryLocations]);
 
   const handleCalculateDistance = useCallback(async () => {
