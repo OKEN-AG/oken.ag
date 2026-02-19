@@ -744,6 +744,7 @@ export type Database = {
           operation_id: string
           signed_at: string | null
           status: Database["public"]["Enums"]["document_status"]
+          validated_at: string | null
         }
         Insert: {
           created_at?: string
@@ -754,6 +755,7 @@ export type Database = {
           operation_id: string
           signed_at?: string | null
           status?: Database["public"]["Enums"]["document_status"]
+          validated_at?: string | null
         }
         Update: {
           created_at?: string
@@ -764,6 +766,7 @@ export type Database = {
           operation_id?: string
           signed_at?: string | null
           status?: Database["public"]["Enums"]["document_status"]
+          validated_at?: string | null
         }
         Relationships: [
           {

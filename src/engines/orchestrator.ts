@@ -6,6 +6,9 @@ import type { OperationStatus, DocumentType, JourneyModule, WagonStage } from '@
  * Manages the "train" metaphor: each operation is a train that moves
  * through stations (stages/wagons). The train only advances when
  * all required documents for the current stage are validated.
+ * 
+ * FIX: Sequential blocking — only one stage can be "em_progresso" at a time.
+ * FIX: canAdvance checks only current-status stages, not future ones.
  */
 
 export interface StageDefinition {
@@ -16,10 +19,6 @@ export interface StageDefinition {
   nextStatus: OperationStatus;
 }
 
-/**
- * Full journey stages in order.
- * Each stage requires specific documents to be validated before advancing.
- */
 export const STAGE_DEFINITIONS: StageDefinition[] = [
   {
     module: 'adesao',
@@ -58,8 +57,19 @@ export const STAGE_DEFINITIONS: StageDefinition[] = [
   },
 ];
 
+const STATUS_ORDER: OperationStatus[] = [
+  'simulacao', 'pedido', 'formalizado', 'garantido', 'faturado', 'monitorando', 'liquidado',
+];
+
+function isDocComplete(existingDocuments: { doc_type: string; status: string }[], docType: string): boolean {
+  const doc = existingDocuments.find(d => d.doc_type === docType);
+  return !!doc && (doc.status === 'validado' || doc.status === 'assinado');
+}
+
 /**
- * Build wagon stages for an operation based on active modules and existing documents.
+ * Build wagon stages for an operation.
+ * FIX: Only one stage can be "em_progresso" — subsequent stages are blocked
+ * until the previous one in sequence is complete.
  */
 export function buildWagonStages(
   activeModules: JourneyModule[],
@@ -67,34 +77,34 @@ export function buildWagonStages(
   existingDocuments: { doc_type: string; status: string }[]
 ): WagonStage[] {
   const stages: WagonStage[] = [];
-  const statusOrder: OperationStatus[] = [
-    'simulacao', 'pedido', 'formalizado', 'garantido', 'faturado', 'monitorando', 'liquidado',
-  ];
-  const currentIdx = statusOrder.indexOf(currentStatus);
+  const currentIdx = STATUS_ORDER.indexOf(currentStatus);
 
   for (const def of STAGE_DEFINITIONS) {
-    // Only include stages whose module is active in the campaign
     if (!activeModules.includes(def.module)) continue;
 
-    const stageStatusIdx = statusOrder.indexOf(def.requiredStatus);
+    const stageStatusIdx = STATUS_ORDER.indexOf(def.requiredStatus);
 
-    // Check which required docs are completed (validated or signed)
-    const completedDocs = def.requiredDocuments.filter(docType => {
-      const doc = existingDocuments.find(d => d.doc_type === docType);
-      return doc && (doc.status === 'validado' || doc.status === 'assinado');
-    });
-
+    const completedDocs = def.requiredDocuments.filter(dt => isDocComplete(existingDocuments, dt));
     const allDocsComplete = completedDocs.length >= def.requiredDocuments.length;
 
     let status: WagonStage['status'];
+
     if (currentIdx > stageStatusIdx) {
+      // Past stage — already concluded
       status = 'concluido';
     } else if (currentIdx === stageStatusIdx) {
-      status = allDocsComplete ? 'concluido' : 'em_progresso';
-    } else {
-      // Check if previous stage is complete
+      // Current status — check if previous stage in sequence is done first
       const prevStage = stages[stages.length - 1];
-      status = prevStage && prevStage.status !== 'concluido' ? 'bloqueado' : 'pendente';
+      const prevBlocked = prevStage && prevStage.status !== 'concluido';
+
+      if (prevBlocked) {
+        status = 'bloqueado';
+      } else {
+        status = allDocsComplete ? 'concluido' : 'em_progresso';
+      }
+    } else {
+      // Future status — blocked
+      status = 'bloqueado';
     }
 
     stages.push({
@@ -113,7 +123,8 @@ export function buildWagonStages(
 
 /**
  * Check if an operation can advance to the next status.
- * Returns the next status if all gates are passed, or null if blocked.
+ * FIX: Only checks stages matching the current status.
+ * If ALL current-status stages are complete, returns the nextStatus of the last one.
  */
 export function canAdvance(
   activeModules: JourneyModule[],
@@ -121,21 +132,31 @@ export function canAdvance(
   existingDocuments: { doc_type: string; status: string }[]
 ): OperationStatus | null {
   const stages = buildWagonStages(activeModules, currentStatus, existingDocuments);
-  
-  // Find the current in-progress stage
-  const currentStage = stages.find(s => s.status === 'em_progresso');
-  if (!currentStage) {
-    // All stages complete, check if there's a next status
-    const lastCompleted = stages.filter(s => s.status === 'concluido');
-    if (lastCompleted.length === stages.length && stages.length > 0) {
+
+  // Find stages that belong to the current status
+  const currentStages = stages.filter(s => {
+    const def = STAGE_DEFINITIONS.find(d => d.module === s.module);
+    return def && def.requiredStatus === currentStatus;
+  });
+
+  if (currentStages.length === 0) {
+    // No stages for this status — check if all stages are done
+    const allDone = stages.length > 0 && stages.every(s => s.status === 'concluido');
+    if (allDone) {
       const lastDef = STAGE_DEFINITIONS.find(d => d.module === stages[stages.length - 1].module);
       return lastDef?.nextStatus || null;
     }
     return null;
   }
 
-  // Current stage is not complete
-  return null;
+  // All current-status stages must be complete
+  const allCurrentComplete = currentStages.every(s => s.status === 'concluido');
+  if (!allCurrentComplete) return null;
+
+  // Return the nextStatus of the last current-status stage definition
+  const lastCurrentStage = currentStages[currentStages.length - 1];
+  const lastDef = STAGE_DEFINITIONS.find(d => d.module === lastCurrentStage.module);
+  return lastDef?.nextStatus || null;
 }
 
 /**

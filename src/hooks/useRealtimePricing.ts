@@ -34,6 +34,9 @@ interface LiveParityResult {
   timestamp: string;
 }
 
+/**
+ * FIX: Uses only supabase.functions.invoke() — no manual fetch or hardcoded projectId.
+ */
 export function useRealtimePricing() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -42,29 +45,15 @@ export function useRealtimePricing() {
     setLoading(true);
     setError(null);
     try {
-      const projectId = import.meta.env.VITE_SUPABASE_PROJECT_ID || 'iezoyqbrcfebdzwjxfbd';
-      const session = await supabase.auth.getSession();
-      const token = session.data.session?.access_token;
+      const { data, error: fnError } = await supabase.functions.invoke('realtime-pricing', {
+        body: { endpoint, ...body },
+      });
 
-      const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/realtime-pricing/${endpoint}`,
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${token || import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
-            'apikey': import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
-          },
-          body: JSON.stringify(body),
-        }
-      );
-
-      if (!response.ok) {
-        const err = await response.json();
-        throw new Error(err.error || `Error ${response.status}`);
+      if (fnError) {
+        throw new Error(fnError.message || 'Edge function error');
       }
 
-      return await response.json() as T;
+      return data as T;
     } catch (e: any) {
       setError(e.message);
       throw e;

@@ -221,15 +221,15 @@ export default function SimulationPage() {
     );
   }, [selections, segment, dueMonths, campaign, pricingOptions]);
 
-  // I7: Pass global incentives to G2N
+  // I7: Pass global incentives to G2N + selections for line-by-line discount
   const grossToNet = useMemo(() => {
     return calculateGrossToNet(pricingResults, comboActivations, 0, {
       globalIncentiveType: rawCampaign?.global_incentive_type || '',
       globalIncentive1: rawCampaign?.global_incentive_1 || 0,
       globalIncentive2: rawCampaign?.global_incentive_2 || 0,
       globalIncentive3: rawCampaign?.global_incentive_3 || 0,
-    });
-  }, [pricingResults, comboActivations, rawCampaign]);
+    }, selections);
+  }, [pricingResults, comboActivations, rawCampaign, selections]);
 
   // G1: Audit trail for a specific product
   const auditTrail = useMemo<PriceAuditStep[]>(() => {
