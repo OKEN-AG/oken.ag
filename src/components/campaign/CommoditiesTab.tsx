@@ -268,6 +268,32 @@ export default function CommoditiesTab({ campaignId, campaignCommodities = [] }:
     await (supabase as any).from('campaign_delivery_locations').delete().eq('id', id);
     qc.invalidateQueries({ queryKey: ['delivery-locations', campaignId] });
   };
+  const deleteAllLocations = async () => {
+    if (!campaignId) return;
+    await (supabase as any).from('campaign_delivery_locations').delete().eq('campaign_id', campaignId);
+    qc.invalidateQueries({ queryKey: ['delivery-locations', campaignId] });
+    toast.success('Todos os locais de entrega removidos');
+  };
+  const removeDuplicateLocations = async () => {
+    if (!campaignId || !deliveryLocations.length) return;
+    const seen = new Map<string, string>();
+    const dupeIds: string[] = [];
+    for (const loc of deliveryLocations as any[]) {
+      const key = (loc.cda || '').trim() || `${(loc.warehouse_name || '').trim()}_${(loc.city || '').trim()}_${(loc.state || '').trim()}`;
+      if (seen.has(key)) {
+        dupeIds.push(loc.id);
+      } else {
+        seen.set(key, loc.id);
+      }
+    }
+    if (dupeIds.length === 0) { toast.info('Nenhuma duplicata encontrada'); return; }
+    for (let i = 0; i < dupeIds.length; i += 50) {
+      const batch = dupeIds.slice(i, i + 50);
+      await (supabase as any).from('campaign_delivery_locations').delete().in('id', batch);
+    }
+    qc.invalidateQueries({ queryKey: ['delivery-locations', campaignId] });
+    toast.success(`${dupeIds.length} duplicatas removidas`);
+  };
 
   // CONAB XLS column detection and parsing
   const parseConabCapacity = (val: any): number => {
@@ -626,6 +652,12 @@ export default function CommoditiesTab({ campaignId, campaignCommodities = [] }:
                 <Button variant="default" size="sm" onClick={() => conabFileRef.current?.click()}><Upload className="w-3 h-3 mr-1" /> Importar Base CONAB</Button>
                 <input ref={locFileRef} type="file" accept=".csv,.xls,.xlsx,.txt" className="hidden" onChange={handleLocFileUpload} />
                 <input ref={conabFileRef} type="file" accept=".xls,.xlsx" multiple className="hidden" onChange={handleConabImport} />
+                {deliveryLocations.length > 0 && (
+                  <>
+                    <Button variant="outline" size="sm" onClick={removeDuplicateLocations}>Remover Duplicados</Button>
+                    <Button variant="destructive" size="sm" onClick={() => { if (confirm(`Apagar todos os ${deliveryLocations.length} locais de entrega?`)) deleteAllLocations(); }}><Trash2 className="w-3 h-3 mr-1" /> Apagar Todos</Button>
+                  </>
+                )}
               </div>
             </div>
             {locPasteMode && (
