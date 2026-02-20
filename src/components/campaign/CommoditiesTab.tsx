@@ -486,8 +486,13 @@ export default function CommoditiesTab({ campaignId, campaignCommodities = [] }:
           });
           return obj;
         });
+      console.log('[CONAB-DEBUG] Sheet:', sheetName, 'cleanHeaders:', cleanHeaders, 'colMap:', JSON.stringify(colMap.map(c => ({h:c.headerName, idx:c.dataIndices}))));
+      if (jsonRows.length > 0) console.log('[CONAB-DEBUG] Row0:', JSON.stringify(jsonRows[0]));
       const parsed = jsonRows.map(r => parseConabRow(r, cleanHeaders)).filter(Boolean) as Omit<DeliveryLocation, 'id'>[];
-      if (parsed.length > 0) return parsed;
+      if (parsed.length > 0) {
+        console.log('[CONAB-DEBUG] Parsed0:', JSON.stringify(parsed[0]));
+        return parsed;
+      }
     }
     return []; // no CONAB data found in any sheet
   };
