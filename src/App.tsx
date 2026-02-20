@@ -17,7 +17,15 @@ import NotFound from "./pages/NotFound";
 import CampaignsListPage from "@/pages/admin/CampaignsListPage";
 import CampaignFormPage from "@/pages/admin/CampaignFormPage";
 
-const queryClient = new QueryClient();
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      staleTime: 5 * 60 * 1000, // 5 min - dados ficam em cache entre navegações
+      gcTime: 10 * 60 * 1000,   // 10 min - cache mantido mesmo após desmontar
+      refetchOnWindowFocus: false,
+    },
+  },
+});
 
 const App = () => (
   <QueryClientProvider client={queryClient}>
