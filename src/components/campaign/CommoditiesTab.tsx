@@ -980,9 +980,20 @@ export default function CommoditiesTab({ campaignId, campaignCommodities = [] }:
                   const lines = pricePasteText.trim().split('\n').filter(l => l.trim());
                   const rows: Omit<IndicativePrice, 'id'>[] = [];
                   for (const line of lines) {
-                    // Split by tab first, then by semicolon if only 1 part
+                    // Try tab, then semicolon, then 2+ spaces
                     let parts = line.split('\t').map(p => p.trim());
                     if (parts.length < 5) parts = line.split(';').map(p => p.trim());
+                    if (parts.length < 5) {
+                      // Regex-based: extract known tokens from the end, leave city name intact
+                      // Pattern: Culture Type State City Price Variation Direction Date TaxRate
+                      // Allow %direction to be joined (no space between % and direction word)
+                      const m = line.match(/^(\S+)\s+(\S+)\s+([A-Z]{2})\s+(.+?)\s+(\d[\d.,]*)\s+([+-]?[\d.,]+%?)\s*(\S+)\s+(\d{4}-\d{2}-\d{2})\s+([\d.,]+)\s*$/);
+                      if (m) {
+                        // Clean direction: might be "%caiu" -> "caiu"
+                        const dir = m[7].replace(/^%/, '');
+                        parts = [m[1], m[2], m[3], m[4].trim(), m[5], m[6], dir, m[8], m[9]];
+                      }
+                    }
                     if (parts.length < 5) continue;
                     // Skip header lines
                     const first = parts[0].toLowerCase();
