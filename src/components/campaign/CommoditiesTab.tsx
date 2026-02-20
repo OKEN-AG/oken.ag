@@ -691,12 +691,21 @@ export default function CommoditiesTab({ campaignId, campaignCommodities = [] }:
                 <Textarea value={locPasteText} onChange={e => setLocPasteText(e.target.value)} rows={4} />
                 <Button size="sm" onClick={() => {
                   const lines = locPasteText.trim().split('\n');
-                  // Detect if first line is header
-                  const firstLine = lines[0]?.toLowerCase() || '';
-                  const startIdx = (firstLine.includes('cda') || firstLine.includes('armazenador')) ? 1 : 0;
+                  // CONAB XLS: headers on line 14, data from line 15
+                  // Find the header row (contains "CDA" + "Armazenador") and start after it
+                  let startIdx = 0;
+                  for (let i = 0; i < Math.min(lines.length, 20); i++) {
+                    const lower = lines[i]?.toLowerCase() || '';
+                    if (lower.includes('cda') && (lower.includes('armazenador') || lower.includes('armaz'))) {
+                      startIdx = i + 1;
+                      break;
+                    }
+                  }
                   const parsed: Omit<DeliveryLocation, 'id'>[] = [];
                   for (let i = startIdx; i < lines.length; i++) {
-                    const parts = lines[i].split('\t').map(p => p.trim());
+                    const line = lines[i].trim();
+                    if (!line) continue; // skip blank lines
+                    const parts = line.split('\t').map(p => p.trim());
                     if (!parts[1]) continue; // skip empty rows
                     const lat = parseConabCoord(parts[9]);
                     const lng = parseConabCoord(parts[10]);
