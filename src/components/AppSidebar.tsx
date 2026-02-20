@@ -66,7 +66,7 @@ export default function AppSidebar() {
       <div className="h-16 flex items-center px-3 border-b border-sidebar-border overflow-hidden">
         {!collapsed ? (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex items-center">
-            <img src={logoDark} alt="BarterPro" className="h-10 w-auto object-contain" />
+            <img src={logoDark} alt="BarterPro" className="h-[60px] w-auto object-contain mix-blend-lighten" />
           </motion.div>
         ) : (
           <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center mx-auto">
