@@ -2,9 +2,11 @@ import { ReactNode, useState } from 'react';
 import AppSidebar from './AppSidebar';
 import JourneyHeader from './JourneyHeader';
 import { SidebarProvider } from '@/contexts/SidebarContext';
+import { useIsMobile } from '@/hooks/use-mobile';
 
 export default function AppLayout({ children }: { children: ReactNode }) {
-  const [collapsed, setCollapsed] = useState(false);
+  const isMobile = useIsMobile();
+  const [collapsed, setCollapsed] = useState(isMobile);
 
   return (
     <SidebarProvider value={{ collapsed, setCollapsed }}>
