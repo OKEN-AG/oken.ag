@@ -627,6 +627,27 @@ export default function CommoditiesTab({ campaignId, campaignCommodities = [] }:
     await (supabase as any).from('campaign_indicative_prices').delete().eq('id', id);
     qc.invalidateQueries({ queryKey: ['indicative-prices', campaignId] });
   };
+  const deleteAllPrices = async () => {
+    if (!campaignId) return;
+    await (supabase as any).from('campaign_indicative_prices').delete().eq('campaign_id', campaignId);
+    qc.invalidateQueries({ queryKey: ['indicative-prices', campaignId] });
+    toast.success('Todos os preços indicativos removidos');
+  };
+  const removeDuplicatePrices = async () => {
+    if (!campaignId || !indicativePrices.length) return;
+    const seen = new Set<string>();
+    const dupeIds: string[] = [];
+    for (const p of indicativePrices) {
+      const key = `${p.culture}|${p.price_type}|${p.state}|${p.market_place}|${p.price_per_saca}`;
+      if (seen.has(key)) { dupeIds.push(p.id); } else { seen.add(key); }
+    }
+    if (dupeIds.length === 0) { toast.info('Nenhuma duplicata encontrada'); return; }
+    for (const id of dupeIds) {
+      await (supabase as any).from('campaign_indicative_prices').delete().eq('id', id);
+    }
+    qc.invalidateQueries({ queryKey: ['indicative-prices', campaignId] });
+    toast.success(`${dupeIds.length} duplicatas removidas`);
+  };
 
   const handlePriceFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -954,6 +975,12 @@ export default function CommoditiesTab({ campaignId, campaignCommodities = [] }:
                 <Button variant="outline" size="sm" onClick={() => setPricePasteMode(!pricePasteMode)}><ClipboardPaste className="w-3 h-3 mr-1" /> Colar</Button>
                 <Button variant="outline" size="sm" onClick={() => priceFileRef.current?.click()}><Upload className="w-3 h-3 mr-1" /> Importar</Button>
                 <input ref={priceFileRef} type="file" accept=".csv,.xls,.xlsx,.txt" className="hidden" onChange={handlePriceFileUpload} />
+                {indicativePrices.length > 0 && (
+                  <>
+                    <Button variant="outline" size="sm" onClick={removeDuplicatePrices}><Trash2 className="w-3 h-3 mr-1" /> Remover Duplicados</Button>
+                    <Button variant="destructive" size="sm" onClick={() => { if (confirm('Excluir TODOS os preços indicativos?')) deleteAllPrices(); }}><Trash2 className="w-3 h-3 mr-1" /> Excluir Tudo</Button>
+                  </>
+                )}
               </div>
             </div>
             {pricePasteMode && (
