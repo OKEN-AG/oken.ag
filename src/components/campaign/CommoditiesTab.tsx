@@ -141,6 +141,11 @@ export default function CommoditiesTab({ campaignId, campaignCommodities = [] }:
   const [newBuyerName, setNewBuyerName] = useState('');
   const [newBuyerFee, setNewBuyerFee] = useState(0);
 
+  // New delivery location manual entry
+  const emptyLoc = { cda: '', warehouse_name: '', address: '', city: '', state: '', phone: '', email: '', location_type: '', capacity_tons: 0, latitude: 0, longitude: 0 };
+  const [newLoc, setNewLoc] = useState(emptyLoc);
+  const [showAddLoc, setShowAddLoc] = useState(false);
+
   // Paste/import modes
   const [locPasteMode, setLocPasteMode] = useState(false);
   const [locPasteText, setLocPasteText] = useState('');
@@ -646,7 +651,8 @@ export default function CommoditiesTab({ campaignId, campaignCommodities = [] }:
           <div className="border border-border rounded-md p-4 space-y-4">
             <div className="flex items-center justify-between">
               <Label className="font-semibold">Locais de Entrega (Armazéns)</Label>
-              <div className="flex gap-2">
+              <div className="flex gap-2 items-center">
+                <Button variant="outline" size="sm" onClick={() => setShowAddLoc(!showAddLoc)}><Plus className="w-3 h-3 mr-1" /> Adicionar</Button>
                 <Button variant="outline" size="sm" onClick={() => setLocPasteMode(!locPasteMode)}><ClipboardPaste className="w-3 h-3 mr-1" /> Colar</Button>
                 <Button variant="outline" size="sm" onClick={() => locFileRef.current?.click()}><Upload className="w-3 h-3 mr-1" /> Importar</Button>
                 <Button variant="default" size="sm" onClick={() => conabFileRef.current?.click()}><Upload className="w-3 h-3 mr-1" /> Importar Base CONAB</Button>
@@ -674,18 +680,50 @@ export default function CommoditiesTab({ campaignId, campaignCommodities = [] }:
                 }}>Importar</Button>
               </div>
             )}
+            {showAddLoc && (
+              <div className="space-y-2 p-3 border border-border rounded-md bg-muted/30">
+                <Label className="text-sm font-medium">Novo Local de Entrega</Label>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+                  {[
+                    ['CDA', 'cda'], ['Armazenador', 'warehouse_name'], ['Endereço', 'address'], ['Município', 'city'],
+                    ['UF', 'state'], ['Telefone', 'phone'], ['E-mail', 'email'], ['Tipo', 'location_type'],
+                  ].map(([label, key]) => (
+                    <div key={key} className="space-y-1">
+                      <Label className="text-xs">{label}</Label>
+                      <Input value={(newLoc as any)[key]} onChange={e => setNewLoc(prev => ({ ...prev, [key]: e.target.value }))} className="h-8 text-xs" />
+                    </div>
+                  ))}
+                  {[
+                    ['Cap.(t)', 'capacity_tons'], ['Latitude', 'latitude'], ['Longitude', 'longitude'],
+                  ].map(([label, key]) => (
+                    <div key={key} className="space-y-1">
+                      <Label className="text-xs">{label}</Label>
+                      <Input type="number" step="any" value={(newLoc as any)[key]} onChange={e => setNewLoc(prev => ({ ...prev, [key]: Number(e.target.value) }))} className="h-8 text-xs" />
+                    </div>
+                  ))}
+                </div>
+                <Button size="sm" disabled={!newLoc.warehouse_name} onClick={async () => {
+                  if (!campaignId) return;
+                  await (supabase as any).from('campaign_delivery_locations').insert({ ...newLoc, campaign_id: campaignId });
+                  qc.invalidateQueries({ queryKey: ['delivery-locations', campaignId] });
+                  setNewLoc(emptyLoc);
+                  toast.success('Local adicionado');
+                }}>Adicionar</Button>
+              </div>
+            )}
             {deliveryLocations.length > 0 ? (
               <div className="overflow-x-auto">
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead>CDA</TableHead><TableHead>Armazenador</TableHead><TableHead>Município</TableHead><TableHead>UF</TableHead><TableHead>Tipo</TableHead><TableHead>Cap.(t)</TableHead><TableHead className="w-12"></TableHead>
+                      <TableHead>CDA</TableHead><TableHead>Armazenador</TableHead><TableHead>Município</TableHead><TableHead>UF</TableHead><TableHead>Tipo</TableHead><TableHead>Cap.(t)</TableHead><TableHead>Lat</TableHead><TableHead>Long</TableHead><TableHead className="w-12"></TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {deliveryLocations.map((l: any) => (
                       <TableRow key={l.id}>
                         <TableCell className="text-xs">{l.cda}</TableCell><TableCell>{l.warehouse_name}</TableCell><TableCell>{l.city}</TableCell><TableCell>{l.state}</TableCell><TableCell>{l.location_type}</TableCell><TableCell>{l.capacity_tons}</TableCell>
+                        <TableCell className="text-xs">{l.latitude || '—'}</TableCell><TableCell className="text-xs">{l.longitude || '—'}</TableCell>
                         <TableCell><Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => deleteLocation(l.id)}><Trash2 className="w-3 h-3" /></Button></TableCell>
                       </TableRow>
                     ))}
