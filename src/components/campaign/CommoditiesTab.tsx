@@ -276,6 +276,21 @@ export default function CommoditiesTab({ campaignId, campaignCommodities = [] }:
     return 0;
   };
 
+  const parseConabCoord = (val: any): number | null => {
+    if (val == null || val === '') return null;
+    // CONAB coords come as "-XX,XXXXXX" (Brazilian format) or numbers
+    const str = String(val).trim().replace(',', '.');
+    const num = parseFloat(str);
+    if (isNaN(num) || num === 0) return null;
+    return num;
+  };
+
+  const isValidBrazilCoord = (lat: number | null, lng: number | null): boolean => {
+    if (lat === null || lng === null) return false;
+    // Brazil bounds: lat ~[-34, +6], lng ~[-74, -34]
+    return lat >= -35 && lat <= 7 && lng >= -75 && lng <= -34;
+  };
+
   const parseConabRow = (row: Record<string, any>): Omit<DeliveryLocation, 'id'> | null => {
     // Detect CONAB columns (case-insensitive, partial match)
     const keys = Object.keys(row);
@@ -289,9 +304,15 @@ export default function CommoditiesTab({ campaignId, campaignCommodities = [] }:
     const emailKey = find(['mail']);
     const typeKey = find(['Tipo']);
     const capKey = find(['CAP', 'Capacidade']);
-    const latKey = find(['Lat']);
-    const lngKey = find(['Long']);
+    // CONAB uses full "Latitude"/"Longitude" headers
+    const latKey = find(['Latitude', 'Lat']);
+    const lngKey = find(['Longitude', 'Long']);
     if (!nameKey) return null;
+
+    const lat = latKey ? parseConabCoord(row[latKey]) : null;
+    const lng = lngKey ? parseConabCoord(row[lngKey]) : null;
+    const validCoords = isValidBrazilCoord(lat, lng);
+
     return {
       cda: String(row[cdaKey!] || '').trim(),
       warehouse_name: String(row[nameKey] || '').trim(),
@@ -302,8 +323,8 @@ export default function CommoditiesTab({ campaignId, campaignCommodities = [] }:
       email: String(row[emailKey!] || '').trim(),
       location_type: String(row[typeKey!] || '').trim(),
       capacity_tons: parseConabCapacity(row[capKey!]),
-      latitude: Number(row[latKey!] || 0),
-      longitude: Number(row[lngKey!] || 0),
+      latitude: validCoords ? lat : null,
+      longitude: validCoords ? lng : null,
     };
   };
 
