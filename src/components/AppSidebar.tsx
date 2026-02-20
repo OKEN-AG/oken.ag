@@ -1,15 +1,15 @@
-import { useState } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import {
   LayoutDashboard, Settings, ShoppingCart, BarChart3,
   Wheat, FileText, ChevronLeft, ChevronRight, LogOut,
-  FolderCog, Shield } from 'lucide-react';
+  FolderCog } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useActiveCampaigns, useCampaignData } from '@/hooks/useActiveCampaign';
+import { useSidebarCollapsed } from '@/contexts/SidebarContext';
 import type { JourneyModule } from '@/types/barter';
+import logoDark from '@/assets/logo-dark.png';
 
-// I3: Map nav items to their controlling module
 const navItems: { to: string; icon: any; label: string; module?: JourneyModule }[] = [
   { to: '/', icon: LayoutDashboard, label: 'Dashboard' },
   { to: '/campanha', icon: Settings, label: 'Campanha' },
@@ -24,20 +24,18 @@ const adminItems = [
 ];
 
 export default function AppSidebar() {
-  const [collapsed, setCollapsed] = useState(false);
+  const { collapsed, setCollapsed } = useSidebarCollapsed();
   const location = useLocation();
   const { user, signOut } = useAuth();
 
-  // I3: Get active modules from the first active campaign to control visibility
   const { data: activeCampaigns } = useActiveCampaigns();
   const firstCampaignId = activeCampaigns?.[0]?.id;
   const { campaign } = useCampaignData(firstCampaignId);
   const activeModules = campaign?.activeModules || [];
 
-  // I3: Filter nav items based on active modules
   const visibleNavItems = navItems.filter(item => {
-    if (!item.module) return true; // Items without a module are always visible
-    if (activeModules.length === 0) return true; // No modules configured = show all
+    if (!item.module) return true;
+    if (activeModules.length === 0) return true;
     return activeModules.includes(item.module);
   });
 
@@ -49,7 +47,7 @@ export default function AppSidebar() {
         to={item.to}
         className={`flex items-center gap-3 px-3 py-2.5 rounded-md text-sm transition-colors ${
           active
-            ? 'bg-accent text-accent-foreground glow-border'
+            ? 'bg-sidebar-accent text-sidebar-accent-foreground glow-border'
             : 'text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground'
         }`}
       >
@@ -65,16 +63,12 @@ export default function AppSidebar() {
       transition={{ duration: 0.2 }}
       className="h-screen bg-sidebar border-r border-sidebar-border flex flex-col fixed left-0 top-0 z-40"
     >
-      <div className="h-16 flex items-center px-4 border-b border-sidebar-border">
-        {!collapsed && (
-          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center">
-              <Wheat className="w-5 h-5 text-primary-foreground" />
-            </div>
-            <span className="font-bold text-foreground tracking-tight">BarterPro</span>
+      <div className="h-16 flex items-center px-3 border-b border-sidebar-border overflow-hidden">
+        {!collapsed ? (
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex items-center">
+            <img src={logoDark} alt="BarterPro" className="h-10 w-auto object-contain" />
           </motion.div>
-        )}
-        {collapsed && (
+        ) : (
           <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center mx-auto">
             <Wheat className="w-5 h-5 text-primary-foreground" />
           </div>
@@ -100,7 +94,7 @@ export default function AppSidebar() {
           <LogOut className="w-4 h-4 shrink-0" />
           {!collapsed && <span>Sair</span>}
         </button>
-        <button onClick={() => setCollapsed((c) => !c)} className="flex items-center justify-center w-full py-1.5 text-sidebar-foreground hover:text-foreground transition-colors">
+        <button onClick={() => setCollapsed(!collapsed)} className="flex items-center justify-center w-full py-1.5 text-sidebar-foreground hover:text-foreground transition-colors">
           {collapsed ? <ChevronRight className="w-4 h-4" /> : <ChevronLeft className="w-4 h-4" />}
         </button>
       </div>

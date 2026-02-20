@@ -2,11 +2,12 @@ import { useState } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { Navigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { Wheat, Mail, Lock, User, Loader } from 'lucide-react';
+import { Mail, Lock, User, Loader } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
 import { handleDatabaseError } from '@/lib/error-handler';
+import logoLight from '@/assets/logo-light.png';
 
 export default function AuthPage() {
   const { user, loading } = useAuth();
@@ -66,11 +67,7 @@ export default function AuthPage() {
         className="w-full max-w-md"
       >
         <div className="text-center mb-8">
-          <div className="w-14 h-14 rounded-xl bg-primary flex items-center justify-center mx-auto mb-4">
-            <Wheat className="w-8 h-8 text-primary-foreground" />
-          </div>
-          <h1 className="text-2xl font-bold text-foreground">BarterPro</h1>
-          <p className="text-sm text-muted-foreground mt-1">Sistema de Gestão de Barter Agroindustrial</p>
+          <img src={logoLight} alt="BarterPro" className="h-16 w-auto mx-auto mb-2" />
         </div>
 
         <div className="glass-card p-6">
