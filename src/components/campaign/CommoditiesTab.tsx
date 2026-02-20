@@ -958,15 +958,53 @@ export default function CommoditiesTab({ campaignId, campaignCommodities = [] }:
             </div>
             {pricePasteMode && (
               <div className="space-y-2 p-3 border border-border rounded-md bg-muted/30">
-                <Label className="text-xs text-muted-foreground">Formato: Cultura;Tipo;Mês;Estado;Praça;Preço(R$/sc);Variação(%);Direção;Data Atualização;Alíquota(%)</Label>
-                <Textarea value={pricePasteText} onChange={e => setPricePasteText(e.target.value)} rows={4} />
+                <Label className="text-xs text-muted-foreground">
+                  Formato aceito (TAB ou ponto-e-vírgula):<br/>
+                  <span className="font-mono">Cultura ; Tipo ; Estado ; Praça ; Preço(R$/sc) ; Variação(%) ; Direção ; Data ; Alíquota(%)</span>
+                </Label>
+                <Textarea value={pricePasteText} onChange={e => setPricePasteText(e.target.value)} rows={6} placeholder="Cole aqui os dados de preços indicativos..." />
                 <Button size="sm" onClick={() => {
-                  const rows = parseCSVRows(pricePasteText, parts => ({
-                    culture: parts[0] || '', price_type: parts[1] || '', month: parts[2] || '', state: parts[3] || '', market_place: parts[4] || '',
-                    price_per_saca: Number(parts[5] || 0), variation_percent: Number(parts[6] || 0), direction: parts[7] || '',
-                    updated_at: parts[8] || '', tax_rate: Number(parts[9] || 0),
-                  }));
-                  bulkInsertPrices(rows); setPricePasteText(''); setPricePasteMode(false);
+                  const parseLocalNum = (s: string): number => {
+                    if (!s) return 0;
+                    let v = s.trim().replace(/[%+\s]/g, '');
+                    // Detect comma as decimal: if last separator is comma and has <=2 digits after
+                    const lastComma = v.lastIndexOf(',');
+                    const lastDot = v.lastIndexOf('.');
+                    if (lastComma > lastDot) {
+                      v = v.replace(/\./g, '').replace(',', '.');
+                    } else {
+                      v = v.replace(/,/g, '');
+                    }
+                    return parseFloat(v) || 0;
+                  };
+                  const lines = pricePasteText.trim().split('\n').filter(l => l.trim());
+                  const rows: Omit<IndicativePrice, 'id'>[] = [];
+                  for (const line of lines) {
+                    // Split by tab first, then by semicolon if only 1 part
+                    let parts = line.split('\t').map(p => p.trim());
+                    if (parts.length < 5) parts = line.split(';').map(p => p.trim());
+                    if (parts.length < 5) continue;
+                    // Skip header lines
+                    const first = parts[0].toLowerCase();
+                    if (first === 'cultura' || first === '#' || first === 'culture') continue;
+                    // Map: Cultura, Tipo(FOB/CIF), Estado, Praça, Preço, Variação, Direção, Data, Alíquota
+                    rows.push({
+                      culture: parts[0] || '',
+                      price_type: parts[1] || '',
+                      state: parts[2] || '',
+                      market_place: parts[3] || '',
+                      price_per_saca: parseLocalNum(parts[4]),
+                      variation_percent: parts[5] ? parseLocalNum(parts[5]) : 0,
+                      direction: parts[6] || '',
+                      updated_at: parts[7] || '',
+                      tax_rate: parts[8] ? parseLocalNum(parts[8]) : 0,
+                      month: '',
+                    });
+                  }
+                  if (rows.length === 0) { toast.error('Nenhum dado válido encontrado'); return; }
+                  bulkInsertPrices(rows);
+                  toast.success(`${rows.length} preços importados`);
+                  setPricePasteText(''); setPricePasteMode(false);
                 }}>Importar</Button>
               </div>
             )}
