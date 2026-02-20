@@ -9,6 +9,7 @@ import { useActiveCampaigns, useCampaignData } from '@/hooks/useActiveCampaign';
 import { useSidebarCollapsed } from '@/contexts/SidebarContext';
 import type { JourneyModule } from '@/types/barter';
 import logoDark from '@/assets/logo-dark.png';
+import logoIcon from '@/assets/logo-icon.png';
 
 const navItems: { to: string; icon: any; label: string; module?: JourneyModule }[] = [
   { to: '/', icon: LayoutDashboard, label: 'Dashboard' },
@@ -69,9 +70,7 @@ export default function AppSidebar() {
             <img src={logoDark} alt="BarterPro" className="h-[60px] w-auto object-contain mix-blend-lighten" />
           </motion.div>
         ) : (
-          <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center mx-auto">
-            <Wheat className="w-5 h-5 text-primary-foreground" />
-          </div>
+          <img src={logoIcon} alt="BarterPro" className="w-10 h-10 object-contain mx-auto" />
         )}
       </div>
 
