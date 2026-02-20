@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
+import { useQueryClient } from '@tanstack/react-query';
 import { ArrowLeft, Save } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -87,6 +88,7 @@ export default function CampaignFormPage() {
   const { id } = useParams();
   const isNew = id === 'nova';
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const { user } = useAuth();
 
   const { data: existing } = useCampaign(isNew ? undefined : id);
@@ -238,6 +240,21 @@ export default function CampaignFormPage() {
         supabase.from('campaign_due_dates').insert(dueDates.map(d => ({ ...d, campaign_id: campaignId! })))
       );
       await Promise.all(inserts);
+
+      // Invalidate all operational caches for this campaign
+      const cid = campaignId!;
+      queryClient.invalidateQueries({ queryKey: ['active-campaigns'] });
+      queryClient.invalidateQueries({ queryKey: ['campaign-full', cid] });
+      queryClient.invalidateQueries({ queryKey: ['campaign-products-full', cid] });
+      queryClient.invalidateQueries({ queryKey: ['campaign-combos-full', cid] });
+      queryClient.invalidateQueries({ queryKey: ['campaign-margins-full', cid] });
+      queryClient.invalidateQueries({ queryKey: ['campaign-commodity-unified', cid] });
+      queryClient.invalidateQueries({ queryKey: ['campaign-freight-full', cid] });
+      queryClient.invalidateQueries({ queryKey: ['campaign-delivery-locations', cid] });
+      queryClient.invalidateQueries({ queryKey: ['campaign-due-dates-sim', cid] });
+      queryClient.invalidateQueries({ queryKey: ['campaign-segments-sim', cid] });
+      queryClient.invalidateQueries({ queryKey: ['campaign-payment-methods-sim', cid] });
+      queryClient.invalidateQueries({ queryKey: ['operation-stats'] });
 
       navigate('/admin/campanhas');
     } catch (err: any) {

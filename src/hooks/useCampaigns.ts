@@ -48,7 +48,20 @@ export function useCreateCampaign() {
       if (error) throw error;
       return data;
     },
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['campaigns'] }),
+    onSuccess: (data) => {
+      qc.invalidateQueries({ queryKey: ['campaigns'] });
+      qc.invalidateQueries({ queryKey: ['active-campaigns'] });
+      qc.invalidateQueries({ queryKey: ['campaign-full', data.id] });
+      qc.invalidateQueries({ queryKey: ['campaign-products-full', data.id] });
+      qc.invalidateQueries({ queryKey: ['campaign-combos-full', data.id] });
+      qc.invalidateQueries({ queryKey: ['campaign-margins-full', data.id] });
+      qc.invalidateQueries({ queryKey: ['campaign-commodity-unified', data.id] });
+      qc.invalidateQueries({ queryKey: ['campaign-freight-full', data.id] });
+      qc.invalidateQueries({ queryKey: ['campaign-delivery-locations', data.id] });
+      qc.invalidateQueries({ queryKey: ['campaign-due-dates-sim', data.id] });
+      qc.invalidateQueries({ queryKey: ['campaign-segments-sim', data.id] });
+      qc.invalidateQueries({ queryKey: ['campaign-payment-methods-sim', data.id] });
+    },
   });
 }
 
@@ -66,8 +79,20 @@ export function useUpdateCampaign() {
       return data;
     },
     onSuccess: (_, vars) => {
+      const id = vars.id;
       qc.invalidateQueries({ queryKey: ['campaigns'] });
-      qc.invalidateQueries({ queryKey: ['campaigns', vars.id] });
+      qc.invalidateQueries({ queryKey: ['campaigns', id] });
+      qc.invalidateQueries({ queryKey: ['active-campaigns'] });
+      qc.invalidateQueries({ queryKey: ['campaign-full', id] });
+      qc.invalidateQueries({ queryKey: ['campaign-products-full', id] });
+      qc.invalidateQueries({ queryKey: ['campaign-combos-full', id] });
+      qc.invalidateQueries({ queryKey: ['campaign-margins-full', id] });
+      qc.invalidateQueries({ queryKey: ['campaign-commodity-unified', id] });
+      qc.invalidateQueries({ queryKey: ['campaign-freight-full', id] });
+      qc.invalidateQueries({ queryKey: ['campaign-delivery-locations', id] });
+      qc.invalidateQueries({ queryKey: ['campaign-due-dates-sim', id] });
+      qc.invalidateQueries({ queryKey: ['campaign-segments-sim', id] });
+      qc.invalidateQueries({ queryKey: ['campaign-payment-methods-sim', id] });
     },
   });
 }
