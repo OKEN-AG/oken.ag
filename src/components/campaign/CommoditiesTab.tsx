@@ -380,6 +380,33 @@ export default function CommoditiesTab({ campaignId, campaignCommodities = [] }:
 
   const conabFileRef = useRef<HTMLInputElement>(null);
 
+  // Helper: read XLS/CSV and find CONAB header row, return parsed rows
+  const parseConabSheet = (wb: XLSX.WorkBook): Omit<DeliveryLocation, 'id'>[] => {
+    const sheet = wb.Sheets[wb.SheetNames[0]];
+    const raw = XLSX.utils.sheet_to_json(sheet, { header: 1 }) as any[][];
+    // Find header row: scan first 30 rows for one containing "CDA" AND "Armazenador"
+    let headerIdx = -1;
+    for (let i = 0; i < Math.min(raw.length, 30); i++) {
+      const cells = (raw[i] || []).map(c => String(c || '').toLowerCase());
+      if (cells.some(c => c.includes('cda')) && cells.some(c => c.includes('armazenador') || c.includes('armaz'))) {
+        headerIdx = i;
+        break;
+      }
+    }
+    if (headerIdx === -1) return []; // no CONAB header found
+    const headers = (raw[headerIdx] || []).map(h => String(h || '').trim());
+    const dataRows = raw.slice(headerIdx + 1);
+    // Build keyed objects using detected headers
+    const jsonRows: Record<string, any>[] = dataRows
+      .filter(r => r && r.length > 1 && r.some(c => c != null && String(c).trim() !== ''))
+      .map(r => {
+        const obj: Record<string, any> = {};
+        headers.forEach((h, idx) => { if (h) obj[h] = r[idx]; });
+        return obj;
+      });
+    return jsonRows.map(parseConabRow).filter(Boolean) as Omit<DeliveryLocation, 'id'>[];
+  };
+
   const handleConabImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (!files || files.length === 0) return;
@@ -390,9 +417,7 @@ export default function CommoditiesTab({ campaignId, campaignCommodities = [] }:
         reader.onload = (ev) => {
           const data = new Uint8Array(ev.target?.result as ArrayBuffer);
           const wb = XLSX.read(data, { type: 'array' });
-          const jsonRows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]) as Record<string, any>[];
-          const parsed = jsonRows.map(parseConabRow).filter(Boolean) as Omit<DeliveryLocation, 'id'>[];
-          resolve(parsed);
+          resolve(parseConabSheet(wb));
         };
         reader.readAsArrayBuffer(file);
       });
@@ -415,27 +440,59 @@ export default function CommoditiesTab({ campaignId, campaignCommodities = [] }:
     const reader = new FileReader();
     if (file.name.endsWith('.csv') || file.name.endsWith('.txt')) {
       reader.onload = (ev) => {
-        const rows = parseCSVRows(ev.target?.result as string, parts => ({
-          cda: parts[0] || '', warehouse_name: parts[1] || '', address: parts[2] || '', city: parts[3] || '', state: parts[4] || '',
-          phone: parts[5] || '', email: parts[6] || '', location_type: parts[7] || '', capacity_tons: Number(parts[8] || 0),
-          latitude: Number(parts[9] || 0), longitude: Number(parts[10] || 0),
-        }));
-        bulkInsertLocations(rows);
+        // Try parsing CSV as if it were CONAB tab-separated
+        const text = ev.target?.result as string;
+        const lines = text.trim().split('\n');
+        let headerIdx = -1;
+        for (let i = 0; i < Math.min(lines.length, 30); i++) {
+          const lower = lines[i]?.toLowerCase() || '';
+          if (lower.includes('cda') && (lower.includes('armazenador') || lower.includes('armaz'))) {
+            headerIdx = i;
+            break;
+          }
+        }
+        if (headerIdx >= 0) {
+          // CONAB CSV/TXT format
+          const parsed: Omit<DeliveryLocation, 'id'>[] = [];
+          for (let i = headerIdx + 1; i < lines.length; i++) {
+            const line = lines[i].trim();
+            if (!line) continue;
+            const parts = line.split('\t').map(p => p.trim());
+            if (!parts[1]) continue;
+            const lat = parseConabCoord(parts[9]);
+            const lng = parseConabCoord(parts[10]);
+            const validCoords = isValidBrazilCoord(lat, lng);
+            parsed.push({
+              cda: parts[0] || '', warehouse_name: parts[1] || '', address: parts[2] || '', city: parts[3] || '', state: parts[4] || '',
+              phone: parts[5] || '', email: parts[6] || '', location_type: parts[7] || '',
+              capacity_tons: parseConabCapacity(parts[8]),
+              latitude: validCoords ? lat! : 0, longitude: validCoords ? lng! : 0,
+            });
+          }
+          bulkInsertLocations(parsed);
+        } else {
+          // Fallback generic CSV
+          const rows = parseCSVRows(text, parts => ({
+            cda: parts[0] || '', warehouse_name: parts[1] || '', address: parts[2] || '', city: parts[3] || '', state: parts[4] || '',
+            phone: parts[5] || '', email: parts[6] || '', location_type: parts[7] || '', capacity_tons: Number(parts[8] || 0),
+            latitude: Number(parts[9] || 0), longitude: Number(parts[10] || 0),
+          }));
+          bulkInsertLocations(rows);
+        }
       };
       reader.readAsText(file);
     } else {
-      // For generic XLS, try CONAB detection first
+      // XLS/XLSX: use CONAB-aware sheet parser
       reader.onload = (ev) => {
         const data = new Uint8Array(ev.target?.result as ArrayBuffer);
         const wb = XLSX.read(data, { type: 'array' });
-        const jsonRows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]) as Record<string, any>[];
-        // Check if CONAB format
-        if (jsonRows.length > 0 && Object.keys(jsonRows[0]).some(k => k.toLowerCase().includes('armazenador') || k.toLowerCase().includes('cda'))) {
-          const parsed = jsonRows.map(parseConabRow).filter(Boolean) as Omit<DeliveryLocation, 'id'>[];
+        const parsed = parseConabSheet(wb);
+        if (parsed.length > 0) {
           bulkInsertLocations(parsed);
         } else {
           // Fallback to positional
-          const rows = (XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1 }) as any[][]).slice(1).map(r => ({
+          const raw = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1 }) as any[][];
+          const rows = raw.slice(1).map(r => ({
             cda: String(r[0] || ''), warehouse_name: String(r[1] || ''), address: String(r[2] || ''), city: String(r[3] || ''), state: String(r[4] || ''),
             phone: String(r[5] || ''), email: String(r[6] || ''), location_type: String(r[7] || ''), capacity_tons: Number(r[8] || 0),
             latitude: Number(r[9] || 0), longitude: Number(r[10] || 0),
