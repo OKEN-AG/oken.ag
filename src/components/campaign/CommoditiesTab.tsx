@@ -1013,7 +1013,67 @@ export default function CommoditiesTab({ campaignId, campaignCommodities = [] }:
 
                   const rows: Omit<IndicativePrice, 'id'>[] = [];
 
-                  if (isHorizontal) {
+                  // --- ESALQ format detection ---
+                  // Format: "12:00:00 AM TICKER ESALQ Commodity Grower Location Brazil [⇩⇧] price var1 var2 refPrice BRL DD/MM/YYYY"
+                  // Records may be on one long line separated by date+time patterns
+                  const isEsalq = rawLines.some(l => /ESALQ/i.test(l) && /\b(SB-|CORN-|COFFEE-|COTTON-)/i.test(l));
+
+                  if (isEsalq) {
+                    // Join everything, then split into individual records at "12:00:00 AM" boundaries
+                    const joined = rawLines.join(' ');
+                    const recordTexts = joined.split(/(?=12:00:00\s*AM\b)/i).map(s => s.trim()).filter(Boolean);
+
+                    for (const rec of recordTexts) {
+                      // Extract ticker to determine culture
+                      const tickerMatch = rec.match(/\b(SB|CORN|COFFEE|COTTON)-\S+/i);
+                      if (!tickerMatch) continue;
+                      const ticker = tickerMatch[1].toUpperCase();
+                      const culture = ticker === 'SB' ? 'Soja' : ticker === 'CORN' ? 'Milho' : ticker === 'COFFEE' ? 'Café' : ticker === 'COTTON' ? 'Algodão' : ticker;
+
+                      // Extract location: between "Grower" and the arrow/numbers section
+                      // Pattern: ... Grower <LOCATION> Brazil [Export Price]? [⇩⇧]? <numbers>
+                      const locMatch = rec.match(/Grower\s+(.+?)\s+(?:Brazil\s+(?:Export\s+Price\s+)?)?(?:[⇩⇧↑↓]\s*)?(\d[\d.,]*)\s+/i);
+                      let marketPlace = '';
+                      if (locMatch) {
+                        marketPlace = locMatch[1]
+                          .replace(/\bBrazil\b/gi, '')
+                          .replace(/\bExport\s+Price\b/gi, '')
+                          .replace(/\bRegion\b/gi, '')
+                          .replace(/\b[A-Z]{2}\s+State\b/gi, '')
+                          .trim()
+                          .replace(/\s+/g, ' ');
+                      }
+
+                      // Extract direction arrow
+                      const dirArrow = rec.match(/[⇩⇧↑↓]/);
+                      const direction = dirArrow ? (dirArrow[0] === '⇧' || dirArrow[0] === '↑' ? 'subiu' : 'caiu') : 'estavel';
+
+                      // Extract numbers: price, var1, var2, refPrice after arrow or location
+                      const numSection = rec.match(/(?:[⇩⇧↑↓]\s+)?(\d[\d.,]*)\s+([+-]?[\d.,]+)\s+([+-]?[\d.,]+)\s+([\d.,]+)\s+BRL\s+(\d{2}\/\d{2}\/\d{4})/i);
+                      if (!numSection) continue;
+
+                      const price = parseLocalNum(numSection[1]);
+                      const variation = parseLocalNum(numSection[2]);
+                      const dateStr = numSection[5]; // DD/MM/YYYY
+                      const [dd, mm, yyyy] = dateStr.split('/');
+                      const isoDate = `${yyyy}-${mm}-${dd}`;
+
+                      // Derive state from ticker or location
+                      let state = '';
+                      const stateFromTicker = tickerMatch[0].match(/-(G[A-Z]+)-BR/i);
+                      // Try to find 2-letter state in location context
+                      const stateMatch = rec.match(/\b([A-Z]{2})\s+State\b/i);
+                      if (stateMatch) {
+                        state = stateMatch[1].toUpperCase();
+                      }
+
+                      rows.push({
+                        culture, price_type: 'FOB', state, market_place: marketPlace,
+                        price_per_saca: price, variation_percent: variation,
+                        direction, updated_at: isoDate, tax_rate: 0, month: '',
+                      });
+                    }
+                  } else if (isHorizontal) {
                     // Original horizontal parsing (tab/semicolon/regex)
                     const lines = rawLines.filter(l => l);
                     for (const line of lines) {
