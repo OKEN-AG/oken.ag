@@ -309,11 +309,30 @@ export default function CommoditiesTab({ campaignId, campaignCommodities = [] }:
 
   const parseConabCoord = (val: any): number | null => {
     if (val == null || val === '') return null;
-    // CONAB coords come as "-XX,XXXXXX" (Brazilian format) or numbers
-    const str = String(val).trim().replace(',', '.');
-    const num = parseFloat(str);
-    if (isNaN(num) || num === 0) return null;
-    return num;
+    let str = String(val).trim();
+    if (!str || str === '0') return null;
+    // Check if it's already a simple decimal (single dot, valid range)
+    const dotCount = (str.match(/\./g) || []).length;
+    if (dotCount <= 1) {
+      str = str.replace(',', '.');
+      const num = parseFloat(str);
+      if (isNaN(num) || num === 0) return null;
+      if (Math.abs(num) <= 90) return num; // already valid coord
+    }
+    // Multiple dots = Brazilian thousand separator format (e.g. "-1.919.813" or "-22.166.454")
+    // Remove dots (thousand sep), get raw integer, then scale to valid coordinate
+    const sign = str.startsWith('-') ? -1 : 1;
+    const digits = str.replace(/[^0-9]/g, '');
+    if (!digits) return null;
+    const asInt = parseInt(digits, 10);
+    // Try dividing by increasing powers of 10 until result is in valid Brazil range
+    for (let div = 1; div <= 10000000; div *= 10) {
+      const candidate = sign * asInt / div;
+      if (Math.abs(candidate) >= 1 && Math.abs(candidate) <= 75) {
+        return candidate;
+      }
+    }
+    return null;
   };
 
   const isValidBrazilCoord = (lat: number | null, lng: number | null): boolean => {
@@ -671,12 +690,25 @@ export default function CommoditiesTab({ campaignId, campaignCommodities = [] }:
                 <Label className="text-xs text-muted-foreground">Formato: CDA;Armazenador;Endereço;Município;UF;Telefone;E-mail;Tipo;CAP.(t);Latitude;Longitude</Label>
                 <Textarea value={locPasteText} onChange={e => setLocPasteText(e.target.value)} rows={4} />
                 <Button size="sm" onClick={() => {
-                  const rows = parseCSVRows(locPasteText, parts => ({
-                    cda: parts[0] || '', warehouse_name: parts[1] || '', address: parts[2] || '', city: parts[3] || '', state: parts[4] || '',
-                    phone: parts[5] || '', email: parts[6] || '', location_type: parts[7] || '', capacity_tons: Number(parts[8] || 0),
-                    latitude: Number(parts[9] || 0), longitude: Number(parts[10] || 0),
-                  }));
-                  bulkInsertLocations(rows); setLocPasteText(''); setLocPasteMode(false);
+                  const lines = locPasteText.trim().split('\n');
+                  // Detect if first line is header
+                  const firstLine = lines[0]?.toLowerCase() || '';
+                  const startIdx = (firstLine.includes('cda') || firstLine.includes('armazenador')) ? 1 : 0;
+                  const parsed: Omit<DeliveryLocation, 'id'>[] = [];
+                  for (let i = startIdx; i < lines.length; i++) {
+                    const parts = lines[i].split('\t').map(p => p.trim());
+                    if (!parts[1]) continue; // skip empty rows
+                    const lat = parseConabCoord(parts[9]);
+                    const lng = parseConabCoord(parts[10]);
+                    const validCoords = isValidBrazilCoord(lat, lng);
+                    parsed.push({
+                      cda: parts[0] || '', warehouse_name: parts[1] || '', address: parts[2] || '', city: parts[3] || '', state: parts[4] || '',
+                      phone: parts[5] || '', email: parts[6] || '', location_type: parts[7] || '',
+                      capacity_tons: parseConabCapacity(parts[8]),
+                      latitude: validCoords ? lat! : 0, longitude: validCoords ? lng! : 0,
+                    });
+                  }
+                  bulkInsertLocations(parsed); setLocPasteText(''); setLocPasteMode(false);
                 }}>Importar</Button>
               </div>
             )}
