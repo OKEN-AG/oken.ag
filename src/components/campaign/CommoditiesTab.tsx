@@ -381,30 +381,34 @@ export default function CommoditiesTab({ campaignId, campaignCommodities = [] }:
   const conabFileRef = useRef<HTMLInputElement>(null);
 
   // Helper: read XLS/CSV and find CONAB header row, return parsed rows
+  // CONAB files may have data on Sheet2 (Sheet1 = metadata), so scan ALL sheets
   const parseConabSheet = (wb: XLSX.WorkBook): Omit<DeliveryLocation, 'id'>[] => {
-    const sheet = wb.Sheets[wb.SheetNames[0]];
-    const raw = XLSX.utils.sheet_to_json(sheet, { header: 1 }) as any[][];
-    // Find header row: scan first 30 rows for one containing "CDA" AND "Armazenador"
-    let headerIdx = -1;
-    for (let i = 0; i < Math.min(raw.length, 30); i++) {
-      const cells = (raw[i] || []).map(c => String(c || '').toLowerCase());
-      if (cells.some(c => c.includes('cda')) && cells.some(c => c.includes('armazenador') || c.includes('armaz'))) {
-        headerIdx = i;
-        break;
+    for (const sheetName of wb.SheetNames) {
+      const sheet = wb.Sheets[sheetName];
+      const raw = XLSX.utils.sheet_to_json(sheet, { header: 1 }) as any[][];
+      // Find header row: scan first 30 rows for one containing "CDA" AND "Armazenador"
+      let headerIdx = -1;
+      for (let i = 0; i < Math.min(raw.length, 30); i++) {
+        const cells = (raw[i] || []).map(c => String(c || '').toLowerCase());
+        if (cells.some(c => c.includes('cda')) && cells.some(c => c.includes('armazenador') || c.includes('armaz'))) {
+          headerIdx = i;
+          break;
+        }
       }
+      if (headerIdx === -1) continue; // try next sheet
+      const headers = (raw[headerIdx] || []).map(h => String(h || '').trim());
+      const dataRows = raw.slice(headerIdx + 1);
+      const jsonRows: Record<string, any>[] = dataRows
+        .filter(r => r && r.length > 1 && r.some(c => c != null && String(c).trim() !== ''))
+        .map(r => {
+          const obj: Record<string, any> = {};
+          headers.forEach((h, idx) => { if (h) obj[h] = r[idx]; });
+          return obj;
+        });
+      const parsed = jsonRows.map(parseConabRow).filter(Boolean) as Omit<DeliveryLocation, 'id'>[];
+      if (parsed.length > 0) return parsed;
     }
-    if (headerIdx === -1) return []; // no CONAB header found
-    const headers = (raw[headerIdx] || []).map(h => String(h || '').trim());
-    const dataRows = raw.slice(headerIdx + 1);
-    // Build keyed objects using detected headers
-    const jsonRows: Record<string, any>[] = dataRows
-      .filter(r => r && r.length > 1 && r.some(c => c != null && String(c).trim() !== ''))
-      .map(r => {
-        const obj: Record<string, any> = {};
-        headers.forEach((h, idx) => { if (h) obj[h] = r[idx]; });
-        return obj;
-      });
-    return jsonRows.map(parseConabRow).filter(Boolean) as Omit<DeliveryLocation, 'id'>[];
+    return []; // no CONAB data found in any sheet
   };
 
   const handleConabImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
