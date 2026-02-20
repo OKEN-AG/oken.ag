@@ -353,6 +353,22 @@ export default function CommoditiesTab({ campaignId, campaignCommodities = [] }:
     return lat >= -35 && lat <= 7 && lng >= -75 && lng <= -34;
   };
 
+  // CONAB coordinates often have wrong signs or missing negatives
+  // Brazil: lat is always negative (except extreme north ~+5), lng is always negative
+  const fixBrazilCoords = (lat: number | null, lng: number | null): { lat: number | null; lng: number | null } => {
+    if (lat === null || lng === null) return { lat, lng };
+    // If lng is positive and in range 34-75, it's missing the negative sign
+    if (lng > 0 && lng >= 34 && lng <= 75) lng = -lng;
+    // If lat is positive and > 6, it might be swapped with lng or missing sign
+    if (lat > 6 && lat >= 34 && lat <= 75) {
+      // Likely swapped: lat has lng value
+      const tmp = lat;
+      lat = lng;
+      lng = -Math.abs(tmp);
+    }
+    return { lat, lng };
+  };
+
   const parseConabRow = (row: Record<string, any>, headers?: string[]): Omit<DeliveryLocation, 'id'> | null => {
     const keys = Object.keys(row);
     const find = (patterns: string[]) => keys.find(k => patterns.some(p => k.toLowerCase().includes(p.toLowerCase())));
@@ -378,8 +394,10 @@ export default function CommoditiesTab({ campaignId, campaignCommodities = [] }:
       const vals = headers.map(h => row[h]);
       const name = String(vals[1] || '').trim();
       if (!name) return null;
-      const lat = parseConabCoord(vals[9]);
-      const lng = parseConabCoord(vals[10]);
+      let lat = parseConabCoord(vals[9]);
+      let lng = parseConabCoord(vals[10]);
+      const fixed = fixBrazilCoords(lat, lng);
+      lat = fixed.lat; lng = fixed.lng;
       const validCoords = isValidBrazilCoord(lat, lng);
       return {
         cda: String(vals[0] || '').trim(),
@@ -398,8 +416,10 @@ export default function CommoditiesTab({ campaignId, campaignCommodities = [] }:
 
     if (!nameKey) return null;
 
-    const lat = latKey ? parseConabCoord(row[latKey]) : null;
-    const lng = lngKey ? parseConabCoord(row[lngKey]) : null;
+    let lat = latKey ? parseConabCoord(row[latKey]) : null;
+    let lng = lngKey ? parseConabCoord(row[lngKey]) : null;
+    const fixed = fixBrazilCoords(lat, lng);
+    lat = fixed.lat; lng = fixed.lng;
     const validCoords = isValidBrazilCoord(lat, lng);
 
     return {
@@ -857,13 +877,13 @@ export default function CommoditiesTab({ campaignId, campaignCommodities = [] }:
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead>CDA</TableHead><TableHead>Armazenador</TableHead><TableHead>Município</TableHead><TableHead>UF</TableHead><TableHead>Tipo</TableHead><TableHead>Cap.(t)</TableHead><TableHead>Lat</TableHead><TableHead>Long</TableHead><TableHead className="w-12"></TableHead>
+                      <TableHead>CDA</TableHead><TableHead>Armazenador</TableHead><TableHead>Endereço</TableHead><TableHead>Município</TableHead><TableHead>UF</TableHead><TableHead>Telefone</TableHead><TableHead>E-mail</TableHead><TableHead>Tipo</TableHead><TableHead>Cap.(t)</TableHead><TableHead>Lat</TableHead><TableHead>Long</TableHead><TableHead className="w-12"></TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {deliveryLocations.map((l: any) => (
                       <TableRow key={l.id}>
-                        <TableCell className="text-xs">{l.cda}</TableCell><TableCell>{l.warehouse_name}</TableCell><TableCell>{l.city}</TableCell><TableCell>{l.state}</TableCell><TableCell>{l.location_type}</TableCell><TableCell>{l.capacity_tons}</TableCell>
+                        <TableCell className="text-xs">{l.cda}</TableCell><TableCell>{l.warehouse_name}</TableCell><TableCell className="text-xs">{l.address}</TableCell><TableCell>{l.city}</TableCell><TableCell>{l.state}</TableCell><TableCell className="text-xs">{l.phone}</TableCell><TableCell className="text-xs">{l.email}</TableCell><TableCell>{l.location_type}</TableCell><TableCell>{l.capacity_tons}</TableCell>
                         <TableCell className="text-xs">{l.latitude || '—'}</TableCell><TableCell className="text-xs">{l.longitude || '—'}</TableCell>
                         <TableCell><Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => deleteLocation(l.id)}><Trash2 className="w-3 h-3" /></Button></TableCell>
                       </TableRow>
