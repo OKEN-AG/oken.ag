@@ -457,15 +457,38 @@ export default function CommoditiesTab({ campaignId, campaignCommodities = [] }:
       if (headerIdx === -1) continue; // try next sheet
       const headers = (raw[headerIdx] || []).map(h => String(h || '').trim());
       
-      // CONAB XLS often has merged cells (e.g. "Endereço" spans 2 columns).
-      // Build a column map that groups empty-header columns with the previous named column.
-      const colMap: { headerName: string; dataIndices: number[] }[] = [];
-      for (let i = 0; i < headers.length; i++) {
-        if (headers[i]) {
-          colMap.push({ headerName: headers[i], dataIndices: [i] });
-        } else if (colMap.length > 0) {
-          // Empty header = merged cell continuation, append to previous
-          colMap[colMap.length - 1].dataIndices.push(i);
+      // CONAB XLS files are often HTML tables saved as .xls.
+      // The xlsx lib may merge "Endereço" and "Município" into a single garbled header.
+      // We detect this and force the standard 11-column CONAB layout.
+      const CONAB_11_HEADERS = ['CDA','Armazenador','Endereço','Município','UF','Telefone','E-mail','Tipo','CAP.(t)','Latitude','Longitude'];
+
+      // Check if headers contain a merged "Endere...Munic" pattern
+      const hasMergedAddrCity = headers.some(h => {
+        const low = h.toLowerCase();
+        return low.includes('endere') && low.includes('munic');
+      });
+
+      // Count non-empty headers
+      const nonEmptyHeaders = headers.filter(h => h !== '');
+      
+      // Determine actual data width from first data row
+      const firstDataRow = raw[headerIdx + 1] || [];
+      const dataWidth = firstDataRow.length;
+
+      let colMap: { headerName: string; dataIndices: number[] }[];
+
+      if (hasMergedAddrCity || (nonEmptyHeaders.length < 11 && dataWidth >= 11)) {
+        // Force standard 11-column positional mapping
+        colMap = CONAB_11_HEADERS.map((name, i) => ({ headerName: name, dataIndices: [i] }));
+      } else {
+        // Normal: group empty-header columns with previous named column
+        colMap = [];
+        for (let i = 0; i < headers.length; i++) {
+          if (headers[i]) {
+            colMap.push({ headerName: headers[i], dataIndices: [i] });
+          } else if (colMap.length > 0) {
+            colMap[colMap.length - 1].dataIndices.push(i);
+          }
         }
       }
       // Build clean header list for positional fallback
