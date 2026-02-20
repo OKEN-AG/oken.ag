@@ -307,13 +307,24 @@ export default function CommoditiesTab({ campaignId, campaignCommodities = [] }:
     return 0;
   };
 
+  const scaleToCoord = (raw: number): number | null => {
+    if (raw === 0) return null;
+    const sign = raw < 0 ? -1 : 1;
+    const abs = Math.abs(raw);
+    if (abs <= 90) return raw; // already valid
+    // Try dividing by powers of 10 to find valid coordinate range
+    for (let div = 10; div <= 10000000; div *= 10) {
+      const candidate = abs / div;
+      if (candidate >= 1 && candidate <= 75) return sign * candidate;
+    }
+    return null;
+  };
+
   const parseConabCoord = (val: any): number | null => {
     if (val == null || val === '') return null;
-    // If it's already a number, use directly
+    // If it's already a number, scale if needed
     if (typeof val === 'number') {
-      if (val === 0) return null;
-      if (Math.abs(val) <= 90) return val;
-      return null;
+      return scaleToCoord(val);
     }
     let str = String(val).trim();
     if (!str || str === '0') return null;
@@ -323,22 +334,17 @@ export default function CommoditiesTab({ campaignId, campaignCommodities = [] }:
     const dotCount = (str.match(/\./g) || []).length;
     if (dotCount <= 1) {
       const num = parseFloat(str);
-      if (isNaN(num) || num === 0) return null;
-      if (Math.abs(num) <= 90) return num;
+      if (!isNaN(num) && num !== 0) {
+        const scaled = scaleToCoord(num);
+        if (scaled !== null) return scaled;
+      }
     }
-    // Multiple dots = Brazilian thousand separator format (e.g. "-7.184.094")
-    // Remove all dots, treat as integer, then scale
+    // Multiple dots = Brazilian thousand separator format (e.g. "-3.483.854")
     const sign = str.startsWith('-') ? -1 : 1;
     const digits = str.replace(/[^0-9]/g, '');
     if (!digits) return null;
     const asInt = parseInt(digits, 10);
-    for (let div = 1; div <= 10000000; div *= 10) {
-      const candidate = sign * asInt / div;
-      if (Math.abs(candidate) >= 1 && Math.abs(candidate) <= 75) {
-        return candidate;
-      }
-    }
-    return null;
+    return scaleToCoord(sign * asInt);
   };
 
   const isValidBrazilCoord = (lat: number | null, lng: number | null): boolean => {
