@@ -1,0 +1,343 @@
+
+
+
+
+
+
+
+
+<html>
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=ISO-8859-1">
+</head>
+<body>
+	
+		<table>
+			<tr>
+				<th colspan="11" style="height: 53px; font-size: 18pt"><img id="imagemLogoConab" src="/consultas/images/Conab.jpg" width="108" height="53" /> Conab - Companhia Nacional de Abastecimento</th>
+			</tr>
+			<tr>
+				<th colspan="11" style="font-size: 14pt">SICARM - Sistema de Cadastro Nacional de Unidades Armazenadoras</th>
+			</tr>
+			<tr>
+				<td colspan="11" style="font-size: 10pt">
+					
+					
+						Todos os Armazéns
+					
+				</td>
+			</tr>
+			<tr>			        
+				<td colspan="11">&nbsp;</td>
+			</tr>
+			<tr>			        
+				<td colspan="11">A consulta que gerou este relatório foi feita com os seguintes parâmetros:</td>
+			</tr>
+			<tr>			        
+				<td colspan="11">UF do Armazém: PB</td>
+			</tr>
+			<tr>			        
+				<td colspan="11">Mesorregião: </td>
+			</tr>
+			<tr>			        
+				<td colspan="11">Município: </td>
+			</tr>
+			<tr>			        
+				<td colspan="11">CPF/CNPJ: </td>
+			</tr>
+			<tr>			        
+				<td colspan="11">Nome/Razão Social: </td>
+			</tr>
+			<tr>			        
+				<td colspan="11">Empresa: </td>
+			</tr>
+			<tr>			        
+				<td colspan="11">CDA: </td>
+			</tr>
+			<tr>			        
+				<td colspan="11">&nbsp;</td>
+			</tr>
+		</table>
+		
+<table id="tabelaArmazem">
+<thead>
+<tr>
+<th>CDA</th>
+<th>Armazenador</th>
+<th>Endereço</th>
+<th>Município</th>
+<th>UF</th>
+<th>Telefone</th>
+<th>E-mail</th>
+<th>Tipo</th>
+<th>CAP.(t)</th>
+<th>Latitude</th>
+<th>Longitude</th></tr></thead>
+<tbody>
+<tr class="odd">
+<td style="width:100px;">58.A633.0001-3</td>
+<td>M DIAS BRANCO S.A. INDUSTRIA E COMERCIO DE ALIMENTOS</td>
+<td>RUA CONDE AUGUSTO CHIERICARTE, S/Nº S/N</td>
+<td>Cabedelo</td>
+<td>PB</td>
+<td></td>
+<td>maria.penha@mdb.com.br</td>
+<td>Bateria de Silos</td>
+<td style="text-align:right">28.200</td>
+<td>-6.97265</td>
+<td>-34.83854</td></tr>
+<tr class="even">
+<td style="width:100px;">58.6607.0001-0</td>
+<td>SAO BRAZ S/A INDUSTRIA E COMERCIO DE ALIMENTOS</td>
+<td>RODOVIA BR 230 KM 13,2 1211</td>
+<td>Cabedelo</td>
+<td>PB</td>
+<td></td>
+<td></td>
+<td>Convencional</td>
+<td style="text-align:right">1.856</td>
+<td>-7.08462</td>
+<td>-34.84825</td></tr>
+<tr class="odd">
+<td style="width:100px;">58.6607.0002-8</td>
+<td>SAO BRAZ S/A INDUSTRIA E COMERCIO DE ALIMENTOS</td>
+<td>RODOVIA BR 230 KM 13,2 1211</td>
+<td>Cabedelo</td>
+<td>PB</td>
+<td></td>
+<td></td>
+<td>Convencional</td>
+<td style="text-align:right">2.916</td>
+<td>-7.08462</td>
+<td>-34.84825</td></tr>
+<tr class="even">
+<td style="width:100px;">58.6607.0003-6</td>
+<td>SAO BRAZ S/A INDUSTRIA E COMERCIO DE ALIMENTOS</td>
+<td>RODOVIA BR 230 KM 13,2 1211</td>
+<td>Cabedelo</td>
+<td>PB</td>
+<td></td>
+<td></td>
+<td>Convencional</td>
+<td style="text-align:right">2.430</td>
+<td>-7.08462</td>
+<td>-34.84825</td></tr>
+<tr class="odd">
+<td style="width:100px;">58.6607.0004-4</td>
+<td>SAO BRAZ S/A INDUSTRIA E COMERCIO DE ALIMENTOS</td>
+<td>RODOVIA BR 230 KM 13,2 1211</td>
+<td>Cabedelo</td>
+<td>PB</td>
+<td></td>
+<td></td>
+<td>Convencional</td>
+<td style="text-align:right">810</td>
+<td>-7.08462</td>
+<td>-34.84825</td></tr>
+<tr class="even">
+<td style="width:100px;">58.6607.0005-2</td>
+<td>SAO BRAZ S/A INDUSTRIA E COMERCIO DE ALIMENTOS</td>
+<td>RODOVIA BR 230 KM 13,2 1211</td>
+<td>Cabedelo</td>
+<td>PB</td>
+<td></td>
+<td></td>
+<td>Convencional</td>
+<td style="text-align:right">1.150</td>
+<td>-7.08462</td>
+<td>-34.84825</td></tr>
+<tr class="odd">
+<td style="width:100px;">58.6607.0006-0</td>
+<td>SAO BRAZ S/A INDUSTRIA E COMERCIO DE ALIMENTOS</td>
+<td>RODOVIA BR 230 KM 13,2 1211</td>
+<td>Cabedelo</td>
+<td>PB</td>
+<td></td>
+<td></td>
+<td>Silo</td>
+<td style="text-align:right">1.450</td>
+<td>-7.08462</td>
+<td>-34.84825</td></tr>
+<tr class="even">
+<td style="width:100px;">58.6607.0007-9</td>
+<td>SAO BRAZ S/A INDUSTRIA E COMERCIO DE ALIMENTOS</td>
+<td>RODOVIA BR 230 KM 13,2 1211</td>
+<td>Cabedelo</td>
+<td>PB</td>
+<td></td>
+<td></td>
+<td>Convencional</td>
+<td style="text-align:right">7.686</td>
+<td>-7.08462</td>
+<td>-34.84825</td></tr>
+<tr class="odd">
+<td style="width:100px;">58.6607.0008-7</td>
+<td>SAO BRAZ S/A INDUSTRIA E COMERCIO DE ALIMENTOS</td>
+<td>RODOVIA BR 230 KM 13,2 1211</td>
+<td>Cabedelo</td>
+<td>PB</td>
+<td></td>
+<td></td>
+<td>Convencional</td>
+<td style="text-align:right">843</td>
+<td>-7.08462</td>
+<td>-34.84825</td></tr>
+<tr class="even">
+<td style="width:100px;">58.A632.0001-9</td>
+<td>ASA INDUSTRIA E COMERCIO LTDA</td>
+<td>AVENIDA PROFESSOR ALMEIDA BARRETO 557</td>
+<td>Campina Grande</td>
+<td>PB</td>
+<td></td>
+<td>FREOM@ASANET.COM.BR</td>
+<td>Bateria de Silos</td>
+<td style="text-align:right">6.080</td>
+<td>-7.2279</td>
+<td>-35.88756</td></tr>
+<tr class="odd">
+<td style="width:100px;">58.0287.0005-0</td>
+<td>COMPANHIA NACIONAL DE ABASTECIMENTO</td>
+<td>AV. ASSIS CHATEAUBRIAND 4885</td>
+<td>Campina Grande</td>
+<td>PB</td>
+<td>(83)3331-2739</td>
+<td>PB.UA-CAMPINAGRANDE@CONAB.GOV.BR</td>
+<td>Convencional</td>
+<td style="text-align:right">7.000</td>
+<td>-7.272515</td>
+<td>-35.887636</td></tr>
+<tr class="even">
+<td style="width:100px;">58.4845.0007-6</td>
+<td>COAGRO-COOP AGRIC M DO CURIMATAU</td>
+<td>RUA VALDEMAR ERNESTO DOS SANTOS, 127 S/N</td>
+<td>Cuité</td>
+<td>PB</td>
+<td></td>
+<td></td>
+<td>Convencional</td>
+<td style="text-align:right">396</td>
+<td>-6.6399</td>
+<td>-36.12555</td></tr>
+<tr class="odd">
+<td style="width:100px;">58.4845.0008-4</td>
+<td>COAGRO-COOP AGRIC M DO CURIMATAU</td>
+<td>RUA VALDEMAR ERNESTO DOS SANTOS, 127 S/N</td>
+<td>Cuité</td>
+<td>PB</td>
+<td></td>
+<td></td>
+<td>Convencional</td>
+<td style="text-align:right">396</td>
+<td>-6.6399</td>
+<td>-36.12555</td></tr>
+<tr class="even">
+<td style="width:100px;">58.0287.0050-5</td>
+<td>COMPANHIA NACIONAL DE ABASTECIMENTO</td>
+<td>RUA PROJETADA Y2 225</td>
+<td>João Pessoa</td>
+<td>PB</td>
+<td>(83) 3233-1702</td>
+<td>PB.UA-JOAOPESSOA@CONAB.GOV.BR</td>
+<td>Convencional</td>
+<td style="text-align:right">8.900</td>
+<td> -7.184094</td>
+<td>-34.918548 </td></tr>
+<tr class="odd">
+<td style="width:100px;">58.0287.0021-1</td>
+<td>COMPANHIA NACIONAL DE ABASTECIMENTO</td>
+<td>RUA MANUEL JOAQUIM DA SILVA S/N S/N</td>
+<td>Monteiro</td>
+<td>PB</td>
+<td>(83)3351-2828</td>
+<td>PB.GEOSE@CONAB.GOV.BR</td>
+<td>Convencional</td>
+<td style="text-align:right">3.500</td>
+<td>-7.896426</td>
+<td>-37.129711</td></tr>
+<tr class="even">
+<td style="width:100px;">58.0287.0049-1</td>
+<td>COMPANHIA NACIONAL DE ABASTECIMENTO</td>
+<td>FAZENDA TRAPIA, 3312 - BR 230 - KM 342 S/N</td>
+<td>Patos</td>
+<td>PB</td>
+<td>(83)3421-1329</td>
+<td>pb.ua-patos@conab.gov.br</td>
+<td>Convencional</td>
+<td style="text-align:right">2.800</td>
+<td>-6.992245</td>
+<td>-37.320485</td></tr>
+<tr class="odd">
+<td style="width:100px;">58.7691.0001-7</td>
+<td>COOPERATIVA AGRIC. MISTA DE PATOS LTDA</td>
+<td>SAIDA PARA PIANCO S/Nº S/N</td>
+<td>Patos</td>
+<td>PB</td>
+<td>(83) 3421-3745</td>
+<td></td>
+<td>Convencional</td>
+<td style="text-align:right">1.683</td>
+<td>-7.03011</td>
+<td>-37.28207</td></tr>
+<tr class="even">
+<td style="width:100px;">58.7691.0002-5</td>
+<td>COOPERATIVA AGRIC. MISTA DE PATOS LTDA</td>
+<td>SAIDA PARA PIANCO S/Nº S/N</td>
+<td>Patos</td>
+<td>PB</td>
+<td>(83) 3421-3745</td>
+<td></td>
+<td>Convencional</td>
+<td style="text-align:right">5.715</td>
+<td>-7.03093</td>
+<td>-37.27512</td></tr>
+<tr class="odd">
+<td style="width:100px;">58.D669.0001-7</td>
+<td>COMPANHIA USINA SÃO JOÃO</td>
+<td>FAZENDA ENGENHO CENTRAL S/N</td>
+<td>Santa Rita</td>
+<td>PB</td>
+<td>(83) 2106-7500</td>
+<td>CUSJ@UOL.COM.BR</td>
+<td>Convencional</td>
+<td style="text-align:right">2.250</td>
+<td>-7.13114</td>
+<td>-35.010990</td></tr>
+<tr class="even">
+<td style="width:100px;">58.D669.0002-5</td>
+<td>COMPANHIA USINA SÃO JOÃO</td>
+<td>FAZENDA ENGENHO CENTRAL S/N</td>
+<td>Santa Rita</td>
+<td>PB</td>
+<td>(83) 2106-7500</td>
+<td>CUSJ@UOL.COM.BR</td>
+<td>Convencional</td>
+<td style="text-align:right">210</td>
+<td>-7.13114</td>
+<td>-35.0112</td></tr>
+<tr class="odd">
+<td style="width:100px;">58.D669.0003-3</td>
+<td>COMPANHIA USINA SÃO JOÃO</td>
+<td>FAZENDA ENGENHO CENTRAL S/N</td>
+<td>Santa Rita</td>
+<td>PB</td>
+<td>(83) 2106-7500</td>
+<td>CUSJ@UOL.COM.BR</td>
+<td>Convencional</td>
+<td style="text-align:right">220</td>
+<td>-7.12999</td>
+<td>-35.01131</td></tr>
+<tr class="even">
+<td style="width:100px;">58.D669.0004-1</td>
+<td>COMPANHIA USINA SÃO JOÃO</td>
+<td>FAZENDA ENGENHO CENTRAL S/N</td>
+<td>Santa Rita</td>
+<td>PB</td>
+<td>(83) 2106-7500</td>
+<td>CUSJ@UOL.COM.BR</td>
+<td>Convencional</td>
+<td style="text-align:right">3.850</td>
+<td>-7.13121</td>
+<td>-35.0102</td></tr></tbody></table>
+	
+</body>
+</html>

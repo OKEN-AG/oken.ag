@@ -309,23 +309,29 @@ export default function CommoditiesTab({ campaignId, campaignCommodities = [] }:
 
   const parseConabCoord = (val: any): number | null => {
     if (val == null || val === '') return null;
+    // If it's already a number, use directly
+    if (typeof val === 'number') {
+      if (val === 0) return null;
+      if (Math.abs(val) <= 90) return val;
+      return null;
+    }
     let str = String(val).trim();
     if (!str || str === '0') return null;
-    // Check if it's already a simple decimal (single dot, valid range)
+    // Replace comma with dot for decimal
+    str = str.replace(',', '.');
+    // Count dots to detect thousand separator vs decimal
     const dotCount = (str.match(/\./g) || []).length;
     if (dotCount <= 1) {
-      str = str.replace(',', '.');
       const num = parseFloat(str);
       if (isNaN(num) || num === 0) return null;
-      if (Math.abs(num) <= 90) return num; // already valid coord
+      if (Math.abs(num) <= 90) return num;
     }
-    // Multiple dots = Brazilian thousand separator format (e.g. "-1.919.813" or "-22.166.454")
-    // Remove dots (thousand sep), get raw integer, then scale to valid coordinate
+    // Multiple dots = Brazilian thousand separator format (e.g. "-7.184.094")
+    // Remove all dots, treat as integer, then scale
     const sign = str.startsWith('-') ? -1 : 1;
     const digits = str.replace(/[^0-9]/g, '');
     if (!digits) return null;
     const asInt = parseInt(digits, 10);
-    // Try dividing by increasing powers of 10 until result is in valid Brazil range
     for (let div = 1; div <= 10000000; div *= 10) {
       const candidate = sign * asInt / div;
       if (Math.abs(candidate) >= 1 && Math.abs(candidate) <= 75) {
@@ -341,22 +347,49 @@ export default function CommoditiesTab({ campaignId, campaignCommodities = [] }:
     return lat >= -35 && lat <= 7 && lng >= -75 && lng <= -34;
   };
 
-  const parseConabRow = (row: Record<string, any>): Omit<DeliveryLocation, 'id'> | null => {
-    // Detect CONAB columns (case-insensitive, partial match)
+  const parseConabRow = (row: Record<string, any>, headers?: string[]): Omit<DeliveryLocation, 'id'> | null => {
     const keys = Object.keys(row);
     const find = (patterns: string[]) => keys.find(k => patterns.some(p => k.toLowerCase().includes(p.toLowerCase())));
+    
+    // Try key-based matching first
     const cdaKey = find(['CDA']);
-    const nameKey = find(['Armazenador']);
+    const nameKey = find(['Armazenador', 'armaz']);
     const addrKey = find(['Endere']);
     const cityKey = find(['Munic', 'Cidade']);
-    const stateKey = find(['UF', 'Estado']);
+    const stateKey = find(['UF']);
     const phoneKey = find(['Telefone', 'Fone']);
     const emailKey = find(['mail']);
     const typeKey = find(['Tipo']);
     const capKey = find(['CAP', 'Capacidade']);
-    // CONAB uses full "Latitude"/"Longitude" headers
     const latKey = find(['Latitude', 'Lat']);
     const lngKey = find(['Longitude', 'Long']);
+
+    // If key matching seems broken (common with encoding issues), fall back to positional
+    // Standard CONAB order: CDA(0) Armazenador(1) Endereço(2) Município(3) UF(4) Telefone(5) E-mail(6) Tipo(7) CAP(8) Lat(9) Lng(10)
+    const usePositional = !nameKey || !cityKey || !stateKey;
+    
+    if (usePositional && headers && headers.length >= 5) {
+      const vals = headers.map(h => row[h]);
+      const name = String(vals[1] || '').trim();
+      if (!name) return null;
+      const lat = parseConabCoord(vals[9]);
+      const lng = parseConabCoord(vals[10]);
+      const validCoords = isValidBrazilCoord(lat, lng);
+      return {
+        cda: String(vals[0] || '').trim(),
+        warehouse_name: name,
+        address: String(vals[2] || '').trim(),
+        city: String(vals[3] || '').trim(),
+        state: String(vals[4] || '').trim(),
+        phone: String(vals[5] || '').trim(),
+        email: String(vals[6] || '').trim(),
+        location_type: String(vals[7] || '').trim(),
+        capacity_tons: parseConabCapacity(vals[8]),
+        latitude: validCoords ? lat : null,
+        longitude: validCoords ? lng : null,
+      };
+    }
+
     if (!nameKey) return null;
 
     const lat = latKey ? parseConabCoord(row[latKey]) : null;
@@ -405,7 +438,7 @@ export default function CommoditiesTab({ campaignId, campaignCommodities = [] }:
           headers.forEach((h, idx) => { if (h) obj[h] = r[idx]; });
           return obj;
         });
-      const parsed = jsonRows.map(parseConabRow).filter(Boolean) as Omit<DeliveryLocation, 'id'>[];
+      const parsed = jsonRows.map(r => parseConabRow(r, headers)).filter(Boolean) as Omit<DeliveryLocation, 'id'>[];
       if (parsed.length > 0) return parsed;
     }
     return []; // no CONAB data found in any sheet
