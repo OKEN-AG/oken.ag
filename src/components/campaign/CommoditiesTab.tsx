@@ -994,7 +994,6 @@ export default function CommoditiesTab({ campaignId, campaignCommodities = [] }:
                   const parseLocalNum = (s: string): number => {
                     if (!s) return 0;
                     let v = s.trim().replace(/[%+\s]/g, '');
-                    // Detect comma as decimal: if last separator is comma and has <=2 digits after
                     const lastComma = v.lastIndexOf(',');
                     const lastDot = v.lastIndexOf('.');
                     if (lastComma > lastDot) {
@@ -1004,41 +1003,76 @@ export default function CommoditiesTab({ campaignId, campaignCommodities = [] }:
                     }
                     return parseFloat(v) || 0;
                   };
-                  const lines = pricePasteText.trim().split('\n').filter(l => l.trim());
+
+                  const rawLines = pricePasteText.trim().split('\n').map(l => l.trim());
+                  
+                  // Detect format: if most lines have tabs with 5+ fields -> horizontal
+                  // Otherwise assume vertical (each field on its own line)
+                  const tabLines = rawLines.filter(l => l.split('\t').length >= 5);
+                  const isHorizontal = tabLines.length > rawLines.length * 0.3;
+
                   const rows: Omit<IndicativePrice, 'id'>[] = [];
-                  for (const line of lines) {
-                    // Try tab, then semicolon, then 2+ spaces
-                    let parts = line.split('\t').map(p => p.trim());
-                    if (parts.length < 5) parts = line.split(';').map(p => p.trim());
-                    if (parts.length < 5) {
-                      // Regex-based: extract known tokens from the end, leave city name intact
-                      // Pattern: Culture Type State City Price Variation Direction Date TaxRate
-                      // Allow %direction to be joined (no space between % and direction word)
-                      const m = line.match(/^(\S+)\s+(\S+)\s+([A-Z]{2})\s+(.+?)\s+(\d[\d.,]*)\s+([+-]?[\d.,]+%?)\s*(\S+)\s+(\d{4}-\d{2}-\d{2})\s+([\d.,]+)\s*$/);
-                      if (m) {
-                        // Clean direction: might be "%caiu" -> "caiu"
-                        const dir = m[7].replace(/^%/, '');
-                        parts = [m[1], m[2], m[3], m[4].trim(), m[5], m[6], dir, m[8], m[9]];
+
+                  if (isHorizontal) {
+                    // Original horizontal parsing (tab/semicolon/regex)
+                    const lines = rawLines.filter(l => l);
+                    for (const line of lines) {
+                      let parts = line.split('\t').map(p => p.trim());
+                      if (parts.length < 5) parts = line.split(';').map(p => p.trim());
+                      if (parts.length < 5) {
+                        const m = line.match(/^(\S+)\s+(\S+)\s+([A-Z]{2})\s+(.+?)\s+(\d[\d.,]*)\s+([+-]?[\d.,]+%?)\s*(\S+)\s+(\d{4}-\d{2}-\d{2})\s+([\d.,]+)\s*$/);
+                        if (m) {
+                          const dir = m[7].replace(/^%/, '');
+                          parts = [m[1], m[2], m[3], m[4].trim(), m[5], m[6], dir, m[8], m[9]];
+                        }
+                      }
+                      if (parts.length < 5) continue;
+                      const first = parts[0].toLowerCase();
+                      if (first === 'cultura' || first === '#' || first === 'culture') continue;
+                      rows.push({
+                        culture: parts[0] || '', price_type: parts[1] || '', state: parts[2] || '',
+                        market_place: parts[3] || '', price_per_saca: parseLocalNum(parts[4]),
+                        variation_percent: parts[5] ? parseLocalNum(parts[5]) : 0,
+                        direction: parts[6] || '', updated_at: parts[7] || '',
+                        tax_rate: parts[8] ? parseLocalNum(parts[8]) : 0, month: '',
+                      });
+                    }
+                  } else {
+                    // Vertical format: each field on its own line, records separated by field patterns
+                    // Filter non-empty lines, skip known headers
+                    const lines = rawLines.filter(l => l && !(/^(cultura|#|culture|ações|acoes|preço|variação)/i.test(l)));
+                    // Skip header-like lines that contain multiple column names
+                    const cleanLines = lines.filter(l => !(l.toLowerCase().includes('cultura') && l.toLowerCase().includes('estado')));
+                    
+                    // Detect record boundaries: culture names start a new record
+                    const cultureNames = ['soja', 'milho', 'cafe', 'café', 'algodao', 'algodão', 'trigo', 'sorgo'];
+                    const records: string[][] = [];
+                    let current: string[] = [];
+                    
+                    for (const line of cleanLines) {
+                      const low = line.toLowerCase();
+                      if (cultureNames.includes(low) && current.length > 0) {
+                        records.push(current);
+                        current = [line];
+                      } else {
+                        current.push(line);
                       }
                     }
-                    if (parts.length < 5) continue;
-                    // Skip header lines
-                    const first = parts[0].toLowerCase();
-                    if (first === 'cultura' || first === '#' || first === 'culture') continue;
-                    // Map: Cultura, Tipo(FOB/CIF), Estado, Praça, Preço, Variação, Direção, Data, Alíquota
-                    rows.push({
-                      culture: parts[0] || '',
-                      price_type: parts[1] || '',
-                      state: parts[2] || '',
-                      market_place: parts[3] || '',
-                      price_per_saca: parseLocalNum(parts[4]),
-                      variation_percent: parts[5] ? parseLocalNum(parts[5]) : 0,
-                      direction: parts[6] || '',
-                      updated_at: parts[7] || '',
-                      tax_rate: parts[8] ? parseLocalNum(parts[8]) : 0,
-                      month: '',
-                    });
+                    if (current.length > 0) records.push(current);
+                    
+                    for (const rec of records) {
+                      if (rec.length < 5) continue;
+                      // Map: [0]=Cultura [1]=Tipo [2]=Estado [3]=Praça [4]=Preço [5]=Variação [6]=Direção [7]=Data [8]=Alíquota
+                      rows.push({
+                        culture: rec[0] || '', price_type: rec[1] || '', state: rec[2] || '',
+                        market_place: rec[3] || '', price_per_saca: parseLocalNum(rec[4]),
+                        variation_percent: rec[5] ? parseLocalNum(rec[5]) : 0,
+                        direction: rec[6] || '', updated_at: rec[7] || '',
+                        tax_rate: rec[8] ? parseLocalNum(rec[8]) : 0, month: '',
+                      });
+                    }
                   }
+
                   if (rows.length === 0) { toast.error('Nenhum dado válido encontrado'); return; }
                   bulkInsertPrices(rows);
                   toast.success(`${rows.length} preços importados`);
