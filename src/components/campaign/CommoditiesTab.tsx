@@ -151,6 +151,8 @@ export default function CommoditiesTab({ campaignId, campaignCommodities = [] }:
   const [locPasteText, setLocPasteText] = useState('');
   const [pricePasteMode, setPricePasteMode] = useState(false);
   const [pricePasteText, setPricePasteText] = useState('');
+  const [freightPasteMode, setFreightPasteMode] = useState(false);
+  const [freightPasteText, setFreightPasteText] = useState('');
   const locFileRef = useRef<HTMLInputElement>(null);
   const priceFileRef = useRef<HTMLInputElement>(null);
 
@@ -229,6 +231,159 @@ export default function CommoditiesTab({ campaignId, campaignCommodities = [] }:
       setNewFreight({ origin: '', destination: '', distance_km: 0, cost_per_km: 0.10, adjustment: 0 });
       toast.success('Frete adicionado');
     } catch (e: any) { toast.error(e.message); }
+  };
+
+  // Parse and import pasted freight data (vertical "De:/Para:" or ESALQ horizontal)
+  const parseAndImportFreight = async (text: string) => {
+    if (!campaignId || !text.trim()) return;
+    const parseLocalNum = (s: string) => {
+      if (!s) return 0;
+      const cleaned = s.replace(/[^\d.,-]/g, '').replace(',', '.');
+      return parseFloat(cleaned) || 0;
+    };
+
+    const defaultCostPerKm = 0.10;
+    const rows: { origin: string; destination: string; distance_km: number; cost_per_km: number; adjustment: number; total_reducer: number }[] = [];
+
+    const rawLines = text.split('\n').map(l => l.trim()).filter(Boolean);
+
+    // Detect ESALQ freight format: contains "Freight" and "KM" and tickers like SRS-RDO
+    const isEsalqFreight = rawLines.some(l => /Freight/i.test(l) && /\bKM\b/i.test(l));
+
+    // Detect vertical "De:" / "Para:" format
+    const isVerticalFreight = rawLines.some(l => /^De:$/i.test(l)) && rawLines.some(l => /^Para:$/i.test(l));
+
+    if (isEsalqFreight) {
+      // ESALQ format: continuous text, split by ticker pattern
+      const joined = rawLines.join(' ');
+      // Split at each record that has a ticker like "SRS-RDO" followed by arrow/space and distance
+      const recordTexts = joined.split(/(?=ESALQ\s)/i).map(s => s.trim()).filter(Boolean);
+
+      for (const rec of recordTexts) {
+        // Extract origin "To" destination pattern: "... From ... <Origin> To <Destination> ..."
+        const routeMatch = rec.match(/(?:Truck|Roads)\s+(.+?)\s+To\s+(.+?)\s+(?:Soybean|Corn|Coffee|Cotton|Sugar)/i);
+        if (!routeMatch) continue;
+
+        let origin = routeMatch[1].trim();
+        let destination = routeMatch[2].trim();
+
+        // Extract distance and price: "670 KM 187,4" or "670 KM 187.4"
+        const dataMatch = rec.match(/([\d.,]+)\s*KM\s+([\d.,]+)/i);
+        if (!dataMatch) continue;
+
+        const distanceKm = parseLocalNum(dataMatch[1]);
+        const totalReducer = parseLocalNum(dataMatch[2]);
+        const costPerKm = distanceKm > 0 ? totalReducer / distanceKm : defaultCostPerKm;
+
+        rows.push({
+          origin, destination, distance_km: distanceKm,
+          cost_per_km: Math.round(costPerKm * 10000) / 10000,
+          adjustment: 0, total_reducer: totalReducer,
+        });
+      }
+    } else if (isVerticalFreight) {
+      // Vertical format:
+      // De:
+      // <City>(UF)
+      // Para:
+      // <City> (UF)
+      // R$ <price>/tonelada
+      let i = 0;
+      while (i < rawLines.length) {
+        const line = rawLines[i];
+        if (/^De:$/i.test(line) && i + 3 < rawLines.length) {
+          const originLine = rawLines[i + 1];
+          const paraLine = rawLines[i + 2];
+          if (/^Para:$/i.test(paraLine)) {
+            const destLine = rawLines[i + 3];
+            // Find price line: "R$ 214,30/tonelada"
+            let priceLine = '';
+            for (let j = i + 4; j < Math.min(i + 8, rawLines.length); j++) {
+              if (/R\$\s*[\d.,]+\s*\/\s*tonelada/i.test(rawLines[j])) {
+                priceLine = rawLines[j];
+                i = j + 1;
+                break;
+              }
+            }
+            if (!priceLine) { i++; continue; }
+
+            const origin = originLine.replace(/\(([A-Z]{2})\)/i, ', $1').trim();
+            const destination = destLine.replace(/\(([A-Z]{2})\)/i, ', $1').trim();
+            const priceMatch = priceLine.match(/R\$\s*([\d.,]+)/i);
+            const totalReducer = priceMatch ? parseLocalNum(priceMatch[1]) : 0;
+
+            rows.push({
+              origin, destination, distance_km: 0,
+              cost_per_km: defaultCostPerKm,
+              adjustment: 0, total_reducer: totalReducer,
+            });
+            continue;
+          }
+        }
+        i++;
+      }
+    } else {
+      // Try generic tab-separated: origin \t destination \t distance \t cost_per_km \t total
+      for (const line of rawLines) {
+        const parts = line.split(/\t|;/).map(s => s.trim());
+        if (parts.length >= 3) {
+          const origin = parts[0];
+          const destination = parts[1];
+          const distance = parseLocalNum(parts[2]);
+          const cost = parts[3] ? parseLocalNum(parts[3]) : defaultCostPerKm;
+          const adj = parts[4] ? parseLocalNum(parts[4]) : 0;
+          const total = parts[5] ? parseLocalNum(parts[5]) : (distance * cost + adj);
+          if (origin && destination) {
+            rows.push({ origin, destination, distance_km: distance, cost_per_km: cost, adjustment: adj, total_reducer: total });
+          }
+        }
+      }
+    }
+
+    if (rows.length === 0) {
+      toast.error('Nenhum frete identificado no texto colado');
+      return;
+    }
+
+    // Dedup against existing
+    const existingKeys = new Set((freightList || []).map((f: any) => `${f.origin.toLowerCase()}|${f.destination.toLowerCase()}`));
+    const unique = rows.filter(r => !existingKeys.has(`${r.origin.toLowerCase()}|${r.destination.toLowerCase()}`));
+    const dupes = rows.length - unique.length;
+
+    if (unique.length > 0) {
+      for (let i = 0; i < unique.length; i += 50) {
+        const batch = unique.slice(i, i + 50);
+        await (supabase as any).from('freight_reducers').insert(batch.map(r => ({ ...r, campaign_id: campaignId })));
+      }
+    }
+    qc.invalidateQueries({ queryKey: ['freight-reducers', campaignId] });
+    setFreightPasteText('');
+    setFreightPasteMode(false);
+    toast.success(`${unique.length} fretes importados${dupes > 0 ? `, ${dupes} duplicatas ignoradas` : ''}`);
+  };
+
+  const deleteAllFreight = async () => {
+    if (!campaignId) return;
+    await (supabase as any).from('freight_reducers').delete().eq('campaign_id', campaignId);
+    qc.invalidateQueries({ queryKey: ['freight-reducers', campaignId] });
+    toast.success('Todos os fretes removidos');
+  };
+
+  const removeDuplicateFreight = async () => {
+    if (!campaignId || !(freightList || []).length) return;
+    const seen = new Map<string, string>();
+    const dupeIds: string[] = [];
+    for (const fr of (freightList || []) as any[]) {
+      const key = `${(fr.origin || '').toLowerCase().trim()}|${(fr.destination || '').toLowerCase().trim()}`;
+      if (seen.has(key)) dupeIds.push(fr.id);
+      else seen.set(key, fr.id);
+    }
+    if (dupeIds.length === 0) { toast.info('Nenhuma duplicata encontrada'); return; }
+    for (let i = 0; i < dupeIds.length; i += 50) {
+      await (supabase as any).from('freight_reducers').delete().in('id', dupeIds.slice(i, i + 50));
+    }
+    qc.invalidateQueries({ queryKey: ['freight-reducers', campaignId] });
+    toast.success(`${dupeIds.length} duplicatas removidas`);
   };
 
   // CRUD helpers
@@ -1215,7 +1370,34 @@ export default function CommoditiesTab({ campaignId, campaignCommodities = [] }:
         {/* Freight Tab */}
         <TabsContent value="fretes" className="mt-4">
           <div className="border border-border rounded-md p-4 space-y-4">
-            <Label className="font-semibold">Redutores de Frete</Label>
+            <div className="flex items-center justify-between flex-wrap gap-2">
+              <Label className="font-semibold">Redutores de Frete</Label>
+              <div className="flex gap-2 flex-wrap">
+                <Button variant="outline" size="sm" onClick={() => setFreightPasteMode(!freightPasteMode)}>
+                  <ClipboardPaste className="w-3 h-3 mr-1" /> Colar
+                </Button>
+                {(freightList || []).length > 0 && (
+                  <>
+                    <Button variant="outline" size="sm" onClick={removeDuplicateFreight}>Remover Duplicados</Button>
+                    <Button variant="destructive" size="sm" onClick={deleteAllFreight}><Trash2 className="w-3 h-3 mr-1" /> Excluir Tudo</Button>
+                  </>
+                )}
+              </div>
+            </div>
+
+            {freightPasteMode && (
+              <div className="border border-dashed border-primary/30 rounded-md p-3 space-y-2 bg-primary/5">
+                <p className="text-xs text-muted-foreground">Cole dados de frete nos formatos: vertical (De:/Para:/R$), ESALQ (Freight ... To ... KM) ou tab-separated (origem;destino;distância;custo_km;ajuste;total).</p>
+                <Textarea rows={8} value={freightPasteText} onChange={e => setFreightPasteText(e.target.value)} placeholder="Cole aqui os dados de frete..." className="font-mono text-xs" />
+                <div className="flex gap-2">
+                  <Button size="sm" onClick={() => parseAndImportFreight(freightPasteText)} disabled={!freightPasteText.trim()}>
+                    <Upload className="w-3 h-3 mr-1" /> Importar
+                  </Button>
+                  <Button variant="ghost" size="sm" onClick={() => { setFreightPasteMode(false); setFreightPasteText(''); }}>Cancelar</Button>
+                </div>
+              </div>
+            )}
+
             <div className="flex gap-2 items-end flex-wrap">
               <div className="space-y-1"><Label className="text-xs">Origem</Label><Input value={newFreight.origin} onChange={e => setNewFreight(p => ({ ...p, origin: e.target.value }))} className="w-36" /></div>
               <div className="space-y-1"><Label className="text-xs">Destino</Label><Input value={newFreight.destination} onChange={e => setNewFreight(p => ({ ...p, destination: e.target.value }))} className="w-36" /></div>
@@ -1235,6 +1417,7 @@ export default function CommoditiesTab({ campaignId, campaignCommodities = [] }:
                 </TableBody>
               </Table>
             ) : <p className="text-sm text-muted-foreground text-center py-4 border border-dashed border-border rounded-md">Nenhum redutor de frete.</p>}
+            <div className="text-xs text-muted-foreground">{(freightList || []).length} registro(s)</div>
           </div>
         </TabsContent>
 
