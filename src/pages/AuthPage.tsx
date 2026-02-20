@@ -67,7 +67,7 @@ export default function AuthPage() {
         className="w-full max-w-md"
       >
         <div className="text-center mb-8">
-          <img src={logoLight} alt="BarterPro" className="h-16 w-auto mx-auto mb-2" />
+          <img src={logoLight} alt="BarterPro" className="h-24 w-auto mx-auto mb-2 mix-blend-multiply" />
         </div>
 
         <div className="glass-card p-6">
