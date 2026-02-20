@@ -1044,6 +1044,39 @@ export default function CommoditiesTab({ campaignId, campaignCommodities = [] }:
                           .replace(/\s+/g, ' ');
                       }
 
+                      // Known ESALQ location -> state/city mapping
+                      const esalqLocationMap: Record<string, { state: string; city: string }> = {
+                        'triangulo mineiro': { state: 'MG', city: 'Uberlândia' },
+                        'sorriso': { state: 'MT', city: 'Sorriso' },
+                        'sorocabana': { state: 'SP', city: 'Presidente Prudente' },
+                        'rio verde': { state: 'GO', city: 'Rio Verde' },
+                        'ponta grossa': { state: 'PR', city: 'Ponta Grossa' },
+                        'passa fundo': { state: 'RS', city: 'Passo Fundo' },
+                        'passo fundo': { state: 'RS', city: 'Passo Fundo' },
+                        'oeste do parana': { state: 'PR', city: 'Cascavel' },
+                        'norte do parana': { state: 'PR', city: 'Londrina' },
+                        'mogiana': { state: 'SP', city: 'Ribeirão Preto' },
+                        'ijui': { state: 'RS', city: 'Ijuí' },
+                        'cascavel': { state: 'PR', city: 'Cascavel' },
+                        'chapeco': { state: 'SC', city: 'Chapecó' },
+                        'southwest of parana': { state: 'PR', city: 'Pato Branco' },
+                        'barreiras ba': { state: 'BA', city: 'Barreiras' },
+                        'dourados ms': { state: 'MS', city: 'Dourados' },
+                        'ijui rs': { state: 'RS', city: 'Ijuí' },
+                        'recife pe': { state: 'PE', city: 'Recife' },
+                        'campo grande': { state: 'MS', city: 'Campo Grande' },
+                        'rondonopolis': { state: 'MT', city: 'Rondonópolis' },
+                        'primavera do leste': { state: 'MT', city: 'Primavera do Leste' },
+                        'maringa': { state: 'PR', city: 'Maringá' },
+                        'guarapuava': { state: 'PR', city: 'Guarapuava' },
+                        'campo novo do parecis': { state: 'MT', city: 'Campo Novo do Parecis' },
+                        'lucas do rio verde': { state: 'MT', city: 'Lucas do Rio Verde' },
+                        'campo verde': { state: 'MT', city: 'Campo Verde' },
+                        'alto araguaia': { state: 'MT', city: 'Alto Araguaia' },
+                        'agua boa': { state: 'MT', city: 'Água Boa' },
+                        'nova mutum': { state: 'MT', city: 'Nova Mutum' },
+                      };
+
                       // Extract direction arrow
                       const dirArrow = rec.match(/[⇩⇧↑↓]/);
                       const direction = dirArrow ? (dirArrow[0] === '⇧' || dirArrow[0] === '↑' ? 'subiu' : 'caiu') : 'estavel';
@@ -1058,13 +1091,28 @@ export default function CommoditiesTab({ campaignId, campaignCommodities = [] }:
                       const [dd, mm, yyyy] = dateStr.split('/');
                       const isoDate = `${yyyy}-${mm}-${dd}`;
 
-                      // Derive state from ticker or location
+                      // Derive state from explicit "XX State" pattern first
                       let state = '';
-                      const stateFromTicker = tickerMatch[0].match(/-(G[A-Z]+)-BR/i);
-                      // Try to find 2-letter state in location context
                       const stateMatch = rec.match(/\b([A-Z]{2})\s+State\b/i);
                       if (stateMatch) {
                         state = stateMatch[1].toUpperCase();
+                      }
+
+                      // Try mapping from known locations
+                      const mpLow = marketPlace.toLowerCase().trim();
+                      const mapped = esalqLocationMap[mpLow];
+                      if (mapped) {
+                        if (!state) state = mapped.state;
+                        marketPlace = mapped.city;
+                      } else {
+                        // Try partial match: "Barreiras Ba" -> check substrings
+                        for (const [key, val] of Object.entries(esalqLocationMap)) {
+                          if (mpLow.includes(key) || key.includes(mpLow)) {
+                            if (!state) state = val.state;
+                            marketPlace = val.city;
+                            break;
+                          }
+                        }
                       }
 
                       rows.push({
