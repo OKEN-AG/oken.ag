@@ -456,15 +456,37 @@ export default function CommoditiesTab({ campaignId, campaignCommodities = [] }:
       }
       if (headerIdx === -1) continue; // try next sheet
       const headers = (raw[headerIdx] || []).map(h => String(h || '').trim());
+      
+      // CONAB XLS often has merged cells (e.g. "Endereço" spans 2 columns).
+      // Build a column map that groups empty-header columns with the previous named column.
+      const colMap: { headerName: string; dataIndices: number[] }[] = [];
+      for (let i = 0; i < headers.length; i++) {
+        if (headers[i]) {
+          colMap.push({ headerName: headers[i], dataIndices: [i] });
+        } else if (colMap.length > 0) {
+          // Empty header = merged cell continuation, append to previous
+          colMap[colMap.length - 1].dataIndices.push(i);
+        }
+      }
+      // Build clean header list for positional fallback
+      const cleanHeaders = colMap.map(c => c.headerName);
+      
       const dataRows = raw.slice(headerIdx + 1);
       const jsonRows: Record<string, any>[] = dataRows
         .filter(r => r && r.length > 1 && r.some(c => c != null && String(c).trim() !== ''))
         .map(r => {
           const obj: Record<string, any> = {};
-          headers.forEach((h, idx) => { if (h) obj[h] = r[idx]; });
+          colMap.forEach(({ headerName, dataIndices }) => {
+            if (dataIndices.length === 1) {
+              obj[headerName] = r[dataIndices[0]];
+            } else {
+              // Concatenate values from merged columns
+              obj[headerName] = dataIndices.map(i => String(r[i] || '').trim()).filter(Boolean).join(' ');
+            }
+          });
           return obj;
         });
-      const parsed = jsonRows.map(r => parseConabRow(r, headers)).filter(Boolean) as Omit<DeliveryLocation, 'id'>[];
+      const parsed = jsonRows.map(r => parseConabRow(r, cleanHeaders)).filter(Boolean) as Omit<DeliveryLocation, 'id'>[];
       if (parsed.length > 0) return parsed;
     }
     return []; // no CONAB data found in any sheet
