@@ -356,6 +356,7 @@ export type Database = {
           accepted_counterparties: string[] | null
           active: boolean
           active_modules: string[] | null
+          aforo_percent: number | null
           available_due_dates: string[] | null
           billing_deadline: string | null
           block_ineligible: boolean | null
@@ -366,6 +367,7 @@ export type Database = {
           code_custom: string | null
           commodities: string[]
           company_name: string | null
+          contract_price_types: string[] | null
           created_at: string
           created_by: string | null
           currency: string
@@ -406,6 +408,7 @@ export type Database = {
           accepted_counterparties?: string[] | null
           active?: boolean
           active_modules?: string[] | null
+          aforo_percent?: number | null
           available_due_dates?: string[] | null
           billing_deadline?: string | null
           block_ineligible?: boolean | null
@@ -416,6 +419,7 @@ export type Database = {
           code_custom?: string | null
           commodities?: string[]
           company_name?: string | null
+          contract_price_types?: string[] | null
           created_at?: string
           created_by?: string | null
           currency?: string
@@ -456,6 +460,7 @@ export type Database = {
           accepted_counterparties?: string[] | null
           active?: boolean
           active_modules?: string[] | null
+          aforo_percent?: number | null
           available_due_dates?: string[] | null
           billing_deadline?: string | null
           block_ineligible?: boolean | null
@@ -466,6 +471,7 @@ export type Database = {
           code_custom?: string | null
           commodities?: string[]
           company_name?: string | null
+          contract_price_types?: string[] | null
           created_at?: string
           created_by?: string | null
           currency?: string
@@ -740,6 +746,7 @@ export type Database = {
           data: Json | null
           doc_type: Database["public"]["Enums"]["document_type"]
           generated_at: string | null
+          guarantee_category: string | null
           id: string
           operation_id: string
           signed_at: string | null
@@ -751,6 +758,7 @@ export type Database = {
           data?: Json | null
           doc_type: Database["public"]["Enums"]["document_type"]
           generated_at?: string | null
+          guarantee_category?: string | null
           id?: string
           operation_id: string
           signed_at?: string | null
@@ -762,6 +770,7 @@ export type Database = {
           data?: Json | null
           doc_type?: Database["public"]["Enums"]["document_type"]
           generated_at?: string | null
+          guarantee_category?: string | null
           id?: string
           operation_id?: string
           signed_at?: string | null
@@ -771,6 +780,63 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "operation_documents_operation_id_fkey"
+            columns: ["operation_id"]
+            isOneToOne: false
+            referencedRelation: "operations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      operation_guarantees: {
+        Row: {
+          category: string
+          created_at: string
+          document_id: string | null
+          effective_value: number | null
+          estimated_value: number | null
+          evaluated_at: string | null
+          id: string
+          ip_at_evaluation: number | null
+          notes: string | null
+          operation_id: string
+          status: string
+        }
+        Insert: {
+          category: string
+          created_at?: string
+          document_id?: string | null
+          effective_value?: number | null
+          estimated_value?: number | null
+          evaluated_at?: string | null
+          id?: string
+          ip_at_evaluation?: number | null
+          notes?: string | null
+          operation_id: string
+          status?: string
+        }
+        Update: {
+          category?: string
+          created_at?: string
+          document_id?: string | null
+          effective_value?: number | null
+          estimated_value?: number | null
+          evaluated_at?: string | null
+          id?: string
+          ip_at_evaluation?: number | null
+          notes?: string | null
+          operation_id?: string
+          status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "operation_guarantees_document_id_fkey"
+            columns: ["document_id"]
+            isOneToOne: false
+            referencedRelation: "operation_documents"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "operation_guarantees_operation_id_fkey"
             columns: ["operation_id"]
             isOneToOne: false
             referencedRelation: "operations"
@@ -878,6 +944,7 @@ export type Database = {
       }
       operations: {
         Row: {
+          aforo_percent: number | null
           area_hectares: number | null
           barter_discount: number | null
           campaign_id: string
@@ -888,6 +955,7 @@ export type Database = {
           combo_discount: number | null
           commodity: Database["public"]["Enums"]["commodity_type"] | null
           commodity_price: number | null
+          contract_price_type: string | null
           counterparty: string | null
           created_at: string
           distributor_id: string | null
@@ -901,6 +969,8 @@ export type Database = {
           insurance_premium_sacas: number | null
           net_revenue: number | null
           payment_method: Database["public"]["Enums"]["payment_method"] | null
+          performance_index: number | null
+          price_variation_index: number | null
           reference_price: number | null
           state: string | null
           status: Database["public"]["Enums"]["operation_status"]
@@ -909,6 +979,7 @@ export type Database = {
           user_id: string
         }
         Insert: {
+          aforo_percent?: number | null
           area_hectares?: number | null
           barter_discount?: number | null
           campaign_id: string
@@ -919,6 +990,7 @@ export type Database = {
           combo_discount?: number | null
           commodity?: Database["public"]["Enums"]["commodity_type"] | null
           commodity_price?: number | null
+          contract_price_type?: string | null
           counterparty?: string | null
           created_at?: string
           distributor_id?: string | null
@@ -932,6 +1004,8 @@ export type Database = {
           insurance_premium_sacas?: number | null
           net_revenue?: number | null
           payment_method?: Database["public"]["Enums"]["payment_method"] | null
+          performance_index?: number | null
+          price_variation_index?: number | null
           reference_price?: number | null
           state?: string | null
           status?: Database["public"]["Enums"]["operation_status"]
@@ -940,6 +1014,7 @@ export type Database = {
           user_id: string
         }
         Update: {
+          aforo_percent?: number | null
           area_hectares?: number | null
           barter_discount?: number | null
           campaign_id?: string
@@ -950,6 +1025,7 @@ export type Database = {
           combo_discount?: number | null
           commodity?: Database["public"]["Enums"]["commodity_type"] | null
           commodity_price?: number | null
+          contract_price_type?: string | null
           counterparty?: string | null
           created_at?: string
           distributor_id?: string | null
@@ -963,6 +1039,8 @@ export type Database = {
           insurance_premium_sacas?: number | null
           net_revenue?: number | null
           payment_method?: Database["public"]["Enums"]["payment_method"] | null
+          performance_index?: number | null
+          price_variation_index?: number | null
           reference_price?: number | null
           state?: string | null
           status?: Database["public"]["Enums"]["operation_status"]
@@ -1127,43 +1205,70 @@ export type Database = {
       }
       profiles: {
         Row: {
+          bank_account: string | null
+          bank_agency: string | null
+          bank_name: string | null
+          car_number: string | null
           channel_segment: Database["public"]["Enums"]["channel_segment"] | null
           city: string | null
           company: string | null
           created_at: string
+          farm_address: string | null
+          farm_name: string | null
           full_name: string
           id: string
+          inscricao_estadual: string | null
+          land_type: string | null
           phone: string | null
+          pix_key: string | null
           position: string | null
           state: string | null
           updated_at: string
           user_id: string
         }
         Insert: {
+          bank_account?: string | null
+          bank_agency?: string | null
+          bank_name?: string | null
+          car_number?: string | null
           channel_segment?:
             | Database["public"]["Enums"]["channel_segment"]
             | null
           city?: string | null
           company?: string | null
           created_at?: string
+          farm_address?: string | null
+          farm_name?: string | null
           full_name?: string
           id?: string
+          inscricao_estadual?: string | null
+          land_type?: string | null
           phone?: string | null
+          pix_key?: string | null
           position?: string | null
           state?: string | null
           updated_at?: string
           user_id: string
         }
         Update: {
+          bank_account?: string | null
+          bank_agency?: string | null
+          bank_name?: string | null
+          car_number?: string | null
           channel_segment?:
             | Database["public"]["Enums"]["channel_segment"]
             | null
           city?: string | null
           company?: string | null
           created_at?: string
+          farm_address?: string | null
+          farm_name?: string | null
           full_name?: string
           id?: string
+          inscricao_estadual?: string | null
+          land_type?: string | null
           phone?: string | null
+          pix_key?: string | null
           position?: string | null
           state?: string | null
           updated_at?: string

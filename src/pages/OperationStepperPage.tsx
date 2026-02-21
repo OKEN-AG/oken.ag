@@ -9,9 +9,9 @@ import { applyComboCascadeWithLedger, getSuggestedDoseForRef, getMaxPossibleDisc
 import { decomposePricing, calculateGrossToNet, generatePriceAuditTrail } from '@/engines/pricing';
 import { checkEligibility } from '@/engines/eligibility';
 import { buildSnapshot } from '@/engines/snapshot';
-import { calculateCommodityNetPrice, calculateParity, blackScholes } from '@/engines/parity';
-import { buildWagonStages, canAdvance, getBlockingReason } from '@/engines/orchestrator';
-import type { AgronomicSelection, ChannelSegment, Product, JourneyModule, DocumentType, CommodityPricing, FreightReducer } from '@/types/barter';
+import { calculateCommodityNetPrice, calculateParity, calculateIVP, blackScholes } from '@/engines/parity';
+import { buildWagonStages, canAdvance, getBlockingReason, calculateGuaranteeCoverage } from '@/engines/orchestrator';
+import type { AgronomicSelection, ChannelSegment, Product, JourneyModule, DocumentType, CommodityPricing, FreightReducer, ContractPriceType, GuaranteeCoverage } from '@/types/barter';
 import type { PriceAuditStep } from '@/engines/pricing';
 import { supabase } from '@/integrations/supabase/client';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -49,15 +49,15 @@ const statusConfig: Record<string, { icon: any; color: string; bg: string; label
   pendente: { icon: AlertTriangle, color: 'text-muted-foreground', bg: 'bg-muted', label: 'Pendente' },
 };
 
-const allDocTypes: { type: DocumentType; label: string }[] = [
+const allDocTypes: { type: DocumentType; label: string; category?: 'poe' | 'pol' | 'pod' }[] = [
   { type: 'termo_adesao', label: 'Termo de Adesão' },
   { type: 'pedido', label: 'Pedido de Compra' },
   { type: 'termo_barter', label: 'Termo de Barter' },
-  { type: 'ccv', label: 'CCV' },
-  { type: 'cessao_credito', label: 'Cessão de Crédito' },
-  { type: 'cpr', label: 'CPR' },
+  { type: 'ccv', label: 'CCV', category: 'pol' },
+  { type: 'cessao_credito', label: 'Cessão de Crédito', category: 'pol' },
+  { type: 'cpr', label: 'CPR', category: 'poe' },
   { type: 'duplicata', label: 'Duplicata' },
-  { type: 'certificado_aceite', label: 'Certificado de Aceite' },
+  { type: 'certificado_aceite', label: 'Certificado de Aceite', category: 'pod' },
 ];
 
 // ─── Combo recommendation logic ───
@@ -164,6 +164,8 @@ export default function OperationStepperPage() {
   const [volatility, setVolatility] = useState(25);
   const [selectedBuyerId, setSelectedBuyerId] = useState('');
   const [counterpartyOther, setCounterpartyOther] = useState('');
+  const [contractPriceType, setContractPriceType] = useState<ContractPriceType>('fixo');
+  const [performanceIndex, setPerformanceIndex] = useState(100); // 0-100 scale for UI
 
   // ─── Mutations ───
   const createOperation = useCreateOperation();
@@ -384,7 +386,9 @@ export default function OperationStepperPage() {
     buyerFeePercent: buyerFee,
   }), [pricing, port, freightReducer, selectedValorization, buyerFee]);
 
-  const parity = useMemo(() => calculateParity(grossToNet.netRevenue, commodityNetPrice, hasContract ? userPrice : undefined, grossToNet.grossRevenue), [grossToNet, commodityNetPrice, hasContract, userPrice]);
+  const ivp = useMemo(() => calculateIVP(contractPriceType, pricing.volatility), [contractPriceType, pricing.volatility]);
+
+  const parity = useMemo(() => calculateParity(grossToNet.netRevenue, commodityNetPrice, hasContract ? userPrice : undefined, grossToNet.grossRevenue, ivp), [grossToNet, commodityNetPrice, hasContract, userPrice, ivp]);
 
   // Insurance with commodity config params
   const insurancePremium = useMemo(() => {
@@ -422,13 +426,14 @@ export default function OperationStepperPage() {
   const handleDocAction = async (docType: DocumentType, action: 'emit' | 'sign' | 'validate') => {
     if (!operationId || !user) return;
     setEmitting(docType);
+    const docDef = allDocTypes.find(d => d.type === docType);
     try {
       const existing = existingDocs?.find(d => d.doc_type === docType);
       if (action === 'emit') {
         if (existing) {
           await supabase.from('operation_documents').update({ status: 'emitido', generated_at: new Date().toISOString() }).eq('id', existing.id);
         } else {
-          await supabase.from('operation_documents').insert({ operation_id: operationId, doc_type: docType, status: 'emitido', generated_at: new Date().toISOString() });
+          await supabase.from('operation_documents').insert({ operation_id: operationId, doc_type: docType, status: 'emitido', generated_at: new Date().toISOString(), guarantee_category: docDef?.category || null } as any);
         }
       } else if (action === 'sign' && existing) {
         await supabase.from('operation_documents').update({ status: 'assinado', signed_at: new Date().toISOString() }).eq('id', existing.id);
@@ -494,7 +499,7 @@ export default function OperationStepperPage() {
         });
       }
 
-      // Save snapshot with valorization data
+      // Save snapshot with valorization + guarantee data
       const snapshot = buildSnapshot({
         campaign: campaign!, rawCampaign, selections, pricingResults,
         comboActivations, comboDefinitions: combos, eligibility: eligibility!,
@@ -511,6 +516,10 @@ export default function OperationStepperPage() {
             : (selectedValorization?.nominal_value || 0),
         },
         parity, insurance: insurancePremium ? { premiumPerSaca: insurancePremium.premiumPerSaca, additionalSacas: insurancePremium.additionalSacas, totalSacas: insurancePremium.totalSacas, volatility: insurancePremium.volatility } : undefined,
+        performanceIndex: performanceIndex / 100,
+        priceVariationIndex: ivp,
+        aforoPercent: (rawCampaign as any)?.aforo_percent || 130,
+        contractPriceType: contractPriceType,
       });
 
       await supabase.from('order_pricing_snapshots').insert({ operation_id: opId!, snapshot: snapshot as any, snapshot_type: isNewOperation ? 'simulation' : 'order', created_by: user.id });
@@ -826,6 +835,17 @@ export default function OperationStepperPage() {
                   )}
                 </div>
                 <div className="glass-card p-4">
+                  <label className="stat-label">Tipo de Preço</label>
+                  <Select value={contractPriceType} onValueChange={v => setContractPriceType(v as ContractPriceType)}>
+                    <SelectTrigger className="mt-1 bg-muted border-border text-foreground"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="fixo">Preço Fixo (PF)</SelectItem>
+                      <SelectItem value="a_fixar">A Fixar (PAF)</SelectItem>
+                      <SelectItem value="pre_existente">Pré-existente</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="glass-card p-4">
                   <div className="flex items-center gap-2 mb-2">
                     <Switch checked={hasContract} onCheckedChange={setHasContract} />
                     <Label className="text-xs">Contrato existente</Label>
@@ -840,6 +860,12 @@ export default function OperationStepperPage() {
                 <div className="glass-card p-4"><div className="stat-label">Valorização</div><div className={`font-mono text-lg font-bold ${parity.valorization >= 0 ? 'text-success' : 'text-destructive'}`}>{parity.valorization.toFixed(1)}%</div></div>
                 <div className="glass-card p-4"><div className="stat-label">Diferença</div><div className={`font-mono text-lg font-bold ${parity.valorization >= 0 ? 'text-success' : 'text-destructive'}`}>{formatCurrency(parity.referencePrice - parity.commodityPricePerUnit)}/sc</div></div>
               </div>
+              {ivp < 1 && (
+                <div className="text-xs text-warning bg-warning/10 border border-warning/20 rounded px-3 py-1.5">
+                  <AlertTriangle className="w-3.5 h-3.5 inline mr-1" />
+                  Contrato "A Fixar" — IVP aplicado: {(ivp * 100).toFixed(0)}% (haircut de {((1 - ivp) * 100).toFixed(0)}% por risco de preço)
+                </div>
+              )}
               {buyerFee > 0 && (
                 <div className="text-xs text-muted-foreground bg-muted/50 rounded px-3 py-1.5">Fee do comprador: {buyerFee}% — já aplicado no preço net/sc</div>
               )}
@@ -877,26 +903,78 @@ export default function OperationStepperPage() {
               )}
               {isNewOperation && <div className="glass-card p-6 text-center text-muted-foreground">Salve a operação primeiro para acessar a formalização.</div>}
               {!isNewOperation && (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-                  {allDocTypes.map(doc => {
-                    const existing = docMap.get(doc.type);
-                    const status = (existing?.status as keyof typeof statusConfig) || 'pendente';
-                    const config = statusConfig[status];
-                    const Icon = config.icon;
+                <div className="space-y-4">
+                  {/* PoE/PoL/PoD grouped checklist */}
+                  {[
+                    { cat: 'poe', title: 'Prova de Existência (PoE)', icon: ShieldCheck, color: 'text-success' },
+                    { cat: 'pol', title: 'Prova de Liquidez (PoL)', icon: Lock, color: 'text-primary' },
+                    { cat: 'pod', title: 'Prova de Entrega (PoD)', icon: Check, color: 'text-info' },
+                    { cat: undefined, title: 'Outros Documentos', icon: FileText, color: 'text-muted-foreground' },
+                  ].map(group => {
+                    const docs = allDocTypes.filter(d => d.category === group.cat);
+                    if (docs.length === 0) return null;
+                    const GroupIcon = group.icon;
                     return (
-                      <div key={doc.type} className="glass-card p-4">
-                        <div className="flex items-center justify-between mb-2">
-                          <span className="text-sm font-semibold text-foreground">{doc.label}</span>
-                          <span className={`engine-badge ${config.bg} ${config.color} text-xs`}><Icon className="w-3 h-3 inline mr-1" />{config.label}</span>
-                        </div>
-                        <div className="flex gap-2">
-                          {status === 'pendente' && <Button size="sm" variant="outline" className="flex-1 text-xs" disabled={emitting === doc.type} onClick={() => handleDocAction(doc.type, 'emit')}>{emitting === doc.type ? '...' : 'Emitir'}</Button>}
-                          {status === 'emitido' && <Button size="sm" variant="outline" className="flex-1 text-xs" disabled={emitting === doc.type} onClick={() => handleDocAction(doc.type, 'sign')}><PenLine className="w-3 h-3 mr-1" />Assinar</Button>}
-                          {status === 'assinado' && <Button size="sm" variant="outline" className="flex-1 text-xs" disabled={emitting === doc.type} onClick={() => handleDocAction(doc.type, 'validate')}><ShieldCheck className="w-3 h-3 mr-1" />Validar</Button>}
+                      <div key={group.cat || 'other'}>
+                        <h4 className={`text-xs font-semibold ${group.color} flex items-center gap-1.5 mb-2`}>
+                          <GroupIcon className="w-3.5 h-3.5" /> {group.title}
+                        </h4>
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                          {docs.map(doc => {
+                            const existing = docMap.get(doc.type);
+                            const status = (existing?.status as keyof typeof statusConfig) || 'pendente';
+                            const config = statusConfig[status];
+                            const Icon = config.icon;
+                            return (
+                              <div key={doc.type} className="glass-card p-4">
+                                <div className="flex items-center justify-between mb-2">
+                                  <span className="text-sm font-semibold text-foreground">{doc.label}</span>
+                                  <span className={`engine-badge ${config.bg} ${config.color} text-xs`}><Icon className="w-3 h-3 inline mr-1" />{config.label}</span>
+                                </div>
+                                <div className="flex gap-2">
+                                  {status === 'pendente' && <Button size="sm" variant="outline" className="flex-1 text-xs" disabled={emitting === doc.type} onClick={() => handleDocAction(doc.type, 'emit')}>{emitting === doc.type ? '...' : 'Emitir'}</Button>}
+                                  {status === 'emitido' && <Button size="sm" variant="outline" className="flex-1 text-xs" disabled={emitting === doc.type} onClick={() => handleDocAction(doc.type, 'sign')}><PenLine className="w-3 h-3 mr-1" />Assinar</Button>}
+                                  {status === 'assinado' && <Button size="sm" variant="outline" className="flex-1 text-xs" disabled={emitting === doc.type} onClick={() => handleDocAction(doc.type, 'validate')}><ShieldCheck className="w-3 h-3 mr-1" />Validar</Button>}
+                                </div>
+                              </div>
+                            );
+                          })}
                         </div>
                       </div>
                     );
                   })}
+
+                  {/* Guarantee Coverage Panel */}
+                  <div className="glass-card p-4">
+                    <h4 className="text-sm font-semibold text-foreground flex items-center gap-2 mb-3"><ShieldCheck className="w-4 h-4 text-primary" /> Cobertura de Garantias</h4>
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-3">
+                      <div>
+                        <div className="stat-label">Índice de Performance (IP)</div>
+                        <div className="flex items-center gap-2 mt-1">
+                          <Input type="number" value={performanceIndex} min={0} max={100} onChange={e => setPerformanceIndex(Math.min(100, Math.max(0, Number(e.target.value))))} className="h-8 w-20 bg-muted border-border font-mono text-xs text-foreground" />
+                          <span className="text-xs text-muted-foreground">%</span>
+                        </div>
+                      </div>
+                      <div>
+                        <div className="stat-label">Aforo Exigido</div>
+                        <div className="font-mono text-foreground">{rawCampaign?.aforo_percent || 130}%</div>
+                      </div>
+                      <div>
+                        <div className="stat-label">Montante Operação</div>
+                        <div className="font-mono text-foreground">{formatCurrency(grossToNet.netRevenue)}</div>
+                      </div>
+                      <div>
+                        <div className="stat-label">Sacas Efetivas</div>
+                        <div className="font-mono text-foreground">{Math.round(parity.quantitySacas * (performanceIndex / 100)).toLocaleString('pt-BR')} sc</div>
+                      </div>
+                    </div>
+                    <Progress value={performanceIndex} className="h-2 bg-muted" />
+                    {performanceIndex < 80 && (
+                      <div className="mt-2 text-xs text-warning bg-warning/10 border border-warning/20 rounded px-3 py-1.5">
+                        <AlertTriangle className="w-3.5 h-3.5 inline mr-1" /> IP abaixo de 80% — risco elevado de não entrega
+                      </div>
+                    )}
+                  </div>
                 </div>
               )}
             </div>

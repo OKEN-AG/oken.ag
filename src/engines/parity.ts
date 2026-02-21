@@ -62,15 +62,29 @@ export function calculateCommodityNetPrice(
 }
 
 /**
+ * Calculate IVP (Price Variation Index) for PAF contracts.
+ * For 'fixo' contracts, IVP = 1 (no haircut).
+ * For 'a_fixar' contracts, apply a volatility-based haircut.
+ */
+export function calculateIVP(contractPriceType: string, volatility?: number): number {
+  if (contractPriceType === 'fixo' || contractPriceType === 'pre_existente') return 1;
+  // a_fixar: haircut proportional to volatility (e.g., vol 25% → IVP = 0.95)
+  const vol = (volatility || 25) / 100;
+  return Math.max(1 - vol * 0.2, 0.8); // Floor at 0.80
+}
+
+/**
  * Calculate parity: convert BRL amount to commodity units (sacas)
+ * NEW: Supports IVP haircut for PAF contracts
  */
 export function calculateParity(
   totalAmountBRL: number,
   commodityNetPrice: number,
   userOverridePrice?: number,
-  grossAmountBRL?: number
+  grossAmountBRL?: number,
+  ivp: number = 1
 ): ParityResult {
-  const effectivePrice = userOverridePrice ?? commodityNetPrice;
+  const effectivePrice = (userOverridePrice ?? commodityNetPrice) * ivp;
   const quantitySacas = Math.ceil(totalAmountBRL / effectivePrice);
 
   const referencePrice = grossAmountBRL

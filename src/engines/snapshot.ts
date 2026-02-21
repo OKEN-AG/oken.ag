@@ -1,7 +1,7 @@
 import type { 
   Campaign, Product, ComboDefinition, CommodityPricing, FreightReducer,
   AgronomicSelection, ComboActivation, PricingResult, GrossToNet, ParityResult,
-  ChannelSegment
+  ChannelSegment, GuaranteeCoverage, ContractPriceType, CessionChain
 } from '@/types/barter';
 import type { EligibilityResult } from './eligibility';
 
@@ -100,6 +100,14 @@ export interface OrderPricingSnapshot {
     totalSacas: number;
     volatility: number;
   };
+
+  // Guarantee framework (PoE/PoL/PoD)
+  performanceIndex?: number;
+  priceVariationIndex?: number;
+  aforoPercent?: number;
+  guaranteeCoverage?: GuaranteeCoverage;
+  contractPriceType?: ContractPriceType;
+  cessionChain?: CessionChain;
 }
 
 /**
@@ -147,6 +155,12 @@ export function buildSnapshot(params: {
     volatility: number;
   };
   consumptionLedger?: Record<string, Record<string, number>>;
+  performanceIndex?: number;
+  priceVariationIndex?: number;
+  aforoPercent?: number;
+  guaranteeCoverage?: GuaranteeCoverage;
+  contractPriceType?: ContractPriceType;
+  cessionChain?: CessionChain;
 }): OrderPricingSnapshot {
   const { campaign, rawCampaign, selections, pricingResults, comboActivations, comboDefinitions, eligibility, grossToNet, orderContext } = params;
 
@@ -200,5 +214,11 @@ export function buildSnapshot(params: {
     commodity: params.commodityData,
     parity: params.parity,
     insurance: params.insurance,
+    performanceIndex: params.performanceIndex,
+    priceVariationIndex: params.priceVariationIndex,
+    aforoPercent: params.aforoPercent,
+    guaranteeCoverage: params.guaranteeCoverage,
+    contractPriceType: params.contractPriceType,
+    cessionChain: params.cessionChain,
   };
 }
