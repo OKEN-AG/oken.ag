@@ -6,7 +6,8 @@ Dos 4 documentos, filtrei os conceitos que agregam ao sistema de barter sem qual
 
 ---
 
-## CONCEITOS APROVEITAVEIS  
+## CONCEITOS APROVEITAVEIS
+
 C ONE: 1) O que os documentos novos adicionam (sem blockchain)
 
 ### 1.1 Separar “existência”, “liquidez” e “entrega” como estados auditáveis
@@ -18,9 +19,25 @@ O documento v1 define claramente:
 - **PoD**: comprovante de entrega (transforma expectativa em fato)
 - Tipos de preço do contrato: **PF (fixo)** vs **PAF (a fixar)**
 - E um **índice de desempenho (IP)** entre t0 e td para medir “probabilidade/aderência” da entrega
-  Tokenização de grãos futuros
+Tokenização de grãos futuros
 
-👉 **Sem token**, isso vira um **“Pacote de Garantia”** (Collateral Package) ligado à operação, com status, evidências e cálculo de cobertura/LTV.
+👉 **Sem token**, isso vira um **“Pacote de Garantia”** (Collateral Package) ligado à operação, com status, evidências e cálculo de cobertura/LTV.  
+  
+PADRÃO DE LINGUAGEM BAR TERPRO (OBRIGATÓRIO)
+
+- NÃO usar siglas e termos da Agrotoken como: PoE, PoL, PoD, POO, IP, mint, burn, token.
+
+- Manter apenas siglas comuns de mercado: CCV, CPR (e outras já existentes no sistema).
+
+- No BarterPro, os conceitos devem ser nomeados assim:
+
+  1) Entidade principal: "Dossiê da Operação" (engloba documentos, garantias, contrato e entrega)
+
+  2) Tipos de evidência do dossiê: "Comprovação de Produção", "Comprovação de Contrato", "Comprovação de Entrega"
+
+  3) Indicador numérico: "Índice de Cumprimento" (0 a 100 ou 0 a 1, mas exibido em linguagem simples)
+
+- Esses nomes devem aparecer na UI, nos textos e nos status. Se precisar de códigos internos no banco, manter escondido do usuário.
 
 ### 1.2 “Módulo Oráculo” (Comprador) e contrato com componentes de preço
 
@@ -40,13 +57,13 @@ O memorando jurídico (Grão em Produção) deixa muito claro o racional operaci
 
 - o “ativo” econômico é o **direito creditório do produtor no CCV**, suportado por **CPR como prova de existência**
 - a **cessão do CCV** precisa ser **efetiva**: envolve **notificação ao comprador e/ou assinatura tripartite**, dependendo do CCV, antes de contar como “prova forte”
-  Agrotoken - Memorando - Grão F…
+Agrotoken - Memorando - Grão F…
 
 👉 No BarterAG, isso vira:
 
 - “Cessão criada” ≠ “Cessão válida”
 - faturamento/liberação só após gates mínimos (como você descreveu no “trem” de vagões e certificações)
-  Prompt sistema de barter
+Prompt sistema de barter
 
 ---
 
@@ -76,10 +93,10 @@ O memorando jurídico (Grão em Produção) deixa muito claro o racional operaci
 - Tela: **Oráculo > Contratos (CCV)**
 - Campos mínimos por contrato:
   - tipo: **PF/PAF** (já bate com sua configuração de commodities)
-    Catalogo componentes e variaveis
+  Catalogo componentes e variaveis
   - origem/destino/distância
   - componentes de preço fixados (mercado/basis/frete/impostos) e valor estimado (se aplicável)
-    Produto Futuro - Agrotoken *11*…
+  Produto Futuro - Agrotoken *11*…
 - Ações do comprador:
   - **validar/aceitar cessão**
   - confirmar “pagamento previsto” e “pagamento realizado” (na liquidação)
@@ -138,15 +155,15 @@ Tokenização de grãos futuros
 - Cessão do CCV
 - Notificação ao comprador (quando exigida) / opção de tripartite
 - CPR (quando aplicável)
-  Prompt sistema de barter
+Prompt sistema de barter
 
 **D2) Regras de gate (Orchestrator)**
 
 - “Cessão criada” só libera avanço quando:
   - comprador **foi notificado** e/ou **assinou tripartite**, conforme regra do CCV (registrar qual caminho foi usado)
-    Agrotoken - Memorando - Grão F…
+  Agrotoken - Memorando - Grão F…
 - “Faturamento/liberação” só ocorre com checklist mínimo aprovado (seu conceito do trem/vagões)
-  Prompt sistema de barter
+Prompt sistema de barter
 
 ---
 
@@ -157,7 +174,7 @@ Aqui não é “refazer commodities”; é **usar o que já existe** e ligar no 
 **E1) Commodity Engine (Operação)**
 
 - Se campanha permite **pré-existente / fixo no ato / a fixar**, a jornada deve abrir caminhos diferentes
-  Catalogo componentes e variaveis
+Catalogo componentes e variaveis
 - Para **PAF**:
   - registrar referência de preço e regras de fixação
   - status “aguardando fixação”
@@ -167,9 +184,9 @@ Aqui não é “refazer commodities”; é **usar o que já existe** e ligar no 
 **E2) Parity Engine**
 
 - já está no seu blueprint: comparar **preço valorizado vs preço contrato** e permitir sobreposição
-  Prompt sistema de barter
+Prompt sistema de barter
 - melhoria nova: vincular essa comparação ao contrato PF/PAF e aos componentes fixados (mercado/basis/frete/impostos)
-  Produto Futuro - Agrotoken *11*…
+Produto Futuro - Agrotoken *11*…
 
 **E3) Guarantee Engine**
 
@@ -177,7 +194,7 @@ Aqui não é “refazer commodities”; é **usar o que já existe** e ligar no 
   - IP (entregabilidade)
   - tipo de PoL (PF tende a ter haircut menor que PAF)
   - travas por documentação (PoE/PoL/PoD)
-    Tokenização de grãos futuros
+  Tokenização de grãos futuros
 
 ---
 
@@ -194,7 +211,7 @@ Prompt sistema de barter
 - saúde do colateral package:
   - PoEc (checkpoints) e atualização de IP
   - alertas: atraso de documentação, não aceite do comprador, janela de entrega, variação relevante de preço (se PAF)
-    Tokenização de grãos futuros
+  Tokenização de grãos futuros
 
 **F2) Settlement Engine**
 
@@ -202,7 +219,7 @@ Prompt sistema de barter
   - entrega (PoD)
   - pagamento do comprador
   - conciliação com provisões (margem/juros/custos barter) — alinhado ao seu desenho de “compensação e encerramento”
-    Prompt sistema de barter
+  Prompt sistema de barter
 
 ---
 
@@ -214,9 +231,9 @@ Pra você aproveitar tudo sem carregar o tema:
 - **Wallet / transferência** → “titularidade do pacote” (owner_id + audit trail)
 - **Mint/Burn** → “criar pacote” / “encerrar pacote após liquidação”
 - **Oráculo** → portal do comprador: valida contrato, aceita cessão, confirma entrega/pagamento
-  Produto Futuro - Agrotoken *11*…
+Produto Futuro - Agrotoken *11*…
 - **Provas (PoE/PoL/PoD)** → evidências anexadas + status + regras de gate
-  Tokenização de grãos futuros
+Tokenização de grãos futuros
 
 ---
 
@@ -227,9 +244,9 @@ Use isso como “brief único” para não duplicar nada:
 **Contexto fixo (não mexer):**
 
 - “Campanhas e Commodities estão prontas; não reestruturar essas telas nem seus schemas, apenas consumir os dados.”
-  Catalogo componentes e variaveis
+Catalogo componentes e variaveis
 - “Manter arquitetura por engines e routes no Supabase; implementar novas tabelas/edges apenas para Operações/Formalização/Contrapartes.”
-  Prompt sistema de barter
+Prompt sistema de barter
 
 **Entregas obrigatórias:**
 
@@ -247,9 +264,9 @@ Use isso como “brief único” para não duplicar nada:
 **Regras de negócio (sem interpretação):**
 
 - PoL só vira “válido” quando houver aceite do comprador via notificação e/ou tripartite (registrar qual caminho)
-  Agrotoken - Memorando - Grão F…
+Agrotoken - Memorando - Grão F…
 - PF vs PAF muda o fluxo e o risco (haircuts e monitoramento)
-  Tokenização de grãos futuros
+Tokenização de grãos futuros
 - Tudo deve gerar `event_log` e `status_history`.
 
 ### C2: Indice de Performance (IP) -- Saude da Producao
