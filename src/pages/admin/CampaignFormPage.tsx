@@ -62,7 +62,7 @@ const emptyForm: FormData = {
   season: '',
   currency: 'USD',
   target: 'venda_direta_consumidor',
-  active: true,
+  active: false,
   commodities: [],
   exchange_rate_products: 5.45,
   exchange_rate_barter: 5.40,
@@ -164,6 +164,19 @@ export default function CampaignFormPage() {
     if (!form.name || !form.season) {
       toast.error('Nome e Safra são obrigatórios');
       return;
+    }
+
+    // Block saving an active campaign without required fields
+    if (form.active) {
+      const errors: string[] = [];
+      if (!form.start_date || !form.end_date) errors.push('Vigência (início e fim) deve ser definida');
+      if (form.start_date && form.end_date && form.start_date > form.end_date) errors.push('Data de início deve ser anterior à data de fim');
+      if (!form.commodities || form.commodities.length === 0) errors.push('Pelo menos 1 commodity deve ser selecionada');
+      if (selectedCities.length === 0) errors.push('Defina pelo menos 1 cidade/estado na aba Elegibilidade');
+      if (errors.length > 0) {
+        toast.error('Não é possível salvar campanha ativa:\n' + errors.join('\n'));
+        return;
+      }
     }
 
     try {
