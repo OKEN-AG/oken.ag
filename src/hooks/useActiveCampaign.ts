@@ -153,6 +153,45 @@ export function useCampaignData(campaignId?: string) {
     },
   });
 
+  const buyersQuery = useQuery({
+    queryKey: ['campaign-buyers-full', campaignId],
+    enabled: !!campaignId,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('campaign_buyers')
+        .select('*')
+        .eq('campaign_id', campaignId!);
+      if (error) throw error;
+      return data || [];
+    },
+  });
+
+  const valorizationsQuery = useQuery({
+    queryKey: ['campaign-valorizations-full', campaignId],
+    enabled: !!campaignId,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('campaign_commodity_valorizations')
+        .select('*')
+        .eq('campaign_id', campaignId!);
+      if (error) throw error;
+      return data || [];
+    },
+  });
+
+  const dueDatesQuery = useQuery({
+    queryKey: ['campaign-due-dates-full', campaignId],
+    enabled: !!campaignId,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('campaign_due_dates')
+        .select('*')
+        .eq('campaign_id', campaignId!);
+      if (error) throw error;
+      return data || [];
+    },
+  });
+
   // Derive commodityPricing from unified query
   const rawCommodityData = commodityRawQuery.data || [];
   const commodityPricing: CommodityPricing | null = rawCommodityData.length > 0 ? (() => {
@@ -236,6 +275,9 @@ export function useCampaignData(campaignId?: string) {
     rawCommodityPricing: rawCommodityData,
     freightReducers: freightQuery.data || [],
     deliveryLocations: deliveryLocationsQuery.data || [],
+    buyers: buyersQuery.data || [],
+    valorizations: valorizationsQuery.data || [],
+    dueDates: dueDatesQuery.data || [],
     isLoading,
   };
 }
