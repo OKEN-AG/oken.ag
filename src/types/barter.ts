@@ -249,6 +249,33 @@ export interface WagonStage {
   completedAt?: string;
 }
 
+// === GUARANTEE FRAMEWORK (PoE/PoL/PoD) ===
+export type GuaranteeCategory = 'poe' | 'pol' | 'pod';
+export type ContractPriceType = 'fixo' | 'a_fixar' | 'pre_existente';
+
+export interface PerformanceIndex {
+  operationId: string;
+  value: number; // 0..1
+  source: 'manual' | 'ndvi' | 'seguro';
+  updatedAt: string;
+  notes?: string;
+}
+
+export interface GuaranteeCoverage {
+  base: number;
+  effective: number; // base * IP
+  required: number;  // montante * aforo / 100
+  sufficient: boolean;
+}
+
+export interface CessionChain {
+  cedente: string;
+  cessionario: string;
+  devedor: string;
+  notified: boolean;
+  accepted: boolean;
+}
+
 // === LOG ===
 export interface OperationLog {
   id: string;
