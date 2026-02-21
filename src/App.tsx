@@ -16,6 +16,7 @@ import AuthPage from "@/pages/AuthPage";
 import NotFound from "./pages/NotFound";
 import CampaignsListPage from "@/pages/admin/CampaignsListPage";
 import CampaignFormPage from "@/pages/admin/CampaignFormPage";
+import OperationStepperPage from "@/pages/OperationStepperPage";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -46,6 +47,8 @@ const App = () => (
                     <Route path="/paridade" element={<ParityPage />} />
                     <Route path="/documentos" element={<DocumentsPage />} />
                     <Route path="/monitoramento" element={<MonitoringPage />} />
+                    <Route path="/operacao/novo" element={<OperationStepperPage />} />
+                    <Route path="/operacao/:id" element={<OperationStepperPage />} />
                     <Route path="/admin/campanhas" element={<CampaignsListPage />} />
                     <Route path="/admin/campanhas/:id" element={<CampaignFormPage />} />
                     <Route path="*" element={<NotFound />} />

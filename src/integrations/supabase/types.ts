@@ -980,6 +980,41 @@ export type Database = {
           },
         ]
       }
+      order_pricing_snapshots: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          id: string
+          operation_id: string
+          snapshot: Json
+          snapshot_type: string
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          operation_id: string
+          snapshot?: Json
+          snapshot_type?: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          operation_id?: string
+          snapshot?: Json
+          snapshot_type?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "order_pricing_snapshots_operation_id_fkey"
+            columns: ["operation_id"]
+            isOneToOne: false
+            referencedRelation: "operations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       ports: {
         Row: {
           campaign_id: string | null
