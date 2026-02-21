@@ -6,7 +6,7 @@ import { useActiveCampaigns, useCampaignData } from '@/hooks/useActiveCampaign';
 import { useOperation, useOperationItems, useOperationDocuments, useCreateOperation, useCreateOperationItems, useCreateOperationLog, useUpdateOperation } from '@/hooks/useOperations';
 import { calculateAgronomicSelection } from '@/engines/agronomic';
 import { applyComboCascadeWithLedger, getSuggestedDoseForRef, getMaxPossibleDiscount, getActivatedDiscount, getComplementaryDiscount } from '@/engines/combo-cascade';
-import { decomposePricing, calculateGrossToNet, generatePriceAuditTrail } from '@/engines/pricing';
+import { decomposePricing, calculateGrossToNet, generatePriceAuditTrail, normalizePrice } from '@/engines/pricing';
 import { checkEligibility } from '@/engines/eligibility';
 import { buildSnapshot } from '@/engines/snapshot';
 import { calculateCommodityNetPrice, calculateParity, calculateIVP, blackScholes } from '@/engines/parity';
@@ -147,6 +147,8 @@ export default function OperationStepperPage() {
   const [deliveryAddress, setDeliveryAddress] = useState('');
   const [segment, setSegment] = useState<ChannelSegment>('distribuidor');
   const [area, setArea] = useState(500);
+  const [quantityMode, setQuantityMode] = useState<'dose' | 'livre'>('dose'); // dose/ha or free quantity
+  const [freeQuantities, setFreeQuantities] = useState<Map<string, number>>(new Map());
 
   // ─── Order step state ───
   const [selectedProducts, setSelectedProducts] = useState<Map<string, number>>(new Map());
@@ -324,7 +326,12 @@ export default function OperationStepperPage() {
   // ─── Product selection ───
   const toggleProduct = (productId: string) => {
     const next = new Map(selectedProducts);
-    if (next.has(productId)) { next.delete(productId); } else {
+    if (next.has(productId)) {
+      next.delete(productId);
+      const nextFree = new Map(freeQuantities);
+      nextFree.delete(productId);
+      setFreeQuantities(nextFree);
+    } else {
       const prod = products.find(p => p.id === productId)!;
       const suggested = getSuggestedDoseForRef(combos, prod.ref || '');
       next.set(productId, suggested ?? prod.dosePerHectare);
@@ -338,14 +345,26 @@ export default function OperationStepperPage() {
     setSelectedProducts(next);
   };
 
+  const updateFreeQuantity = (productId: string, qty: number) => {
+    const next = new Map(freeQuantities);
+    next.set(productId, qty);
+    setFreeQuantities(next);
+  };
+
   // ─── Engine calculations ───
   const selections = useMemo<AgronomicSelection[]>(() => {
     return Array.from(selectedProducts.entries()).map(([id, dose]) => {
       const product = products.find(p => p.id === id);
       if (!product) return null;
+      if (quantityMode === 'livre') {
+        const freeQty = freeQuantities.get(id) || 0;
+        if (freeQty <= 0) return null;
+        // Build selection from free quantity directly
+        return calculateAgronomicSelection(product, area, dose, freeQty);
+      }
       return calculateAgronomicSelection(product, area, dose);
     }).filter(Boolean) as AgronomicSelection[];
-  }, [selectedProducts, area, products]);
+  }, [selectedProducts, area, products, quantityMode, freeQuantities]);
 
   const comboCascade = useMemo(() => applyComboCascadeWithLedger(combos, selections), [combos, selections]);
   const comboActivations = comboCascade.activations;
@@ -758,74 +777,54 @@ export default function OperationStepperPage() {
           {/* ═══ ORDER STEP ═══ */}
           {currentStepDef.id === 'order' && (
             <div className="space-y-4">
-              {/* B1: Quick Pick — combos pré-calculados em sacas */}
-              {combos.length > 0 && commodityNetPrice > 0 && (
-                <div className="glass-card p-4">
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-sm font-semibold text-foreground flex items-center gap-2"><Zap className="w-4 h-4 text-warning" /> Seleção Rápida (Combos em Sacas)</span>
-                  </div>
-                  <p className="text-xs text-muted-foreground mb-3">Selecione um combo para auto-preencher os produtos com doses mínimas para a área de {area} ha.</p>
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2">
-                    {combos.map(combo => {
-                      // Calculate combo value in sacks: sum product prices at min dose * area, then divide by commodity net price
-                      const comboValue = combo.products.reduce((sum: number, cp: any) => {
-                        const prod = products.find(p => (p.ref || '').toUpperCase() === (cp.ref || '').toUpperCase());
-                        if (!prod || !campaign) return sum;
-                        const qty = cp.minDosePerHa * area;
-                        const unitBoxes = prod.unitsPerBox || 1;
-                        const rounded = Math.ceil(qty / unitBoxes) * unitBoxes;
-                        const pr = decomposePricing(prod, campaign, segment, dueMonths, rounded, { paymentMethodMarkup, segmentAdjustmentPercent });
-                        return sum + pr.subtotal;
-                      }, 0);
-                      const discountedValue = comboValue * (1 - combo.discountPercent / 100);
-                      const sacas = commodityNetPrice > 0 ? Math.ceil(discountedValue / commodityNetPrice) : 0;
-                      return (
-                        <button key={combo.id} onClick={() => {
-                          // Auto-fill products with min doses from this combo
-                          const next = new Map(selectedProducts);
-                          for (const cp of combo.products) {
-                            const prod = products.find(p => (p.ref || '').toUpperCase() === (cp.ref || '').toUpperCase());
-                            if (prod) next.set(prod.id, cp.minDosePerHa);
-                          }
-                          setSelectedProducts(next);
-                          toast.success(`Combo "${combo.name}" aplicado — produtos preenchidos`);
-                        }} className="text-left p-3 rounded-md border border-border hover:border-primary/50 hover:bg-primary/5 transition-colors">
-                          <div className="text-sm font-medium text-foreground">{combo.name}</div>
-                          <div className="text-xs text-muted-foreground">{combo.products.length} produtos • {combo.discountPercent}% desc.</div>
-                          <div className="font-mono text-lg font-bold text-success mt-1">{sacas.toLocaleString('pt-BR')} sc</div>
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
-              {combos.length > 0 && (
-                <div className="glass-card p-4">
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-sm font-semibold text-foreground flex items-center gap-2"><TrendingUp className="w-4 h-4 text-success" /> Combos</span>
-                    <span className="font-mono text-sm text-success font-bold">{activatedDiscount.toFixed(1)}% / {maxDiscount}%{complementaryDiscount > 0 && <span className="ml-2 text-info">+ {complementaryDiscount.toFixed(1)}%</span>}</span>
-                  </div>
-                  <Progress value={discountProgress} className="h-2.5 bg-muted" />
-                  <div className="flex flex-wrap gap-1.5 mt-2">
-                    {comboActivations.map(ca => <span key={ca.comboId} className={`engine-badge text-xs ${ca.applied ? 'bg-success/10 text-success' : 'bg-muted text-muted-foreground'}`}>{ca.comboName} ({ca.discountPercent}%) {ca.applied ? '✓' : ''}</span>)}
-                  </div>
-                  {/* Combo recommendations */}
-                  {comboRecommendations.length > 0 && (
-                    <div className="mt-3 space-y-1">
-                      {comboRecommendations.map((rec, i) => (
-                        <div key={i} className="flex items-center gap-2 text-xs text-info bg-info/10 border border-info/20 rounded-md px-3 py-1.5">
-                          <Lightbulb className="w-3.5 h-3.5 shrink-0" /> {rec.action}
-                        </div>
-                      ))}
+              {/* Mode toggle + discount bar */}
+              <div className="glass-card p-4 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <span className="text-sm font-semibold text-foreground">Modo de Seleção:</span>
+                    <div className="flex rounded-md border border-border overflow-hidden">
+                      <button onClick={() => setQuantityMode('dose')} className={`px-3 py-1 text-xs font-medium transition-colors ${quantityMode === 'dose' ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground hover:bg-muted/80'}`}>Área × Dose</button>
+                      <button onClick={() => setQuantityMode('livre')} className={`px-3 py-1 text-xs font-medium transition-colors ${quantityMode === 'livre' ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground hover:bg-muted/80'}`}>Qtd Livre</button>
                     </div>
+                  </div>
+                  {combos.length > 0 && (
+                    <span className="font-mono text-sm text-success font-bold">{activatedDiscount.toFixed(1)}% / {maxDiscount}%{complementaryDiscount > 0 && <span className="ml-2 text-info">+ {complementaryDiscount.toFixed(1)}%</span>}</span>
                   )}
                 </div>
-              )}
+                {combos.length > 0 && (
+                  <>
+                    <Progress value={discountProgress} className="h-2.5 bg-muted" />
+                    {/* Activated combos shown discreetly */}
+                    {comboActivations.some(ca => ca.applied) && (
+                      <div className="flex flex-wrap gap-1.5">
+                        {comboActivations.filter(ca => ca.applied).map(ca => (
+                          <span key={ca.comboId} className="text-[10px] px-2 py-0.5 rounded-full bg-success/10 text-success font-medium">
+                            {ca.comboName} ({ca.discountPercent}%) ✓
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                    {/* Combo recommendations */}
+                    {comboRecommendations.length > 0 && (
+                      <div className="space-y-1">
+                        {comboRecommendations.map((rec, i) => (
+                          <div key={i} className="flex items-center gap-2 text-xs text-info bg-info/10 border border-info/20 rounded-md px-3 py-1.5">
+                            <Lightbulb className="w-3.5 h-3.5 shrink-0" /> {rec.action}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
+              {/* Product grid */}
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
                 {products.map(product => {
                   const isSelected = selectedProducts.has(product.id);
                   const dose = selectedProducts.get(product.id) ?? product.dosePerHectare;
                   const selection = selections.find(s => s.productId === product.id);
+                  // Normalized price for display (always in BRL)
+                  const displayPrice = campaign ? normalizePrice(product, campaign, segment, dueMonths, { paymentMethodMarkup, segmentAdjustmentPercent }) : product.pricePerUnit;
                   return (
                     <div key={product.id} className={`glass-card p-4 cursor-pointer transition-all ${isSelected ? 'glow-border' : 'hover:border-muted-foreground/30'}`} onClick={() => !isSelected && toggleProduct(product.id)}>
                       <div className="flex items-center justify-between mb-1">
@@ -833,18 +832,27 @@ export default function OperationStepperPage() {
                         {isSelected ? <Button size="sm" variant="ghost" onClick={e => { e.stopPropagation(); toggleProduct(product.id); }} className="text-destructive h-6 w-6 p-0"><Minus className="w-3 h-3" /></Button>
                           : <Button size="sm" variant="ghost" className="text-success h-6 w-6 p-0"><Plus className="w-3 h-3" /></Button>}
                       </div>
-                      <div className="text-xs text-muted-foreground">{product.category} — {product.currency === 'USD' ? 'US$' : 'R$'} {product.pricePerUnit.toFixed(2)}/{product.unitType}</div>
-                      {isSelected && selection && (
+                      <div className="text-xs text-muted-foreground">{product.category} — R$ {displayPrice.toFixed(2)}/{product.unitType}</div>
+                      {isSelected && (
                         <div className="mt-2 pt-2 border-t border-border space-y-2">
-                          <div className="flex items-center gap-2">
-                            <label className="text-xs text-muted-foreground w-16">Dose/ha:</label>
-                            <Input type="number" value={dose} step={0.05} min={product.minDose} max={product.maxDose} onChange={e => { e.stopPropagation(); updateDose(product.id, Number(e.target.value)); }} onClick={e => e.stopPropagation()} className="h-7 bg-muted border-border font-mono text-xs text-foreground" />
-                          </div>
-                          <div className="grid grid-cols-3 gap-1 text-xs">
-                            <div className="bg-muted/50 rounded p-1 text-center"><div className="text-muted-foreground">Vol</div><div className="font-mono text-foreground">{selection.roundedQuantity.toFixed(0)}</div></div>
-                            <div className="bg-muted/50 rounded p-1 text-center"><div className="text-muted-foreground">Cx</div><div className="font-mono text-foreground">{selection.boxes}</div></div>
-                            <div className="bg-muted/50 rounded p-1 text-center"><div className="text-muted-foreground">Plt</div><div className="font-mono text-foreground">{selection.pallets}</div></div>
-                          </div>
+                          {quantityMode === 'dose' ? (
+                            <div className="flex items-center gap-2">
+                              <label className="text-xs text-muted-foreground w-16">Dose/ha:</label>
+                              <Input type="number" value={dose} step={0.05} min={product.minDose} max={product.maxDose} onChange={e => { e.stopPropagation(); updateDose(product.id, Number(e.target.value)); }} onClick={e => e.stopPropagation()} className="h-7 bg-muted border-border font-mono text-xs text-foreground" />
+                            </div>
+                          ) : (
+                            <div className="flex items-center gap-2">
+                              <label className="text-xs text-muted-foreground w-16">Qtd ({product.unitType}):</label>
+                              <Input type="number" value={freeQuantities.get(product.id) || ''} min={0} onChange={e => { e.stopPropagation(); updateFreeQuantity(product.id, Number(e.target.value)); }} onClick={e => e.stopPropagation()} className="h-7 bg-muted border-border font-mono text-xs text-foreground" placeholder="0" />
+                            </div>
+                          )}
+                          {selection && (
+                            <div className="grid grid-cols-3 gap-1 text-xs">
+                              <div className="bg-muted/50 rounded p-1 text-center"><div className="text-muted-foreground">Vol</div><div className="font-mono text-foreground">{selection.roundedQuantity.toFixed(0)}</div></div>
+                              <div className="bg-muted/50 rounded p-1 text-center"><div className="text-muted-foreground">Cx</div><div className="font-mono text-foreground">{selection.boxes}</div></div>
+                              <div className="bg-muted/50 rounded p-1 text-center"><div className="text-muted-foreground">Plt</div><div className="font-mono text-foreground">{selection.pallets}</div></div>
+                            </div>
+                          )}
                         </div>
                       )}
                     </div>
