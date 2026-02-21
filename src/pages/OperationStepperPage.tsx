@@ -155,7 +155,8 @@ export default function OperationStepperPage() {
   const [clientPhone, setClientPhone] = useState('');
   const [clientIE, setClientIE] = useState('');
   const [deliveryAddress, setDeliveryAddress] = useState('');
-  const [segment, setSegment] = useState<ChannelSegment>('distribuidor');
+  const [segment, setSegment] = useState<string>('');
+  const [channelEnum, setChannelEnum] = useState<ChannelSegment>('distribuidor');
   const [area, setArea] = useState(500);
   const [quantityMode, setQuantityMode] = useState<'dose' | 'livre'>('dose'); // dose/ha or free quantity
   const [freeQuantities, setFreeQuantities] = useState<Map<string, number>>(new Map());
@@ -194,7 +195,8 @@ export default function OperationStepperPage() {
       setClientDocument(existingOp.client_document || '');
       setClientCity(existingOp.city || '');
       setClientState(existingOp.state || '');
-      setSegment((existingOp.channel || 'distribuidor') as ChannelSegment);
+      setSegment(existingOp.channel || '');
+      setChannelEnum((existingOp.channel || 'distribuidor') as ChannelSegment);
       setArea(existingOp.area_hectares || 500);
       if (existingOp.commodity) setSelectedCommodity(existingOp.commodity);
       if (existingOp.due_months) setDueMonths(existingOp.due_months);
@@ -299,8 +301,22 @@ export default function OperationStepperPage() {
   const segmentOptions = useMemo(() => {
     if (campaignSegments?.length) return campaignSegments.filter(s => s.active).map(s => ({ value: s.segment_name, label: s.segment_name }));
     if (campaign?.margins?.length) return campaign.margins.map(m => ({ value: m.segment, label: m.segment }));
-    return [];
+    return [{ value: 'direto', label: 'Direto' }, { value: 'distribuidor', label: 'Distribuidor' }, { value: 'cooperativa', label: 'Cooperativa' }];
   }, [campaignSegments, campaign]);
+
+  // Derive the DB channel_segment enum from campaign target
+  const deriveChannelEnum = (target?: string): ChannelSegment => {
+    if (!target) return 'distribuidor';
+    if (target.includes('diret')) return 'direto';
+    if (target.includes('distribuidor') || target.includes('canal')) return 'distribuidor';
+    return 'distribuidor';
+  };
+
+  useEffect(() => {
+    if (rawCampaign?.target && !operationId) {
+      setChannelEnum(deriveChannelEnum(rawCampaign.target));
+    }
+  }, [rawCampaign?.target, operationId]);
 
   // ─── Eligible states & cities from campaign ───
   const allMunicipios = useMemo(() => getAllMunicipios(), []);
@@ -329,7 +345,7 @@ export default function OperationStepperPage() {
     return checkEligibility(campaign, {
       state: clientState || undefined,
       city: clientCity || undefined,
-      segment,
+      segment: segment as ChannelSegment || channelEnum,
       clientDocument: clientDocument || undefined,
       clientType,
       campaignClientTypes: (rawCampaign as any)?.client_type || [],
@@ -398,7 +414,7 @@ export default function OperationStepperPage() {
 
   const pricingResults = useMemo(() => {
     if (!campaign) return [];
-    return selections.map(sel => decomposePricing(sel.product, campaign, segment, dueMonths, sel.roundedQuantity, { paymentMethodMarkup, segmentAdjustmentPercent }));
+    return selections.map(sel => decomposePricing(sel.product, campaign, (segment || channelEnum) as ChannelSegment, dueMonths, sel.roundedQuantity, { paymentMethodMarkup, segmentAdjustmentPercent }));
   }, [selections, segment, dueMonths, campaign, paymentMethodMarkup, segmentAdjustmentPercent]);
 
   const grossToNet = useMemo(() => calculateGrossToNet(pricingResults, comboActivations, 0, {
@@ -555,7 +571,7 @@ export default function OperationStepperPage() {
       if (isNewOperation) {
         const op = await createOperation.mutateAsync({
           campaign_id: selectedCampaignId, user_id: user.id, client_name: clientName || 'Sem nome',
-          client_document: clientDocument || undefined, channel: segment, city: clientCity || undefined,
+          client_document: clientDocument || undefined, channel: channelEnum, city: clientCity || undefined,
           state: clientState || undefined, due_months: dueMonths, area_hectares: area,
           gross_revenue: grossToNet.grossRevenue, combo_discount: grossToNet.comboDiscount,
           net_revenue: grossToNet.netRevenue, financial_revenue: grossToNet.financialRevenue,
@@ -573,7 +589,7 @@ export default function OperationStepperPage() {
       } else {
         await updateOperation.mutateAsync({
           id: opId!, client_name: clientName, client_document: clientDocument || undefined,
-          channel: segment, city: clientCity, state: clientState, due_months: dueMonths,
+          channel: channelEnum, city: clientCity, state: clientState, due_months: dueMonths,
           area_hectares: area, gross_revenue: grossToNet.grossRevenue, combo_discount: grossToNet.comboDiscount,
           net_revenue: grossToNet.netRevenue, financial_revenue: grossToNet.financialRevenue,
           distributor_margin: grossToNet.distributorMargin, commodity: selectedCommodity as any,
@@ -590,7 +606,7 @@ export default function OperationStepperPage() {
         campaign: campaign!, rawCampaign, selections, pricingResults,
         comboActivations, comboDefinitions: combos, eligibility: eligibility!,
         grossToNet, consumptionLedger: comboCascade.consumptionLedger,
-        orderContext: { clientName, clientDocument, channel: segment, state: clientState, city: clientCity, areaHectares: area, dueMonths, commodity: selectedCommodity },
+        orderContext: { clientName, clientDocument, channel: channelEnum, state: clientState, city: clientCity, areaHectares: area, dueMonths, commodity: selectedCommodity },
         commodityData: {
           type: selectedCommodity, exchange: pricing.exchange, contract: pricing.contract,
           exchangePrice: pricing.exchangePrice, exchangeRateBolsa: pricing.exchangeRateBolsa,
@@ -758,7 +774,7 @@ export default function OperationStepperPage() {
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div className="glass-card p-4">
                   <label className="stat-label">Canal</label>
-                  <Select value={segment} onValueChange={v => setSegment(v as ChannelSegment)}>
+                  <Select value={segment} onValueChange={v => setSegment(v)}>
                     <SelectTrigger className="mt-1 bg-muted border-border text-foreground"><SelectValue /></SelectTrigger>
                     <SelectContent>{segmentOptions.map(o => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}</SelectContent>
                   </Select>
@@ -860,7 +876,7 @@ export default function OperationStepperPage() {
                   const dose = selectedProducts.get(product.id) ?? product.dosePerHectare;
                   const selection = selections.find(s => s.productId === product.id);
                   // Normalized price for display (always in BRL)
-                  const displayPrice = campaign ? normalizePrice(product, campaign, segment, dueMonths, { paymentMethodMarkup, segmentAdjustmentPercent }) : product.pricePerUnit;
+                  const displayPrice = campaign ? normalizePrice(product, campaign, (segment || channelEnum) as ChannelSegment, dueMonths, { paymentMethodMarkup, segmentAdjustmentPercent }) : product.pricePerUnit;
                   return (
                     <div key={product.id} className={`glass-card p-4 cursor-pointer transition-all ${isSelected ? 'glow-border' : 'hover:border-muted-foreground/30'}`} onClick={() => !isSelected && toggleProduct(product.id)}>
                       <div className="flex items-center justify-between mb-1">
