@@ -863,7 +863,7 @@ export default function OperationStepperPage() {
               {ivp < 1 && (
                 <div className="text-xs text-warning bg-warning/10 border border-warning/20 rounded px-3 py-1.5">
                   <AlertTriangle className="w-3.5 h-3.5 inline mr-1" />
-                  Contrato "A Fixar" — IVP aplicado: {(ivp * 100).toFixed(0)}% (haircut de {((1 - ivp) * 100).toFixed(0)}% por risco de preço)
+                  Contrato "A Fixar" — fator de ajuste: {(ivp * 100).toFixed(0)}% (desconto de {((1 - ivp) * 100).toFixed(0)}% por risco de variação de preço)
                 </div>
               )}
               {buyerFee > 0 && (
@@ -906,9 +906,9 @@ export default function OperationStepperPage() {
                 <div className="space-y-4">
                   {/* PoE/PoL/PoD grouped checklist */}
                   {[
-                    { cat: 'poe', title: 'Prova de Existência (PoE)', icon: ShieldCheck, color: 'text-success' },
-                    { cat: 'pol', title: 'Prova de Liquidez (PoL)', icon: Lock, color: 'text-primary' },
-                    { cat: 'pod', title: 'Prova de Entrega (PoD)', icon: Check, color: 'text-info' },
+                    { cat: 'poe', title: 'Comprovação de Produção', icon: ShieldCheck, color: 'text-success' },
+                    { cat: 'pol', title: 'Comprovação de Contrato', icon: Lock, color: 'text-primary' },
+                    { cat: 'pod', title: 'Comprovação de Entrega', icon: Check, color: 'text-info' },
                     { cat: undefined, title: 'Outros Documentos', icon: FileText, color: 'text-muted-foreground' },
                   ].map(group => {
                     const docs = allDocTypes.filter(d => d.category === group.cat);
@@ -949,7 +949,7 @@ export default function OperationStepperPage() {
                     <h4 className="text-sm font-semibold text-foreground flex items-center gap-2 mb-3"><ShieldCheck className="w-4 h-4 text-primary" /> Cobertura de Garantias</h4>
                     <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-3">
                       <div>
-                        <div className="stat-label">Índice de Performance (IP)</div>
+                        <div className="stat-label">Índice de Cumprimento</div>
                         <div className="flex items-center gap-2 mt-1">
                           <Input type="number" value={performanceIndex} min={0} max={100} onChange={e => setPerformanceIndex(Math.min(100, Math.max(0, Number(e.target.value))))} className="h-8 w-20 bg-muted border-border font-mono text-xs text-foreground" />
                           <span className="text-xs text-muted-foreground">%</span>
@@ -971,7 +971,7 @@ export default function OperationStepperPage() {
                     <Progress value={performanceIndex} className="h-2 bg-muted" />
                     {performanceIndex < 80 && (
                       <div className="mt-2 text-xs text-warning bg-warning/10 border border-warning/20 rounded px-3 py-1.5">
-                        <AlertTriangle className="w-3.5 h-3.5 inline mr-1" /> IP abaixo de 80% — risco elevado de não entrega
+                        <AlertTriangle className="w-3.5 h-3.5 inline mr-1" /> Índice de Cumprimento abaixo de 80% — risco elevado de não entrega
                       </div>
                     )}
                   </div>
