@@ -20,6 +20,8 @@ export interface EligibilityInput {
   clientSegment?: string;
   /** Client document (CPF/CNPJ) */
   clientDocument?: string;
+  /** Client type: PF or PJ */
+  clientType?: 'PF' | 'PJ';
   /** Order gross amount in campaign currency */
   orderAmount?: number;
   /** Minimum order amount from campaign */
@@ -28,12 +30,15 @@ export interface EligibilityInput {
   whitelist?: string[];
   /** Whether campaign blocks ineligible clients */
   blockIneligible?: boolean;
+  /** Campaign allowed client types (from campaigns.client_type) */
+  campaignClientTypes?: string[];
 }
 
 export interface EligibilityResult {
   eligible: boolean;
   blocked: boolean; // hard block (blockIneligible && !eligible)
   flags: {
+    pf_pj_ok: boolean;
     geo_ok: boolean;
     state_ok: boolean;
     mesoregion_ok: boolean;
@@ -86,6 +91,13 @@ export function checkEligibility(
 ): EligibilityResult {
   const warnings: string[] = [];
 
+  // 0. PF/PJ check
+  const campaignTypes = input.campaignClientTypes || [];
+  const hasPfPjFilter = campaignTypes.length > 0;
+  const clientTypeLower = input.clientType?.toLowerCase();
+  const pf_pj_ok = !hasPfPjFilter || !clientTypeLower || campaignTypes.some(t => t.toLowerCase() === clientTypeLower);
+  if (!pf_pj_ok) warnings.push(`Tipo de cliente "${input.clientType}" não elegível para esta campanha`);
+
   // 1. Geo
   const geo = checkGeoEligibility(input, campaign.eligibility);
   warnings.push(...geo.warnings);
@@ -113,13 +125,14 @@ export function checkEligibility(
     input.whitelist!.some(w => w.replace(/\D/g, '') === input.clientDocument!.replace(/\D/g, ''));
   if (!whitelist_ok) warnings.push('Cliente não está na whitelist da campanha');
 
-  const eligible = geo.geo_ok && segment_ok && client_segment_ok && min_ok && whitelist_ok;
+  const eligible = pf_pj_ok && geo.geo_ok && segment_ok && client_segment_ok && min_ok && whitelist_ok;
   const blocked = !!(input.blockIneligible && !eligible);
 
   return {
     eligible,
     blocked,
     flags: {
+      pf_pj_ok,
       geo_ok: geo.geo_ok,
       state_ok: geo.state_ok,
       mesoregion_ok: geo.mesoregion_ok,

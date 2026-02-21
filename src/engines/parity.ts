@@ -7,7 +7,15 @@ import type { ParityResult, CommodityPricing, FreightReducer } from '@/types/bar
 export function calculateCommodityNetPrice(
   pricing: CommodityPricing,
   port: string,
-  freightReducer?: FreightReducer
+  freightReducer?: FreightReducer,
+  options?: {
+    /** Valorization bonus: nominal (R$/saca) or percent */
+    valorizationNominal?: number;
+    valorizationPercent?: number;
+    useValorizationPercent?: boolean;
+    /** Buyer fee as percent — reduces net price */
+    buyerFeePercent?: number;
+  }
 ): number {
   const bushelsPerTon = pricing.bushelsPerTon || 36.744;
   const pesoSacaKg = pricing.pesoSacaKg || 60;
@@ -24,15 +32,31 @@ export function calculateCommodityNetPrice(
   // Apply market security delta
   const afterMarketDelta = fobBrlPerTon * (1 - pricing.securityDeltaMarket / 100);
 
+  // Apply valorization (after basis, before freight — per plan recommendation)
+  let afterValorization = afterMarketDelta;
+  if (options?.useValorizationPercent && options.valorizationPercent) {
+    afterValorization *= (1 + options.valorizationPercent / 100);
+  }
+
   // Subtract freight (R$/ton). FreightReducer.totalReducer is R$/ton
   const freightCostPerTon = freightReducer?.totalReducer ?? 0;
-  const interiorPricePerTon = afterMarketDelta - freightCostPerTon;
+  const interiorPricePerTon = afterValorization - freightCostPerTon;
 
   // Apply freight security delta
   const netPricePerTon = interiorPricePerTon * (1 - pricing.securityDeltaFreight / 100);
 
   // BRL/ton → BRL/saca
-  const netPricePerSaca = netPricePerTon / sacasPerTon;
+  let netPricePerSaca = netPricePerTon / sacasPerTon;
+
+  // Apply nominal valorization (R$/saca)
+  if (!options?.useValorizationPercent && options?.valorizationNominal) {
+    netPricePerSaca += options.valorizationNominal;
+  }
+
+  // Apply buyer fee (reduces net price)
+  if (options?.buyerFeePercent && options.buyerFeePercent > 0) {
+    netPricePerSaca *= (1 - options.buyerFeePercent / 100);
+  }
 
   return Math.max(netPricePerSaca, 0.01);
 }
@@ -95,6 +119,7 @@ export function blackScholes(
   volatility: number,
   isCall: boolean = true
 ): number {
+  if (timeYears <= 0 || spotPrice <= 0 || strikePrice <= 0) return 0;
   const d1 = (Math.log(spotPrice / strikePrice) + (riskFreeRate + 0.5 * volatility * volatility) * timeYears) /
     (volatility * Math.sqrt(timeYears));
   const d2 = d1 - volatility * Math.sqrt(timeYears);

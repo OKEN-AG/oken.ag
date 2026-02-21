@@ -28,7 +28,7 @@ import {
   ChevronLeft, ChevronRight, Check, AlertCircle, MapPin, ShoppingCart,
   TrendingUp, Wheat, FileText, Save, Loader2, Plus, Minus, X, FileSearch,
   Train, ArrowRight, PenLine, ShieldCheck, Lock, CheckCircle, AlertTriangle, Clock,
-  Zap
+  Zap, Lightbulb
 } from 'lucide-react';
 
 // ─── Step definitions ───
@@ -60,6 +60,59 @@ const allDocTypes: { type: DocumentType; label: string }[] = [
   { type: 'certificado_aceite', label: 'Certificado de Aceite' },
 ];
 
+// ─── Combo recommendation logic ───
+function getComboRecommendations(
+  combos: any[],
+  selections: AgronomicSelection[],
+  products: Product[]
+): { productName: string; ref: string; action: string }[] {
+  const recs: { productName: string; ref: string; action: string }[] = [];
+  const selectedRefs = new Set(selections.map(s => (s.ref || '').toUpperCase().trim()));
+
+  for (const combo of combos) {
+    const missing = combo.products.filter((cp: any) => !selectedRefs.has((cp.ref || '').toUpperCase().trim()));
+    if (missing.length > 0 && missing.length <= 2) {
+      for (const mp of missing) {
+        const prod = products.find(p => (p.ref || '').toUpperCase() === (mp.ref || '').toUpperCase());
+        if (prod) {
+          recs.push({ productName: prod.name, ref: mp.ref, action: `Incluir ${prod.name} para ativar combo "${combo.name}" (+${combo.discountPercent}%)` });
+        }
+      }
+    }
+    // Check if dose is below minimum for selected products
+    for (const cp of combo.products) {
+      const sel = selections.find(s => (s.ref || '').toUpperCase().trim() === (cp.ref || '').toUpperCase().trim());
+      if (sel && sel.dosePerHectare < cp.minDosePerHa) {
+        recs.push({ productName: sel.product.name, ref: cp.ref, action: `Subir dose de ${sel.product.name} para ${cp.minDosePerHa}/ha (combo "${combo.name}")` });
+      }
+    }
+  }
+  // Deduplicate by ref
+  const seen = new Set<string>();
+  return recs.filter(r => { if (seen.has(r.ref)) return false; seen.add(r.ref); return true; }).slice(0, 3);
+}
+
+// ─── Due date precedence: municipio > mesorregiao > estado > default ───
+function getDueDatesWithPrecedence(
+  dueDates: any[],
+  clientCity?: string,
+  clientMesoregion?: string,
+  clientState?: string
+): any[] {
+  if (!dueDates?.length) return [];
+  // Try city first
+  const byCity = dueDates.filter(d => d.region_type === 'municipio' && d.region_value?.toLowerCase() === clientCity?.toLowerCase());
+  if (byCity.length > 0) return byCity;
+  // Try mesoregion
+  const byMeso = dueDates.filter(d => d.region_type === 'mesorregiao' && d.region_value?.toLowerCase() === clientMesoregion?.toLowerCase());
+  if (byMeso.length > 0) return byMeso;
+  // Try state
+  const byState = dueDates.filter(d => d.region_type === 'estado' && d.region_value?.toUpperCase() === clientState?.toUpperCase());
+  if (byState.length > 0) return byState;
+  // Default: all
+  return dueDates;
+}
+
 export default function OperationStepperPage() {
   const { id: operationId } = useParams();
   const [searchParams] = useSearchParams();
@@ -79,13 +132,18 @@ export default function OperationStepperPage() {
   // ─── Step state ───
   const [currentStep, setCurrentStep] = useState(0);
   const [selectedCampaignId, setSelectedCampaignId] = useState(initialCampaignId);
-  const { campaign, rawCampaign, products, combos, commodityPricing, rawCommodityPricing, freightReducers, deliveryLocations, isLoading: loadingData } = useCampaignData(selectedCampaignId || undefined);
+  const { campaign, rawCampaign, products, combos, commodityPricing, rawCommodityPricing, freightReducers, deliveryLocations, buyers, valorizations, dueDates, isLoading: loadingData } = useCampaignData(selectedCampaignId || undefined);
 
   // ─── Context step state ───
   const [clientName, setClientName] = useState('');
   const [clientDocument, setClientDocument] = useState('');
   const [clientCity, setClientCity] = useState('');
   const [clientState, setClientState] = useState('');
+  const [clientType, setClientType] = useState<'PF' | 'PJ'>('PJ');
+  const [clientEmail, setClientEmail] = useState('');
+  const [clientPhone, setClientPhone] = useState('');
+  const [clientIE, setClientIE] = useState('');
+  const [deliveryAddress, setDeliveryAddress] = useState('');
   const [segment, setSegment] = useState<ChannelSegment>('distribuidor');
   const [area, setArea] = useState(500);
 
@@ -104,6 +162,8 @@ export default function OperationStepperPage() {
   const [userPrice, setUserPrice] = useState(0);
   const [showInsurance, setShowInsurance] = useState(false);
   const [volatility, setVolatility] = useState(25);
+  const [selectedBuyerId, setSelectedBuyerId] = useState('');
+  const [counterpartyOther, setCounterpartyOther] = useState('');
 
   // ─── Mutations ───
   const createOperation = useCreateOperation();
@@ -144,15 +204,6 @@ export default function OperationStepperPage() {
   }, [activeCampaigns, selectedCampaignId]);
 
   // ─── Campaign sub-data ───
-  const { data: campaignDueDates } = useQuery({
-    queryKey: ['campaign-due-dates-sim', selectedCampaignId],
-    enabled: !!selectedCampaignId,
-    queryFn: async () => {
-      const { data } = await supabase.from('campaign_due_dates').select('*').eq('campaign_id', selectedCampaignId);
-      return data || [];
-    },
-  });
-
   const { data: campaignSegments } = useQuery({
     queryKey: ['campaign-segments-sim', selectedCampaignId],
     enabled: !!selectedCampaignId,
@@ -198,9 +249,13 @@ export default function OperationStepperPage() {
 
   const paymentMethodMarkup = selectedPM?.markup_percent || 0;
 
+  // Due dates with precedence
+  const filteredDueDates = useMemo(() => getDueDatesWithPrecedence(dueDates || [], clientCity, undefined, clientState), [dueDates, clientCity, clientState]);
+
   const dueDateOptions = useMemo(() => {
-    if (campaignDueDates?.length) {
-      const uniqueDates = [...new Set(campaignDueDates.map(d => d.due_date))].sort();
+    const dates = filteredDueDates.length ? filteredDueDates : (dueDates || []);
+    if (dates.length) {
+      const uniqueDates = [...new Set(dates.map((d: any) => d.due_date))].sort();
       return uniqueDates.map(d => {
         const date = new Date(d + 'T00:00:00');
         const diffDays = Math.max(Math.round((date.getTime() - Date.now()) / 86400000), 1);
@@ -208,7 +263,7 @@ export default function OperationStepperPage() {
       });
     }
     return [];
-  }, [campaignDueDates]);
+  }, [filteredDueDates, dueDates]);
 
   const segmentOptions = useMemo(() => {
     if (campaignSegments?.length) return campaignSegments.filter(s => s.active).map(s => ({ value: s.segment_name, label: s.segment_name }));
@@ -216,7 +271,7 @@ export default function OperationStepperPage() {
     return [];
   }, [campaignSegments, campaign]);
 
-  // ─── Eligibility ───
+  // ─── Eligibility (with PF/PJ) ───
   const eligibility = useMemo(() => {
     if (!campaign) return null;
     return checkEligibility(campaign, {
@@ -224,10 +279,12 @@ export default function OperationStepperPage() {
       city: clientCity || undefined,
       segment,
       clientDocument: clientDocument || undefined,
+      clientType,
+      campaignClientTypes: (rawCampaign as any)?.client_type || [],
       whitelist: clientWhitelist || [],
       blockIneligible: !!(rawCampaign as any)?.block_ineligible,
     });
-  }, [campaign, clientState, clientCity, segment, clientDocument, clientWhitelist, rawCampaign]);
+  }, [campaign, clientState, clientCity, segment, clientDocument, clientType, clientWhitelist, rawCampaign]);
 
   // ─── Product selection ───
   const toggleProduct = (productId: string) => {
@@ -262,6 +319,9 @@ export default function OperationStepperPage() {
   const complementaryDiscount = getComplementaryDiscount(comboActivations);
   const discountProgress = maxDiscount > 0 ? (activatedDiscount / maxDiscount) * 100 : 0;
 
+  // Combo recommendations
+  const comboRecommendations = useMemo(() => getComboRecommendations(combos, selections, products), [combos, selections, products]);
+
   const pricingResults = useMemo(() => {
     if (!campaign) return [];
     return selections.map(sel => decomposePricing(sel.product, campaign, segment, dueMonths, sel.roundedQuantity, { paymentMethodMarkup, segmentAdjustmentPercent }));
@@ -274,7 +334,14 @@ export default function OperationStepperPage() {
     globalIncentive3: rawCampaign?.global_incentive_3 || 0,
   }, selections), [pricingResults, comboActivations, rawCampaign, selections]);
 
-  // ─── Parity ───
+  // ─── Parity (with valorization + buyer fee) ───
+  const selectedBuyer = useMemo(() => buyers?.find((b: any) => b.id === selectedBuyerId), [buyers, selectedBuyerId]);
+  const buyerFee = selectedBuyer?.fee || 0;
+
+  const selectedValorization = useMemo(() => {
+    return valorizations?.find((v: any) => v.commodity?.toLowerCase() === selectedCommodity?.toLowerCase());
+  }, [valorizations, selectedCommodity]);
+
   const selectedCommodityPricing: CommodityPricing | null = useMemo(() => {
     if (!rawCommodityPricing?.length) return commodityPricing;
     const match = rawCommodityPricing.find((cp: any) => cp.commodity === selectedCommodity);
@@ -297,18 +364,43 @@ export default function OperationStepperPage() {
   useEffect(() => { if (freightReducers.length && !freightOrigin) setFreightOrigin(freightReducers[0]?.origin || ''); }, [freightReducers, freightOrigin]);
   useEffect(() => { if (pricing.volatility) setVolatility(pricing.volatility); }, [pricing.volatility]);
 
-  const freightReducer = freightReducers.find(f => f.origin === freightOrigin);
-  const commodityNetPrice = useMemo(() => calculateCommodityNetPrice(pricing, port, freightReducer), [pricing, port, freightReducer]);
+  // Freight with fallback
+  const freightReducer = useMemo(() => {
+    const direct = freightReducers.find(f => f.origin === freightOrigin);
+    if (direct) return direct;
+    // Fallback: use default_freight_cost_per_km from campaign
+    const defaultCost = (rawCampaign as any)?.default_freight_cost_per_km;
+    if (defaultCost && defaultCost > 0 && freightOrigin) {
+      // Estimate: no specific route, use a nominal distance-based cost (0 distance = 0 cost)
+      return { origin: freightOrigin, destination: port || '', distanceKm: 0, costPerKm: defaultCost, adjustment: 0, totalReducer: 0 } as FreightReducer;
+    }
+    return undefined;
+  }, [freightReducers, freightOrigin, rawCampaign, port]);
+
+  const commodityNetPrice = useMemo(() => calculateCommodityNetPrice(pricing, port, freightReducer, {
+    valorizationNominal: selectedValorization?.nominal_value || 0,
+    valorizationPercent: selectedValorization?.percent_value || 0,
+    useValorizationPercent: selectedValorization?.use_percent || false,
+    buyerFeePercent: buyerFee,
+  }), [pricing, port, freightReducer, selectedValorization, buyerFee]);
+
   const parity = useMemo(() => calculateParity(grossToNet.netRevenue, commodityNetPrice, hasContract ? userPrice : undefined, grossToNet.grossRevenue), [grossToNet, commodityNetPrice, hasContract, userPrice]);
 
+  // Insurance with commodity config params
   const insurancePremium = useMemo(() => {
     if (!showInsurance) return null;
     const spotPrice = pricing.exchangePrice * pricing.exchangeRateBolsa;
     if (spotPrice <= 0) return null;
-    const premium = blackScholes(spotPrice, spotPrice * 1.05, 0.5, 0.1175, volatility / 100, true);
+    const vol = (pricing.volatility || volatility) / 100;
+    const rfr = pricing.riskFreeRate || 0.1175;
+    const strikePercent = (pricing as any).strikePercent || 105;
+    const strike = spotPrice * (strikePercent / 100);
+    const maturityDays = (pricing as any).optionMaturityDays || 180;
+    const timeYears = maturityDays / 365;
+    const premium = blackScholes(spotPrice, strike, timeYears, rfr, vol, true);
     const premiumPerSaca = commodityNetPrice > 0 ? premium / commodityNetPrice : 0;
     const additionalSacas = Math.ceil(premiumPerSaca * parity.quantitySacas);
-    return { premiumPerSaca: premium, additionalSacas, totalSacas: parity.quantitySacas + additionalSacas };
+    return { premiumPerSaca: premium, additionalSacas, totalSacas: parity.quantitySacas + additionalSacas, volatility: vol * 100 };
   }, [showInsurance, volatility, parity, commodityNetPrice, pricing]);
 
   // ─── Formalization ───
@@ -364,6 +456,8 @@ export default function OperationStepperPage() {
     if (!user || !selectedCampaignId || selections.length === 0) return;
     if (eligibility?.blocked) { toast.error('Operação bloqueada por elegibilidade'); return; }
 
+    const counterparty = selectedBuyerId === '__other__' ? counterpartyOther : (selectedBuyer?.buyer_name || '');
+
     try {
       let opId = operationId;
 
@@ -375,6 +469,7 @@ export default function OperationStepperPage() {
           gross_revenue: grossToNet.grossRevenue, combo_discount: grossToNet.comboDiscount,
           net_revenue: grossToNet.netRevenue, financial_revenue: grossToNet.financialRevenue,
           distributor_margin: grossToNet.distributorMargin, commodity: selectedCommodity as any,
+          counterparty,
           status: 'simulacao' as const,
         });
         opId = op.id;
@@ -394,17 +489,28 @@ export default function OperationStepperPage() {
           total_sacas: insurancePremium?.totalSacas ?? parity.quantitySacas,
           commodity_price: parity.commodityPricePerUnit, reference_price: parity.referencePrice,
           has_existing_contract: hasContract, insurance_premium_sacas: insurancePremium?.additionalSacas ?? 0,
+          counterparty,
           payment_method: 'barter' as const,
         });
       }
 
-      // Save snapshot
+      // Save snapshot with valorization data
       const snapshot = buildSnapshot({
         campaign: campaign!, rawCampaign, selections, pricingResults,
         comboActivations, comboDefinitions: combos, eligibility: eligibility!,
         grossToNet, consumptionLedger: comboCascade.consumptionLedger,
         orderContext: { clientName, clientDocument, channel: segment, state: clientState, city: clientCity, areaHectares: area, dueMonths, commodity: selectedCommodity },
-        parity, insurance: insurancePremium ? { premiumPerSaca: insurancePremium.premiumPerSaca, additionalSacas: insurancePremium.additionalSacas, totalSacas: insurancePremium.totalSacas, volatility } : undefined,
+        commodityData: {
+          type: selectedCommodity, exchange: pricing.exchange, contract: pricing.contract,
+          exchangePrice: pricing.exchangePrice, exchangeRateBolsa: pricing.exchangeRateBolsa,
+          basisPort: port, basisValue: pricing.basisByPort[port],
+          freightOrigin, freightReducerPerTon: freightReducer?.totalReducer,
+          netPricePerSaca: commodityNetPrice,
+          valorizationBonus: selectedValorization?.use_percent
+            ? (selectedValorization.percent_value || 0)
+            : (selectedValorization?.nominal_value || 0),
+        },
+        parity, insurance: insurancePremium ? { premiumPerSaca: insurancePremium.premiumPerSaca, additionalSacas: insurancePremium.additionalSacas, totalSacas: insurancePremium.totalSacas, volatility: insurancePremium.volatility } : undefined,
       });
 
       await supabase.from('order_pricing_snapshots').insert({ operation_id: opId!, snapshot: snapshot as any, snapshot_type: isNewOperation ? 'simulation' : 'order', created_by: user.id });
@@ -506,12 +612,42 @@ export default function OperationStepperPage() {
                   <Input value={clientDocument} onChange={e => setClientDocument(e.target.value)} placeholder="Documento" className="mt-1 bg-muted border-border text-foreground" />
                 </div>
                 <div className="glass-card p-4">
+                  <label className="stat-label">Tipo</label>
+                  <Select value={clientType} onValueChange={v => setClientType(v as 'PF' | 'PJ')}>
+                    <SelectTrigger className="mt-1 bg-muted border-border text-foreground"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="PF">Pessoa Física</SelectItem>
+                      <SelectItem value="PJ">Pessoa Jurídica</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="glass-card p-4">
+                  <label className="stat-label">Inscrição Estadual</label>
+                  <Input value={clientIE} onChange={e => setClientIE(e.target.value)} placeholder="IE" className="mt-1 bg-muted border-border text-foreground" />
+                </div>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                <div className="glass-card p-4">
                   <label className="stat-label">Cidade</label>
                   <Input value={clientCity} onChange={e => setClientCity(e.target.value)} className="mt-1 bg-muted border-border text-foreground" />
                 </div>
                 <div className="glass-card p-4">
                   <label className="stat-label">Estado (UF)</label>
                   <Input value={clientState} onChange={e => setClientState(e.target.value.toUpperCase())} maxLength={2} className="mt-1 bg-muted border-border text-foreground" />
+                </div>
+                <div className="glass-card p-4">
+                  <label className="stat-label">E-mail</label>
+                  <Input type="email" value={clientEmail} onChange={e => setClientEmail(e.target.value)} placeholder="email@..." className="mt-1 bg-muted border-border text-foreground" />
+                </div>
+                <div className="glass-card p-4">
+                  <label className="stat-label">Telefone</label>
+                  <Input value={clientPhone} onChange={e => setClientPhone(e.target.value)} placeholder="(xx) xxxxx-xxxx" className="mt-1 bg-muted border-border text-foreground" />
+                </div>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="glass-card p-4">
+                  <label className="stat-label">Endereço de Entrega</label>
+                  <Input value={deliveryAddress} onChange={e => setDeliveryAddress(e.target.value)} placeholder="Rua, nº, bairro, CEP" className="mt-1 bg-muted border-border text-foreground" />
                 </div>
               </div>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -566,6 +702,16 @@ export default function OperationStepperPage() {
                   <div className="flex flex-wrap gap-1.5 mt-2">
                     {comboActivations.map(ca => <span key={ca.comboId} className={`engine-badge text-xs ${ca.applied ? 'bg-success/10 text-success' : 'bg-muted text-muted-foreground'}`}>{ca.comboName} ({ca.discountPercent}%) {ca.applied ? '✓' : ''}</span>)}
                   </div>
+                  {/* Combo recommendations */}
+                  {comboRecommendations.length > 0 && (
+                    <div className="mt-3 space-y-1">
+                      {comboRecommendations.map((rec, i) => (
+                        <div key={i} className="flex items-center gap-2 text-xs text-info bg-info/10 border border-info/20 rounded-md px-3 py-1.5">
+                          <Lightbulb className="w-3.5 h-3.5 shrink-0" /> {rec.action}
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               )}
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
@@ -602,6 +748,7 @@ export default function OperationStepperPage() {
           )}
 
           {/* ═══ SIMULATION STEP ═══ */}
+          {/* Discount never shown per product — only total in footer */}
           {currentStepDef.id === 'simulation' && selections.length > 0 && (
             <div className="glass-card p-5 space-y-4">
               <h2 className="text-sm font-semibold text-foreground flex items-center gap-2"><ShoppingCart className="w-4 h-4 text-primary" /> Breakdown da Simulação</h2>
@@ -622,7 +769,7 @@ export default function OperationStepperPage() {
               </div>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3 pt-3 border-t border-border">
                 <div><div className="stat-label">Receita Bruta</div><div className="font-mono font-bold text-foreground">{formatCurrency(grossToNet.grossRevenue)}</div></div>
-                <div><div className="stat-label">Desc. Combo</div><div className="font-mono font-bold text-warning">-{formatCurrency(grossToNet.comboDiscount)}</div></div>
+                <div><div className="stat-label">Desconto Total</div><div className="font-mono font-bold text-warning">-{formatCurrency(grossToNet.comboDiscount + (grossToNet.directIncentiveDiscount || 0))}</div></div>
                 <div><div className="stat-label">Margem Canal</div><div className="font-mono text-muted-foreground">{formatCurrency(grossToNet.distributorMargin)}</div></div>
                 <div><div className="stat-label">Total a Pagar</div><div className="font-mono font-bold text-xl text-success">{formatCurrency(grossToNet.netRevenue)}</div></div>
               </div>
@@ -647,10 +794,10 @@ export default function OperationStepperPage() {
             </div>
           )}
 
-          {/* ═══ BARTER STEP ═══ */}
+          {/* ═══ BARTER STEP (with buyer select + valorization) ═══ */}
           {currentStepDef.id === 'barter' && (
             <div className="space-y-4">
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                 <div className="glass-card p-4">
                   <label className="stat-label">Porto</label>
                   <Select value={port} onValueChange={setPort}>
@@ -666,6 +813,19 @@ export default function OperationStepperPage() {
                   </Select>
                 </div>
                 <div className="glass-card p-4">
+                  <label className="stat-label">Comprador</label>
+                  <Select value={selectedBuyerId} onValueChange={setSelectedBuyerId}>
+                    <SelectTrigger className="mt-1 bg-muted border-border text-foreground"><SelectValue placeholder="Selecione..." /></SelectTrigger>
+                    <SelectContent>
+                      {(buyers || []).map((b: any) => <SelectItem key={b.id} value={b.id}>{b.buyer_name} {b.fee ? `(fee: ${b.fee}%)` : ''}</SelectItem>)}
+                      <SelectItem value="__other__">Outro (informar)</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  {selectedBuyerId === '__other__' && (
+                    <Input value={counterpartyOther} onChange={e => setCounterpartyOther(e.target.value)} placeholder="Nome do comprador" className="mt-2 bg-muted border-border text-foreground text-xs" />
+                  )}
+                </div>
+                <div className="glass-card p-4">
                   <div className="flex items-center gap-2 mb-2">
                     <Switch checked={hasContract} onCheckedChange={setHasContract} />
                     <Label className="text-xs">Contrato existente</Label>
@@ -673,12 +833,21 @@ export default function OperationStepperPage() {
                   {hasContract && <Input type="number" value={userPrice} onChange={e => setUserPrice(Number(e.target.value))} placeholder="Preço/sc" className="bg-muted border-border font-mono text-foreground" />}
                 </div>
               </div>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
                 <div className="glass-card p-4"><div className="stat-label">Preço Net/sc</div><div className="font-mono text-lg font-bold text-foreground">{formatCurrency(commodityNetPrice)}</div></div>
                 <div className="glass-card p-4"><div className="stat-label">Sacas</div><div className="font-mono text-lg font-bold text-success">{parity.quantitySacas.toLocaleString('pt-BR')}</div></div>
                 <div className="glass-card p-4"><div className="stat-label">Preço Valorizado</div><div className="font-mono text-lg font-bold text-info">{formatCurrency(parity.referencePrice)}</div></div>
                 <div className="glass-card p-4"><div className="stat-label">Valorização</div><div className={`font-mono text-lg font-bold ${parity.valorization >= 0 ? 'text-success' : 'text-destructive'}`}>{parity.valorization.toFixed(1)}%</div></div>
+                <div className="glass-card p-4"><div className="stat-label">Diferença</div><div className={`font-mono text-lg font-bold ${parity.valorization >= 0 ? 'text-success' : 'text-destructive'}`}>{formatCurrency(parity.referencePrice - parity.commodityPricePerUnit)}/sc</div></div>
               </div>
+              {buyerFee > 0 && (
+                <div className="text-xs text-muted-foreground bg-muted/50 rounded px-3 py-1.5">Fee do comprador: {buyerFee}% — já aplicado no preço net/sc</div>
+              )}
+              {selectedValorization && (
+                <div className="text-xs text-muted-foreground bg-muted/50 rounded px-3 py-1.5">
+                  Valorização: {selectedValorization.use_percent ? `${selectedValorization.percent_value}%` : `R$ ${selectedValorization.nominal_value}/sc`} — já aplicada
+                </div>
+              )}
               <div className="glass-card p-4">
                 <div className="flex items-center gap-2 mb-2"><Switch checked={showInsurance} onCheckedChange={setShowInsurance} /><Label className="text-xs">Seguro de Mercado (Opção)</Label></div>
                 {showInsurance && insurancePremium && (
@@ -743,7 +912,7 @@ export default function OperationStepperPage() {
                   <div><div className="stat-label">Área</div><div className="font-mono text-foreground">{area} ha</div></div>
                   <div><div className="stat-label">Produtos</div><div className="font-mono text-foreground">{selections.length}</div></div>
                   <div><div className="stat-label">Receita Bruta</div><div className="font-mono font-bold text-foreground">{formatCurrency(grossToNet.grossRevenue)}</div></div>
-                  <div><div className="stat-label">Desconto</div><div className="font-mono text-warning">-{formatCurrency(grossToNet.comboDiscount)}</div></div>
+                  <div><div className="stat-label">Desconto Total</div><div className="font-mono text-warning">-{formatCurrency(grossToNet.comboDiscount + (grossToNet.directIncentiveDiscount || 0))}</div></div>
                   <div><div className="stat-label">Total a Pagar</div><div className="font-mono font-bold text-success text-xl">{formatCurrency(grossToNet.netRevenue)}</div></div>
                   <div><div className="stat-label">Sacas</div><div className="font-mono font-bold text-foreground">{(insurancePremium?.totalSacas ?? parity.quantitySacas).toLocaleString('pt-BR')}</div></div>
                   <div><div className="stat-label">Valorização</div><div className={`font-mono font-bold ${parity.valorization >= 0 ? 'text-success' : 'text-destructive'}`}>{parity.valorization.toFixed(1)}%</div></div>
