@@ -42,7 +42,13 @@ export function useCampaignData(campaignId?: string) {
         .select('*, product:products(*)')
         .eq('campaign_id', campaignId!);
       if (error) throw error;
-      return (data || []).map((cp: any) => cp.product).filter(Boolean);
+      // Deduplicate by product_id (safety net)
+      const seen = new Set<string>();
+      return (data || []).map((cp: any) => cp.product).filter((p: any) => {
+        if (!p || seen.has(p.id)) return false;
+        seen.add(p.id);
+        return true;
+      });
     },
   });
 
