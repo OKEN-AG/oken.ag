@@ -461,7 +461,7 @@ export default function OperationStepperPage() {
     const fromStatus = existingOp?.status || 'simulacao';
     await supabase.from('operations').update({ status: nextStatus }).eq('id', operationId);
     // C1: Write to operation_status_history for formal audit trail
-    await (supabase as any).from('operation_status_history').insert({
+    await supabase.from('operation_status_history').insert({
       operation_id: operationId, from_status: fromStatus, to_status: nextStatus, changed_by: user.id,
     });
     await supabase.from('operation_logs').insert({ operation_id: operationId, user_id: user.id, action: `status_avancado_${nextStatus}`, details: { from: fromStatus, to: nextStatus } });
