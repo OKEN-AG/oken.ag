@@ -8,10 +8,11 @@ import type { Product, AgronomicSelection } from '@/types/barter';
 export function calculateAgronomicSelection(
   product: Product,
   areaHectares: number,
-  dosePerHectare?: number
+  dosePerHectare?: number,
+  overrideQuantity?: number
 ): AgronomicSelection {
   const dose = dosePerHectare ?? product.dosePerHectare;
-  const rawQuantity = areaHectares * dose;
+  const rawQuantity = overrideQuantity ?? (areaHectares * dose);
 
   const packageSizes = [...(product.packageSizes || [])].filter(s => s > 0);
   if (packageSizes.length === 0) packageSizes.push(1);
