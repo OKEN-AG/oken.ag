@@ -438,6 +438,15 @@ export default function OperationStepperPage() {
       } else if (action === 'sign' && existing) {
         await supabase.from('operation_documents').update({ status: 'assinado', signed_at: new Date().toISOString() }).eq('id', existing.id);
       } else if (action === 'validate' && existing) {
+        // F2: Cessão só pode ser validada com aceite do comprador (counterparty_notified)
+        if (docType === 'cessao_credito') {
+          const docData = (existing as any).data || {};
+          if (!docData.counterparty_notified) {
+            toast.error('A cessão de crédito só pode ser validada após notificação/aceite do comprador. Registre a notificação primeiro.');
+            setEmitting(null);
+            return;
+          }
+        }
         await supabase.from('operation_documents').update({ status: 'validado', validated_at: new Date().toISOString() } as any).eq('id', existing.id);
       }
       await supabase.from('operation_logs').insert({ operation_id: operationId, user_id: user.id, action: `documento_${action}_${docType}`, details: { doc_type: docType } });
@@ -449,8 +458,13 @@ export default function OperationStepperPage() {
 
   const handleAdvanceStatus = async () => {
     if (!operationId || !nextStatus || !user) return;
+    const fromStatus = existingOp?.status || 'simulacao';
     await supabase.from('operations').update({ status: nextStatus }).eq('id', operationId);
-    await supabase.from('operation_logs').insert({ operation_id: operationId, user_id: user.id, action: `status_avancado_${nextStatus}`, details: { to: nextStatus } });
+    // C1: Write to operation_status_history for formal audit trail
+    await (supabase as any).from('operation_status_history').insert({
+      operation_id: operationId, from_status: fromStatus, to_status: nextStatus, changed_by: user.id,
+    });
+    await supabase.from('operation_logs').insert({ operation_id: operationId, user_id: user.id, action: `status_avancado_${nextStatus}`, details: { from: fromStatus, to: nextStatus } });
     queryClient.invalidateQueries({ queryKey: ['operations'] });
     refetchDocs();
     toast.success(`Avançado para: ${nextStatus}`);
@@ -701,6 +715,47 @@ export default function OperationStepperPage() {
           {/* ═══ ORDER STEP ═══ */}
           {currentStepDef.id === 'order' && (
             <div className="space-y-4">
+              {/* B1: Quick Pick — combos pré-calculados em sacas */}
+              {combos.length > 0 && commodityNetPrice > 0 && (
+                <div className="glass-card p-4">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-sm font-semibold text-foreground flex items-center gap-2"><Zap className="w-4 h-4 text-warning" /> Seleção Rápida (Combos em Sacas)</span>
+                  </div>
+                  <p className="text-xs text-muted-foreground mb-3">Selecione um combo para auto-preencher os produtos com doses mínimas para a área de {area} ha.</p>
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2">
+                    {combos.map(combo => {
+                      // Calculate combo value in sacks: sum product prices at min dose * area, then divide by commodity net price
+                      const comboValue = combo.products.reduce((sum: number, cp: any) => {
+                        const prod = products.find(p => (p.ref || '').toUpperCase() === (cp.ref || '').toUpperCase());
+                        if (!prod || !campaign) return sum;
+                        const qty = cp.minDosePerHa * area;
+                        const unitBoxes = prod.unitsPerBox || 1;
+                        const rounded = Math.ceil(qty / unitBoxes) * unitBoxes;
+                        const pr = decomposePricing(prod, campaign, segment, dueMonths, rounded, { paymentMethodMarkup, segmentAdjustmentPercent });
+                        return sum + pr.subtotal;
+                      }, 0);
+                      const discountedValue = comboValue * (1 - combo.discountPercent / 100);
+                      const sacas = commodityNetPrice > 0 ? Math.ceil(discountedValue / commodityNetPrice) : 0;
+                      return (
+                        <button key={combo.id} onClick={() => {
+                          // Auto-fill products with min doses from this combo
+                          const next = new Map(selectedProducts);
+                          for (const cp of combo.products) {
+                            const prod = products.find(p => (p.ref || '').toUpperCase() === (cp.ref || '').toUpperCase());
+                            if (prod) next.set(prod.id, cp.minDosePerHa);
+                          }
+                          setSelectedProducts(next);
+                          toast.success(`Combo "${combo.name}" aplicado — produtos preenchidos`);
+                        }} className="text-left p-3 rounded-md border border-border hover:border-primary/50 hover:bg-primary/5 transition-colors">
+                          <div className="text-sm font-medium text-foreground">{combo.name}</div>
+                          <div className="text-xs text-muted-foreground">{combo.products.length} produtos • {combo.discountPercent}% desc.</div>
+                          <div className="font-mono text-lg font-bold text-success mt-1">{sacas.toLocaleString('pt-BR')} sc</div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
               {combos.length > 0 && (
                 <div className="glass-card p-4">
                   <div className="flex items-center justify-between mb-2">
@@ -931,10 +986,33 @@ export default function OperationStepperPage() {
                                   <span className="text-sm font-semibold text-foreground">{doc.label}</span>
                                   <span className={`engine-badge ${config.bg} ${config.color} text-xs`}><Icon className="w-3 h-3 inline mr-1" />{config.label}</span>
                                 </div>
-                                <div className="flex gap-2">
+                                <div className="flex gap-2 flex-wrap">
                                   {status === 'pendente' && <Button size="sm" variant="outline" className="flex-1 text-xs" disabled={emitting === doc.type} onClick={() => handleDocAction(doc.type, 'emit')}>{emitting === doc.type ? '...' : 'Emitir'}</Button>}
                                   {status === 'emitido' && <Button size="sm" variant="outline" className="flex-1 text-xs" disabled={emitting === doc.type} onClick={() => handleDocAction(doc.type, 'sign')}><PenLine className="w-3 h-3 mr-1" />Assinar</Button>}
                                   {status === 'assinado' && <Button size="sm" variant="outline" className="flex-1 text-xs" disabled={emitting === doc.type} onClick={() => handleDocAction(doc.type, 'validate')}><ShieldCheck className="w-3 h-3 mr-1" />Validar</Button>}
+                                  {/* F1: Cessão notification controls */}
+                                  {doc.type === 'cessao_credito' && existing && (status === 'emitido' || status === 'assinado') && (
+                                    (() => {
+                                      const docData = (existing as any).data || {};
+                                      const notified = docData.counterparty_notified;
+                                      return notified ? (
+                                        <span className="text-xs text-success flex items-center gap-1"><CheckCircle className="w-3 h-3" />Comprador notificado ({docData.notification_method || 'notificação'})</span>
+                                      ) : (
+                                        <div className="flex gap-1 w-full mt-1">
+                                          <Button size="sm" variant="outline" className="flex-1 text-xs border-warning text-warning" onClick={async () => {
+                                            await supabase.from('operation_documents').update({ data: { ...docData, counterparty_notified: true, notification_method: 'notificacao', notified_at: new Date().toISOString() } } as any).eq('id', existing.id);
+                                            toast.success('Comprador notificado (notificação simples)');
+                                            refetchDocs();
+                                          }}>Notificar</Button>
+                                          <Button size="sm" variant="outline" className="flex-1 text-xs border-primary text-primary" onClick={async () => {
+                                            await supabase.from('operation_documents').update({ data: { ...docData, counterparty_notified: true, cession_accepted: true, notification_method: 'tripartite', notified_at: new Date().toISOString() } } as any).eq('id', existing.id);
+                                            toast.success('Cessão tripartite registrada');
+                                            refetchDocs();
+                                          }}>Tripartite</Button>
+                                        </div>
+                                      );
+                                    })()
+                                  )}
                                 </div>
                               </div>
                             );

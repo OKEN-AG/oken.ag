@@ -295,7 +295,26 @@ export default function CampaignFormPage() {
         </TabsList>
 
         <TabsContent value="geral" className="mt-4">
-          <GeneralTab form={form} onFieldChange={onFieldChange} clients={clients} onClientsChange={setClients} />
+          <GeneralTab
+            form={form}
+            onFieldChange={onFieldChange}
+            clients={clients}
+            onClientsChange={setClients}
+            onValidateActivation={() => {
+              const errors: string[] = [];
+              // Check products linked
+              if (!isNew) {
+                // We'll validate via campaignId existence — products are in a separate tab
+                // Can't easily check async here, so skip for new campaigns
+              }
+              // Check eligibility: at least 1 city/state
+              if (selectedCities.length === 0) errors.push('Defina pelo menos 1 cidade/estado na aba Elegibilidade');
+              return errors;
+            }}
+            onActivationError={(errors) => {
+              toast.error('Não é possível ativar a campanha:\n' + errors.join('\n'));
+            }}
+          />
         </TabsContent>
 
         <TabsContent value="financeiro" className="mt-4">
@@ -333,6 +352,20 @@ export default function CampaignFormPage() {
                   <Checkbox
                     checked={form.active_modules.includes(mod.value)}
                     onCheckedChange={checked => {
+                      if (checked) {
+                        // Dependency validation for modules
+                        if (mod.value === 'barter' && !isNew) {
+                          // Check if commodity_pricing exists
+                          supabase.from('commodity_pricing').select('id').eq('campaign_id', id!).limit(1).then(({ data }) => {
+                            if (!data || data.length === 0) {
+                              toast.warning('Atenção: módulo Barter requer pelo menos 1 commodity configurada na aba Commodities.');
+                            }
+                          });
+                        }
+                        if (mod.value === 'pagamento' && paymentMethods.length === 0) {
+                          toast.warning('Atenção: módulo Pagamento requer meios de pagamento configurados na aba Financeiro.');
+                        }
+                      }
                       onFieldChange('active_modules', checked
                         ? [...form.active_modules, mod.value]
                         : form.active_modules.filter(m => m !== mod.value));

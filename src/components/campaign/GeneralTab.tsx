@@ -56,6 +56,10 @@ type Props = {
   onFieldChange: (key: string, value: any) => void;
   clients: ClientRow[];
   onClientsChange: (clients: ClientRow[]) => void;
+  /** Called before activating — return extra validation errors */
+  onValidateActivation?: () => string[];
+  /** Called when activation fails validation */
+  onActivationError?: (errors: string[]) => void;
 };
 
 function DatePickerField({ label, value, onChange }: { label: string; value: string; onChange: (v: string) => void }) {
@@ -77,7 +81,7 @@ function DatePickerField({ label, value, onChange }: { label: string; value: str
   );
 }
 
-export default function GeneralTab({ form, onFieldChange, clients, onClientsChange }: Props) {
+export default function GeneralTab({ form, onFieldChange, clients, onClientsChange, onValidateActivation, onActivationError }: Props) {
   const [newDoc, setNewDoc] = useState('');
   const [newName, setNewName] = useState('');
   const [pasteMode, setPasteMode] = useState(false);
@@ -225,9 +229,28 @@ export default function GeneralTab({ form, onFieldChange, clients, onClientsChan
             ))}
           </div>
         </div>
-        <div className="flex items-center gap-3 pt-6">
-          <Switch checked={form.active} onCheckedChange={v => onFieldChange('active', v)} />
-          <Label>Campanha Ativa</Label>
+        <div className="space-y-2 pt-6">
+          <div className="flex items-center gap-3">
+            <Switch checked={form.active} onCheckedChange={v => {
+              if (v && !form.active) {
+                // Validate before activating
+                const errors: string[] = [];
+                if (!form.start_date || !form.end_date) errors.push('Vigência (início e fim) deve ser definida');
+                if (form.start_date && form.end_date && form.start_date > form.end_date) errors.push('Data de início deve ser anterior à data de fim');
+                if (!form.commodities || form.commodities.length === 0) errors.push('Pelo menos 1 commodity deve ser selecionada');
+                if (onValidateActivation) {
+                  const extErrors = onValidateActivation();
+                  errors.push(...extErrors);
+                }
+                if (errors.length > 0) {
+                  if (onActivationError) onActivationError(errors);
+                  return;
+                }
+              }
+              onFieldChange('active', v);
+            }} />
+            <Label>Campanha Ativa</Label>
+          </div>
         </div>
       </div>
 
