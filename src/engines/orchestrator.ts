@@ -89,11 +89,19 @@ function hasPoE(existingDocuments: { doc_type: string; status: string; guarantee
 /**
  * Check if PoL (Proof of Liquidity) is satisfied.
  * At least one document categorized as 'pol' must be validated/signed.
+ * F2: For cessao_credito, also requires counterparty_notified in doc data.
  */
-function hasPoL(existingDocuments: { doc_type: string; status: string; guarantee_category?: string }[]): boolean {
+function hasPoL(existingDocuments: { doc_type: string; status: string; guarantee_category?: string; data?: any }[]): boolean {
   return existingDocuments.some(d => {
     const category = d.guarantee_category || DOC_GUARANTEE_CATEGORY[d.doc_type as DocumentType];
-    return category === 'pol' && (d.status === 'validado' || d.status === 'assinado');
+    if (category !== 'pol') return false;
+    if (!(d.status === 'validado' || d.status === 'assinado')) return false;
+    // F2: cessao_credito requires counterparty notification
+    if (d.doc_type === 'cessao_credito') {
+      const docData = d.data || {};
+      if (!docData.counterparty_notified) return false;
+    }
+    return true;
   });
 }
 

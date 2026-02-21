@@ -539,6 +539,107 @@ export type Database = {
           },
         ]
       }
+      collateral_evidences: {
+        Row: {
+          accepted_at: string | null
+          accepted_by: string | null
+          created_at: string
+          document_id: string | null
+          evidence_type: string
+          id: string
+          metadata: Json | null
+          package_id: string
+        }
+        Insert: {
+          accepted_at?: string | null
+          accepted_by?: string | null
+          created_at?: string
+          document_id?: string | null
+          evidence_type?: string
+          id?: string
+          metadata?: Json | null
+          package_id: string
+        }
+        Update: {
+          accepted_at?: string | null
+          accepted_by?: string | null
+          created_at?: string
+          document_id?: string | null
+          evidence_type?: string
+          id?: string
+          metadata?: Json | null
+          package_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "collateral_evidences_document_id_fkey"
+            columns: ["document_id"]
+            isOneToOne: false
+            referencedRelation: "operation_documents"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "collateral_evidences_package_id_fkey"
+            columns: ["package_id"]
+            isOneToOne: false
+            referencedRelation: "collateral_packages"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      collateral_packages: {
+        Row: {
+          created_at: string
+          delivery_due_date: string | null
+          equivalent_sacks: number | null
+          id: string
+          ip_index: number | null
+          notes: string | null
+          operation_id: string
+          poe_type: string
+          pol_type: string
+          quantity_ton: number | null
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          delivery_due_date?: string | null
+          equivalent_sacks?: number | null
+          id?: string
+          ip_index?: number | null
+          notes?: string | null
+          operation_id: string
+          poe_type?: string
+          pol_type?: string
+          quantity_ton?: number | null
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          delivery_due_date?: string | null
+          equivalent_sacks?: number | null
+          id?: string
+          ip_index?: number | null
+          notes?: string | null
+          operation_id?: string
+          poe_type?: string
+          pol_type?: string
+          quantity_ton?: number | null
+          status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "collateral_packages_operation_id_fkey"
+            columns: ["operation_id"]
+            isOneToOne: false
+            referencedRelation: "operations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       combo_products: {
         Row: {
           combo_id: string
@@ -935,6 +1036,44 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "operation_logs_operation_id_fkey"
+            columns: ["operation_id"]
+            isOneToOne: false
+            referencedRelation: "operations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      operation_status_history: {
+        Row: {
+          changed_at: string
+          changed_by: string
+          from_status: string
+          id: string
+          notes: string | null
+          operation_id: string
+          to_status: string
+        }
+        Insert: {
+          changed_at?: string
+          changed_by: string
+          from_status: string
+          id?: string
+          notes?: string | null
+          operation_id: string
+          to_status: string
+        }
+        Update: {
+          changed_at?: string
+          changed_by?: string
+          from_status?: string
+          id?: string
+          notes?: string | null
+          operation_id?: string
+          to_status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "operation_status_history_operation_id_fkey"
             columns: ["operation_id"]
             isOneToOne: false
             referencedRelation: "operations"

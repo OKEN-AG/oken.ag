@@ -198,6 +198,18 @@ export default function FinancialTab({ form, onFieldChange, paymentMethods, onPa
         )}
       </div>
 
+      {/* Aforo / Overcollateralization */}
+      <div className="space-y-3">
+        <Label className="text-base font-semibold">Aforo / Sobrecolateralização</Label>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="space-y-2">
+            <Label>Aforo (%)</Label>
+            <Input type="number" step="1" min={100} max={300} value={(form as any).aforo_percent ?? 130} onChange={e => onFieldChange('aforo_percent', Number(e.target.value))} />
+            <p className="text-[10px] text-muted-foreground">Percentual de sobrecolateralização exigido. Ex: 130% significa que o cliente precisa entregar garantias equivalentes a 130% do valor da operação.</p>
+          </div>
+        </div>
+      </div>
+
       {/* Default freight cost per km */}
       <div className="space-y-3">
         <Label className="text-base font-semibold">Parâmetros de Frete</Label>
