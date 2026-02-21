@@ -1,12 +1,25 @@
 import type { ComboDefinition, ComboActivation, AgronomicSelection } from '@/types/barter';
 
 /**
- * COMBO CASCADE ENGINE v3
+ * COMBO CASCADE ENGINE v4
  * 
- * FIX: findSelectionByRef picks best match (highest dose, tiebreak by area)
- * FIX: getSuggestedDoseForRef picks tightest range (smallest span), tiebreak by highest discount
- * FIX: activatedHectares uses Math.min (intersection) instead of Math.max
+ * Key improvements:
+ * - Consumption ledger: tracks how much quantity each combo "consumed" per product
+ * - findSelectionByRef picks best match (highest dose, tiebreak by area)
+ * - getSuggestedDoseForRef picks tightest range (smallest span), tiebreak by highest discount
+ * - activatedHectares uses Math.min (intersection) instead of Math.max
  */
+
+export interface ComboConsumptionLedger {
+  /** comboId -> { REF -> quantity consumed } */
+  [comboId: string]: Record<string, number>;
+}
+
+export interface ComboCascadeResult {
+  activations: ComboActivation[];
+  consumptionLedger: ComboConsumptionLedger;
+  totalDiscountValue: number; // absolute BRL discount
+}
 
 function getSelectionRef(sel: AgronomicSelection): string {
   const ref = (sel.ref || sel.product?.ref || '').toUpperCase().trim();
@@ -18,9 +31,6 @@ function isComplementaryCombo(combo: ComboDefinition): boolean {
   return combo.isComplementary || /^COMPLEMENTAR/i.test(combo.name);
 }
 
-/**
- * FIX: Find best selection for a REF — highest dose, tiebreak by largest area
- */
 function findSelectionByRef(
   ref: string,
   selections: AgronomicSelection[],
@@ -32,7 +42,6 @@ function findSelectionByRef(
   const candidates = selections.filter(s => getSelectionRef(s) === upperRef);
   if (candidates.length === 0) return undefined;
 
-  // Sort: highest dose first, tiebreak by largest area
   candidates.sort((a, b) => {
     if (b.dosePerHectare !== a.dosePerHectare) return b.dosePerHectare - a.dosePerHectare;
     return b.areaHectares - a.areaHectares;
@@ -42,8 +51,7 @@ function findSelectionByRef(
 }
 
 /**
- * FIX: Find tightest dose range for a REF across all combos.
- * Tightest = smallest (max - min). Tiebreak by highest discount.
+ * Find tightest dose range for a REF across all combos.
  */
 export function getSuggestedDoseForRef(
   combos: ComboDefinition[],
@@ -73,10 +81,14 @@ export function getSuggestedDoseForRef(
   return (bestRule.min + bestRule.max) / 2;
 }
 
-export function applyComboCascade(
+/**
+ * Apply combo cascade with consumption ledger.
+ * Returns both activations and a ledger showing how much quantity each combo consumed.
+ */
+export function applyComboCascadeWithLedger(
   combos: ComboDefinition[],
   selections: AgronomicSelection[]
-): ComboActivation[] {
+): ComboCascadeResult {
   const mainCombos = combos.filter(c => !isComplementaryCombo(c));
   const complementaryCombos = combos.filter(c => isComplementaryCombo(c));
 
@@ -85,13 +97,16 @@ export function applyComboCascade(
     return b.products.length - a.products.length;
   });
 
-  const availableRefs = new Set<string>();
+  // Track remaining quantity per REF
+  const remainingQty = new Map<string, number>();
   for (const sel of selections) {
     const ref = getSelectionRef(sel);
-    if (ref) availableRefs.add(ref);
+    if (ref) remainingQty.set(ref, (remainingQty.get(ref) || 0) + sel.roundedQuantity);
   }
 
+  const availableRefs = new Set<string>(remainingQty.keys());
   const activations: ComboActivation[] = [];
+  const consumptionLedger: ComboConsumptionLedger = {};
   let totalActivatedHectares = 0;
 
   for (const combo of sortedMain) {
@@ -108,13 +123,31 @@ export function applyComboCascade(
       const doseInRange = sel.dosePerHectare >= rule.minDosePerHa && sel.dosePerHectare <= rule.maxDosePerHa;
       if (!doseInRange) { allMatch = false; break; }
 
+      // Check remaining qty
+      const remaining = remainingQty.get(ruleRef) || 0;
+      if (remaining <= 0) { allMatch = false; break; }
+
       matchedRefs.push(ruleRef);
     }
 
     if (allMatch && matchedRefs.length > 0) {
-      matchedRefs.forEach(ref => availableRefs.delete(ref));
+      // Consume quantities
+      const comboLedger: Record<string, number> = {};
+      for (const ref of matchedRefs) {
+        const sel = selections.find(s => getSelectionRef(s) === ref);
+        const qty = sel?.roundedQuantity || 0;
+        const remaining = remainingQty.get(ref) || 0;
+        const consumed = Math.min(qty, remaining);
+        comboLedger[ref] = consumed;
+        remainingQty.set(ref, remaining - consumed);
+        
+        // Remove from available if fully consumed
+        if ((remainingQty.get(ref) || 0) <= 0) {
+          availableRefs.delete(ref);
+        }
+      }
+      consumptionLedger[combo.id] = comboLedger;
 
-      // FIX: Use Math.min (intersection) for activated hectares
       const matchedAreas = matchedRefs.map(ref => {
         const sel = selections.find(s => getSelectionRef(s) === ref);
         return sel?.areaHectares || 0;
@@ -166,6 +199,20 @@ export function applyComboCascade(
       }
     }
 
+    if (matchedRefs.length > 0) {
+      const comboLedger: Record<string, number> = {};
+      for (const ref of matchedRefs) {
+        const remaining = remainingQty.get(ref) || 0;
+        if (remaining > 0) {
+          comboLedger[ref] = remaining;
+          remainingQty.set(ref, 0);
+        }
+      }
+      if (Object.keys(comboLedger).length > 0) {
+        consumptionLedger[combo.id] = comboLedger;
+      }
+    }
+
     activations.push({
       comboId: combo.id,
       comboName: combo.name,
@@ -177,7 +224,15 @@ export function applyComboCascade(
     });
   }
 
-  return activations;
+  return { activations, consumptionLedger, totalDiscountValue: 0 };
+}
+
+// Backwards-compatible wrapper
+export function applyComboCascade(
+  combos: ComboDefinition[],
+  selections: AgronomicSelection[]
+): ComboActivation[] {
+  return applyComboCascadeWithLedger(combos, selections).activations;
 }
 
 export function getMaxPossibleDiscount(combos: ComboDefinition[]): number {

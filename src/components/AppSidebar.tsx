@@ -14,9 +14,10 @@ import logoIcon from '@/assets/logo-icon.png';
 const navItems: { to: string; icon: any; label: string; module?: JourneyModule }[] = [
   { to: '/', icon: LayoutDashboard, label: 'Dashboard' },
   { to: '/campanha', icon: Settings, label: 'Campanha' },
-  { to: '/simulacao', icon: ShoppingCart, label: 'Simulação', module: 'simulacao' },
-  { to: '/paridade', icon: Wheat, label: 'Paridade Barter', module: 'barter' },
-  { to: '/documentos', icon: FileText, label: 'Documentos', module: 'documentos' },
+  { to: '/operacao/novo', icon: ShoppingCart, label: 'Nova Operação' },
+  { to: '/simulacao', icon: ShoppingCart, label: 'Simulação (Legacy)', module: 'simulacao' },
+  { to: '/paridade', icon: Wheat, label: 'Paridade (Legacy)', module: 'barter' },
+  { to: '/documentos', icon: FileText, label: 'Documentos (Legacy)', module: 'documentos' },
   { to: '/monitoramento', icon: BarChart3, label: 'Monitoramento' },
 ];
 
