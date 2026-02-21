@@ -1,363 +1,180 @@
-# Plano de Correcoes — Aplicar Refatoracao do Usuario
 
-## Resumo
 
-O usuario realizou uma auditoria profunda e corrigiu 8 bugs logicos criticos nos engines e UI. Este plano aplica todas essas correcoes no codigo atual, organizadas por prioridade.  
-O que eu encontrei (principais falhas lógicas/bugs)
+# Plano de Convergencia -- Documentacao vs Sistema Atual
 
-### 1) Jornada/Orquestração travava (não avançava status)
+## Resumo da Analise
 
-- A função `canAdvance()` **nunca retornava o próximo status** na maior parte dos casos (ex.: `formalizado -> garantido`), porque ela só avançava quando *todas* as etapas do trem estavam concluídas (inclusive as futuras).
-- `buildWagonStages()` marcava **várias etapas como “em progresso” ao mesmo tempo**, inclusive dentro do mesmo status (ex.: `formalizacao` e `documentos` simultâneas).
-
-✅ Corrigido refatorando o orquestrador para:
-
-- Bloquear etapas posteriores enquanto a anterior (na sequência) não estiver concluída (mesmo dentro do mesmo status).
-- Permitir avanço de status **quando todas as etapas do status atual** estiverem concluídas.
+Analisei os dois documentos (Catalogo de Componentes e Variaveis + Prompt do Sistema de Barter) contra o codigo atual. O Admin de Campanhas e Commodities esta ~80% alinhado. Os engines estao ~70% alinhados. A area de Operacoes esta ~60% alinhada. Abaixo estao as lacunas organizadas por prioridade.
 
 ---
 
-### 2) Documentos não “concluíam” a etapa (sem fluxo de assinar/validar)
+## BLOCO 1: Lacunas nos Engines (Logica de Calculo)
 
-- O sistema só considerava documento concluído se estivesse `assinado` ou `validado`.
-- Porém a UI só tinha ação de **Emitir** → ficava em `emitido` e **não tinha como virar assinado/validado**, então a jornada ficava presa.
+### 1.1 Eligibility Engine -- Falta PF/PJ
 
-✅ Corrigido adicionando no `DocumentsPage` ações para:
+**Doc exige**: check PF/PJ como flag (campaign tem `client_type` array com "PF"/"PJ").
+**Atual**: `checkEligibility()` nao verifica PF/PJ.
+**Correcao**: Adicionar campo `clientType?: 'PF' | 'PJ'` ao `EligibilityInput` e validar contra `campaign.client_type` (campo ja existe no banco como array).
 
-- **Assinar**
-- **Validar**
-- E também refetch/invalidação para a UI refletir o status atualizado.
+### 1.2 Pricing Engine -- Valorizacao por Commodity nao integrada
 
----
+**Doc exige**: `campaign_commodity_valorizations` (nominal ou %) aplicada no calculo da paridade.
+**Atual**: Tabela existe no banco, dados sao salvos no Admin (aba Valorizacao), mas o Parity Engine NAO consulta/aplica.
+**Correcao**: No `calculateCommodityNetPrice()`, consultar valorizacao e aplicar antes/depois do basis conforme regra (doc diz "definir ponto").
 
-### 3) Combo Cascade tinha inconsistências claras
+### 1.3 Parity Engine -- Fee do Comprador nao aplicado
 
-- `findSelectionByRef()` dizia “pegar a melhor seleção (maior dose)”, mas pegava **a primeira**.
-- `getSuggestedDoseForRef()` dizia “pegar a faixa mais restrita”, mas retornava **a primeira**.
-- Área ativada usava `Math.max(...)` onde fazia mais sentido usar a **interseção** (mínimo entre áreas) para “onde o combo realmente vale”.
-- Complementares tinham `proportionalHectares`, mas isso **não era usado** no cálculo de desconto (ficava “decorativo”).
+**Doc exige**: `campaign_buyers.fee` reduz preco liquido ou entra como custo.
+**Atual**: Compradores sao cadastrados (tabela `campaign_buyers` com `fee`), mas o engine ignora.
+**Correcao**: Adicionar parametro `buyerFeePercent` ao `calculateCommodityNetPrice()` e subtrair do preco liquido.
 
-✅ Corrigido/refatorado:
+### 1.4 Pricing Engine -- Frete Fallback
 
-- Faixa de dose agora escolhe a **mais estreita** (e desempata por maior desconto).
-- Seleção por REF escolhe a que faz mais sentido (maior dose, desempate por maior área).
-- Combo principal registra `activatedHectares` como **mínimo de áreas** (interseção).
+**Doc exige**: Se nao houver rota especifica, usar `default_freight_cost_per_km` da aba Financeiro.
+**Atual**: Campo existe na tabela `campaigns` (`default_freight_cost_per_km`), mas nao e usado como fallback no calculo.
+**Correcao**: No stepper, quando `freightReducer` nao encontrado, calcular fallback com distancia estimada x custo padrao.
 
----
+### 1.5 Vencimentos por Regiao -- Precedencia
 
-### 4) Gross-to-net aplicava desconto errado
+**Doc exige**: municipio > mesorregiao > UF > default.
+**Atual**: `campaign_due_dates` tem `region_type` e `region_value`, mas a selecao no stepper nao aplica precedencia.
+**Correcao**: No stepper, filtrar due dates pela geo do cliente aplicando precedencia hierarquica.
 
-Antes:
+### 1.6 Insurance Engine -- Parametros do Config
 
-- Pegava o **maior % de combo principal** e aplicava em **todo o faturamento**, mesmo em produtos fora do combo.
-- Somava complementares em % e aplicava globalmente também.
-- Ou seja: **superdesconto** e distorção do net.
-
-✅ Corrigido:
-
-- Agora o desconto de combo é calculado **em valor**, linha a linha, baseado em **quais REFs são elegíveis**.
-- Complementares aplicam proporcionalmente ao cap de hectares quando existe `proportionalHectares`.
+**Doc exige**: Usar volatilidade, taxa livre de risco, custo opcao e strike da configuracao de commodity.
+**Atual**: Black-Scholes usa valores parcialmente hardcoded (strike = spot * 1.05, riskFreeRate = 0.1175).
+**Correcao**: Usar `pricing.volatility`, `pricing.riskFreeRate`, `pricing.optionCost`, `pricing.strikePercent` do config de commodity.
 
 ---
 
-### 5) Agronomic engine escolhia sempre a maior embalagem (gera desperdício)
+## BLOCO 2: Lacunas no Admin (Pequenos Ajustes -- Sem Reestruturar)
 
-- Escolher sempre o maior `packageSize` aumenta sobra (waste).
+### 2.1 Aba Geral -- Validacao de Ativacao
 
-✅ Corrigido:
+**Doc exige**: So permitir ativar campanha se: vigencia valida, >= 1 commodity, produtos cadastrados, elegibilidade definida.
+**Atual**: Toggle ativa sem validacao.
+**Correcao**: Antes de ativar, verificar prerequisitos e mostrar alerta/bloqueio.
 
-- Agora testa as embalagens e escolhe a que **minimiza desperdício** (com desempate por menos caixas/pallets).
+### 2.2 Aba Elegibilidade -- PF/PJ Checkboxes
 
----
+**Doc exige**: Checkboxes "Pessoa Fisica" e "Pessoa Juridica".
+**Atual**: Campo `client_type` array existe no banco mas a UI nao tem checkboxes PF/PJ na aba Elegibilidade.
+**Correcao**: Adicionar checkboxes PF/PJ na EligibilityTab e salvar em `campaigns.client_type`.
 
-### 6) Paridade: unidade do redutor de frete e seguro (Black-Scholes) inconsistentes
+### 2.3 Aba Modulos -- Validacao de Dependencias
 
-- UI mostrava redutor `/saca` em um lugar e `/ton` em outro.
-- Conversão do prêmio do Black-Scholes estava usando `* 16.667` como “bushel → saca”, o que é **conversão errada**.
+**Doc exige**: Barter ativo sem commodity configurada deve gerar alerta/bloqueio.
+**Atual**: Modulos sao toggles sem validacao cruzada.
+**Correcao**: Ao ativar Barter, verificar se existe `commodity_pricing` para a campanha. Ao ativar Pagamento, verificar se existem `payment_methods`.
 
-✅ Corrigido:
+### 2.4 Commodities -- Aba Configuracao (Operacional)
 
-- Padronizado redutor logístico como **R$/ton** na UI.
-- Correção da conversão do prêmio para **BRL/saca** usando `(bushels/ton)/(sacas/ton)`.
-
----
-
-### 7) Realtime pricing fazia 2 requests e tinha projectId hardcoded
-
-- Rodava `supabase.functions.invoke()` e depois fazia `fetch()` manual.
-- Ignorava o retorno do invoke.
-- Tinha fallback de projectId hardcoded.
-
-✅ Corrigido:
-
-- Agora faz **apenas 1 chamada** via `supabase.functions.invoke()` e trata `fnError`.
+**Doc exige**: Periodo de entrega, tipos de preco (pre-existente/fixo/a fixar), contrapartes aceitas, desconto de antecipacao.
+**Atual**: Estes campos existem parcialmente na tabela `campaigns` (`delivery_start_date`, `delivery_end_date`, `accepted_counterparties`, `price_types`, `early_discount_enabled`) mas a UI de Commodities nao edita todos.
+**Correcao**: Garantir que a aba Configuracao em CommoditiesTab expoe todos estes campos e salva corretamente.
 
 ---
 
-### 8) React: useMemo usado para side-effect (bug clássico)
+## BLOCO 3: Lacunas na Area de Operacoes (Stepper)
 
-- `useMemo` estava sendo usado para `setState` (efeito colateral), o que pode dar comportamento estranho.
+### 3.1 Desconto nunca revelado por produto
 
-✅ Corrigido:
+**Doc exige**: "O desconto nunca e revelado por produto e sempre aplicado no montante ou na quantidade de commodities."
+**Atual**: O stepper mostra breakdown por produto no step de simulacao.
+**Correcao**: Remover coluna de desconto por produto. Mostrar desconto apenas como total no rodape (combo + incentivos + barter).
 
-- Troquei por `useEffect` no `SimulationPage`.
+### 3.2 Barra de Recomendacao de Combo
 
----
+**Doc exige**: "Barra indicativa do quanto esta ativando de desconto em relacao ao maximo possivel, recomendando qual produto deve subir a dose ou incluir."
+**Atual**: Barra de progresso existe, mas nao ha recomendacao de "qual produto incluir/subir dose".
+**Correcao**: Adicionar logica que analisa combos nao ativados e sugere qual produto/dose incluir para maximizar desconto.
 
-## Mudanças que eu apliquei no código (já no ZIP)
+### 3.3 Selecao de Comprador no Barter
 
-### Engines
+**Doc exige**: Selecionar comprador da lista de pre-aprovados, ou informar outro para aprovacao. Fee do comprador impacta paridade.
+**Atual**: Stepper tem campo `counterparty` (texto livre) mas nao consulta `campaign_buyers`.
+**Correcao**: Substituir input de texto por Select com buyers cadastrados + opcao "Outro". Aplicar fee no calculo.
 
-- `src/engines/orchestrator.ts`
-  - Refatorado `buildWagonStages`, `canAdvance`, `getBlockingReason`.
-  - Sequenciamento correto e avanço de status correto.
-- `src/engines/combo-cascade.ts`
-  - Refator completo: matching por REF consistente, dose range “tightest”, activated hectares correto, complementares com cap.
-- `src/engines/pricing.ts`
-  - `calculateGrossToNet` agora calcula **desconto em valor** só nas linhas elegíveis e com proporcionalidade.
-  - Assinatura mudou para receber `selections`.
-- `src/engines/agronomic.ts`
-  - Seleção inteligente de embalagem (min waste).
-  - Sem mutar `packageSizes`.
+### 3.4 Aba Simplificada de Combos em Sacas
 
-### UI / páginas
+**Doc exige**: "Aba simplificada onde selecionando localidade, cada combo tem valor calculado em sacas para a area informada."
+**Atual**: Nao existe.
+**Correcao**: Adicionar step ou secao "Quick Pick" que mostra combos pre-calculados em sacas por localidade/area.
 
-- `src/pages/DocumentsPage.tsx`
-  - Botões para **Assinar/Validar**.
-  - Logs e refetch após avançar status.
-- `src/pages/SimulationPage.tsx`
-  - `useMemo` → `useEffect` (auto-select campaign, reset produtos).
-  - Dose sugerida só se default estiver **fora** do range do combo.
-  - Clamp básico de dose.
-- `src/pages/ParityPage.tsx` + `src/components/parity/ParityInputs.tsx`
-  - Correção do prêmio do seguro e unidade do redutor.
+### 3.5 Dados Fiscais e de Entrega
 
-### Hooks
+**Doc exige**: "Preenchimento completo dos dados para o pedido incluindo informacoes fiscais e de entrega dos produtos."
+**Atual**: Stepper coleta apenas nome/doc/cidade/estado.
+**Correcao**: Adicionar campos de endereco de entrega, inscricao estadual, CNPJ/CPF formatado, e-mail, telefone no step de Contexto ou antes da Formalizacao.
 
-- `src/hooks/useRealtimePricing.ts`
-  - Removeu request duplicado e hardcode.
-- `src/hooks/useActiveCampaign.ts`
-  - Removeu import inútil e eliminou N+1 em combos com nested select.
+### 3.6 Snapshot com Valorization Bonus
 
-### Types e testes
-
-- `src/types/barter.ts`
-  - `CampaignTarget` atualizado (novos valores do enum).
-  - `ComboActivation` com `activatedHectares?: number`.
-  - Comentário de unidade do frete corrigido para `/ton`.
-- `src/test/engines.test.ts`
-  - Testes cobrindo agronômico, combo cascade, pricing e orquestrador.
+**Doc exige**: Preco valorizado vs preco contrato com comparativo em % e nominalmente.
+**Atual**: Snapshot salva parity mas nao inclui `valorizationBonus` da tabela `campaign_commodity_valorizations`.
+**Correcao**: Incluir dados de valorizacao no snapshot.
 
 ---
 
-## Melhorias necessárias (recomendadas) além do que já corrigi
+## BLOCO 4: Lacunas Estruturais (Futuro / Fase 2)
 
-### A) Regra de desconto e semântica de combos (fechar especificação)
+Estas lacunas sao mencionadas nos docs mas estao marcadas como "futuro" ou "onda posterior":
 
-Hoje eu corrigi para ser “correto por linha”, mas ainda recomendo formalizar:
+- **Tipos de Credito / Credores** (placeholder no Financeiro)
+- **RBAC por perfil** (Admin/Marketing/Comercial/BarterDesk/Leitura) -- hoje so tem admin/manager/client
+- **Seguro com cotacao real** (mesa de operacoes cota opcao)
+- **CCV/Cessao/CPR com templates dinamicos** (Onda 17)
+- **Invoicing Engine** (Onda 18)
+- **Monitoring Engine com NDVI** (Onda 19)
+- **Settlement Engine** (Onda 20)
+- **Variable Catalog no banco** (campaign_variable_catalog)
 
-- “Combo principal aplica desconto **nos itens do combo** ou na operação inteira?”
-- “Complementar aplica em quais itens? Só nos seus itens? Ou em todos?”
-- “Se ativar 2 combos principais disjuntos, os descontos somam por linha?”  
-(atualmente: soma por linha se ref for elegível, mas por segurança escolhi **máximo** por REF no principal)
-
-✅ Recomendo criar uma especificação simples (1 página) com exemplos numéricos e transformar em testes.
-
----
-
-### B) Documentos: falta `validated_at` no banco
-
-O enum tem `validado`, mas a tabela `operation_documents` não tem `validated_at`.
-
-✅ Recomendo migration:
-
-- adicionar `validated_at timestamptz`
-- e preencher quando status virar `validado`.
+Estes NAO serao implementados neste plano.
 
 ---
 
-### C) Segurança e permissões (admin vs usuário)
+## Ordem de Implementacao
 
-O front tem rotas admin, mas não vi uma proteção forte por role no front (talvez esteja só via RLS).
+### Fase A -- Engines (sem mexer no Admin)
+1. Eligibility: adicionar check PF/PJ
+2. Parity: integrar valorizacao por commodity
+3. Parity: aplicar fee do comprador
+4. Pricing/Stepper: frete fallback
+5. Stepper: precedencia de vencimentos por regiao
+6. Insurance: usar params do commodity config
 
-✅ Recomendo:
+### Fase B -- Pequenos ajustes no Admin
+7. Geral: validacao de ativacao de campanha
+8. Elegibilidade: checkboxes PF/PJ
+9. Modulos: validacao cruzada de dependencias
+10. Commodities Configuracao: campos operacionais completos
 
-- Criar `profiles.role`
-- Guardar rotas admin com `ProtectedRoute` + role
-- E manter RLS como camada final
-
----
-
-### D) Tipos: remover `any` e alinhar com `integrations/supabase/types.ts`
-
-Tem muito cast e mapeamento manual.
-
-✅ Recomendo:
-
-- Centralizar “mappers” (DB → Domain) em `src/mappers/`
-- E usar os tipos gerados do Supabase de forma consistente.
-
----
-
-### E) Performance: reduzir chamadas Supabase e refetch
-
-- Alguns lugares ainda podem estar fazendo refetch excessivo.
-- Operações com N+1 foram melhoradas em combos, mas dá para fazer o mesmo em outros relacionamentos.
-
-✅ Recomendo:
-
-- Preferir nested selects / views / RPCs quando fizer sentido
-- Usar `queryClient.invalidateQueries()` de forma consistente após mutações
+### Fase C -- Stepper (Operacoes)
+11. Remover desconto por produto (mostrar so total)
+12. Recomendacao de combo (qual produto incluir)
+13. Selecao de comprador com fee
+14. Campos fiscais/entrega
+15. Snapshot com valorizacao
 
 ---
 
-### F) Observabilidade e qualidade
+## Arquivos Impactados
 
-✅ Recomendo:
+| Arquivo | Mudanca |
+|---|---|
+| `src/engines/eligibility.ts` | + check PF/PJ |
+| `src/engines/parity.ts` | + valorizacao, + buyer fee |
+| `src/engines/pricing.ts` | Nenhuma (ja OK) |
+| `src/engines/snapshot.ts` | + valorizacao no snapshot |
+| `src/pages/OperationStepperPage.tsx` | Recomendacao combo, buyer select, campos fiscais, frete fallback, due date precedencia, insurance params, remover desconto por produto |
+| `src/components/campaign/EligibilityTab.tsx` | + PF/PJ checkboxes |
+| `src/components/campaign/GeneralTab.tsx` | + validacao ativacao |
+| `src/components/campaign/CommoditiesTab.tsx` | + campos operacionais completos |
+| `src/hooks/useActiveCampaign.ts` | + fetch buyers, valorizacoes |
+| `src/types/barter.ts` | + clientType no EligibilityInput |
 
-- ESLint + prettier “travado” (CI)
-- Vitest com cobertura mínima para engines
-- (Opcional) e2e (Playwright) para fluxo: simulação → docs → paridade → monitoramento
-- Sentry/log central para capturar erros em produção
+### Riscos
+- Valorizacao: preciso definir em que ponto do calculo ela entra (antes ou depois de basis/frete). Recomendo: depois do basis, antes do frete.
+- Fee do comprador: preciso definir se reduz preco liquido ou soma como custo. Recomendo: reduz preco liquido (doc sugere "redutor").
+- PF/PJ: campo `client_type` no banco e array de texto. Preciso mapear para flags PF/PJ booleanas.
 
----
-
-## Como validar rápido (local)
-
-Dentro do projeto:
-
-- Rodar testes:
-  - `npm test`
-- Rodar lint:
-  - `npm run lint`
-- Rodar app:
-  - `npm run dev`
-
-Fluxo manual para conferir:
-
-1. Criar operação
-2. Ir em Documentos
-3. Emitir → Assinar/Validar
-4. Ver se o botão “Avançar” aparece e muda status corretamente
-5. Ver se descontos agora só afetam itens elegíveis
-
----
-
-## Correcoes a Implementar
-
-### 1. Orchestrator Engine — Jornada travada (Bug Critico)
-
-**Problema**: `canAdvance()` nunca retorna o proximo status porque exige que TODAS as etapas (inclusive futuras) estejam concluidas. `buildWagonStages()` marca multiplas etapas como "em_progresso" simultaneamente.
-
-**Correcao em `src/engines/orchestrator.ts**`:
-
-- Bloquear etapas posteriores enquanto a anterior na sequencia nao estiver concluida (mesmo dentro do mesmo status)
-- `canAdvance()` deve verificar apenas as etapas do status atual — se todas estiverem concluidas, retorna o proximo status
-
-### 2. DocumentsPage — Sem fluxo Assinar/Validar (Bug Critico)
-
-**Problema**: UI so tem "Emitir". Documento fica em "emitido" e nunca vira "assinado"/"validado", travando a jornada.
-
-**Correcao em `src/pages/DocumentsPage.tsx**`:
-
-- Adicionar botoes "Assinar" e "Validar" para documentos com status "emitido" e "assinado" respectivamente
-- Cada acao atualiza status, grava `signed_at` e log, e faz refetch
-- Adicionar log e invalidacao de queries apos `handleAdvance`
-
-### 3. Combo Cascade — Inconsistencias de matching (Bug Logico)
-
-**Problema**: `findSelectionByRef()` pega a primeira selecao ao inves da melhor (maior dose). `getSuggestedDoseForRef()` retorna a primeira faixa ao inves da mais restrita. `activatedHectares` usa `Math.max` quando deveria usar `Math.min` (intersecao).
-
-**Correcao em `src/engines/combo-cascade.ts**`:
-
-- `findSelectionByRef()`: ordenar candidates por dose decrescente, desempatar por area
-- `getSuggestedDoseForRef()`: iterar todos os combos, escolher a faixa mais estreita (menor range), desempatar por maior desconto
-- Activated hectares: usar `Math.min` entre areas dos produtos matched (intersecao real)
-- Adicionar `activatedHectares` ao `ComboActivation` e no tipo
-
-### 4. Gross-to-Net — Desconto aplicado globalmente ao inves de por linha (Bug Financeiro)
-
-**Problema**: Desconto de combo aplicado como % sobre todo o faturamento, incluindo produtos fora do combo. Gera superdesconto.
-
-**Correcao em `src/engines/pricing.ts**` (`calculateGrossToNet`):
-
-- Receber `selections: AgronomicSelection[]` como parametro adicional
-- Calcular desconto de combo em valor, linha a linha, baseado em quais REFs sao elegiveis para o combo ativado
-- Complementares aplicam proporcionalmente ao cap de hectares quando existe `proportionalHectares`
-- Atualizar assinatura e chamadas em `SimulationPage.tsx`
-
-### 5. Agronomic Engine — Sempre maior embalagem (Desperdicio)
-
-**Problema**: `sort((a,b) => b-a)[0]` sempre escolhe a maior embalagem, maximizando desperdicio.
-
-**Correcao em `src/engines/agronomic.ts**`:
-
-- Testar todas as embalagens disponiveis
-- Escolher a que minimiza desperdicio (`roundedQuantity - rawQuantity`)
-- Desempatar por menos caixas/pallets
-- Nao mutar `packageSizes` (usar spread antes de sort)
-
-### 6. Insurance Premium — Conversao dimensional incorreta
-
-**Problema**: Premium do B&S nao esta convertido corretamente para BRL/saca. A divisao por `effectiveCommodityPrice` ja esta correta no codigo atual (corrigido em iteracao anterior).
-
-**Verificacao**: Confirmar que `premiumPerSaca = premium / effectiveCommodityPrice` esta correto. Nenhuma mudanca necessaria — ja corrigido.
-
-### 7. useRealtimePricing — Chamada duplicada
-
-**Problema**: O hook ainda constroi URL com `projectId` hardcoded como fallback.
-
-**Correcao em `src/hooks/useRealtimePricing.ts**`:
-
-- Usar `supabase.functions.invoke()` em vez de `fetch()` manual
-- Remover fallback de `projectId` hardcoded
-- Tratar `fnError` do invoke
-
-### 8. Types — Adicionar `activatedHectares` ao ComboActivation
-
-**Correcao em `src/types/barter.ts**`:
-
-- Adicionar `activatedHectares?: number` ao interface `ComboActivation`
-
-### 9. Migration — Adicionar `validated_at` na tabela operation_documents
-
-**SQL Migration**:
-
-```text
-ALTER TABLE operation_documents
-ADD COLUMN IF NOT EXISTS validated_at timestamptz;
-```
-
----
-
-## Arquivos Modificados
-
-
-| Arquivo                           | Tipo de Mudanca                                       |
-| --------------------------------- | ----------------------------------------------------- |
-| `src/engines/orchestrator.ts`     | Refatoracao completa de buildWagonStages e canAdvance |
-| `src/engines/combo-cascade.ts`    | Fix matching, dose range, activated hectares          |
-| `src/engines/pricing.ts`          | G2N com desconto por linha, nova assinatura           |
-| `src/engines/agronomic.ts`        | Selecao inteligente de embalagem                      |
-| `src/pages/DocumentsPage.tsx`     | Botoes Assinar/Validar, refetch apos avanco           |
-| `src/pages/SimulationPage.tsx`    | Passar selections para G2N                            |
-| `src/hooks/useRealtimePricing.ts` | Usar supabase.functions.invoke                        |
-| `src/types/barter.ts`             | activatedHectares no ComboActivation                  |
-| Migration SQL                     | validated_at em operation_documents                   |
-
-
----
-
-## Ordem de Execucao
-
-1. Migration SQL (validated_at)
-2. Types (activatedHectares)
-3. Engines: orchestrator, combo-cascade, agronomic, pricing
-4. Hooks: useRealtimePricing
-5. Pages: DocumentsPage, SimulationPage
-
-## Riscos
-
-- A mudanca na assinatura de `calculateGrossToNet` (adicionar `selections`) requer atualizar todas as chamadas
-- O desconto por linha muda os valores de G2N — pode afetar operacoes existentes (somente novas simulacoes serao afetadas)
-- `supabase.functions.invoke` requer que a edge function esteja deployada com o nome correto
