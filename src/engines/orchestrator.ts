@@ -215,8 +215,8 @@ export function getBlockingReason(
   // Check PoE/PoL gates first
   if (currentStatus === 'garantido') {
     const missingProofs: string[] = [];
-    if (!hasPoE(existingDocuments)) missingProofs.push('Prova de Existência (PoE) — CPR ou laudo validado');
-    if (!hasPoL(existingDocuments)) missingProofs.push('Prova de Liquidez (PoL) — CCV ou cessão validada');
+    if (!hasPoE(existingDocuments)) missingProofs.push('Comprovação de Produção — CPR ou laudo validado');
+    if (!hasPoL(existingDocuments)) missingProofs.push('Comprovação de Contrato — CCV ou cessão validada');
     if (missingProofs.length > 0) return `Provas pendentes: ${missingProofs.join('; ')}`;
   }
 
