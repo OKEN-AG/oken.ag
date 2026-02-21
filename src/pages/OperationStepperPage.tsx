@@ -65,9 +65,10 @@ const allDocTypes: { type: DocumentType; label: string; category?: 'poe' | 'pol'
 function getComboRecommendations(
   combos: any[],
   selections: AgronomicSelection[],
-  products: Product[]
-): { productName: string; ref: string; action: string }[] {
-  const recs: { productName: string; ref: string; action: string }[] = [];
+  products: Product[],
+  area: number
+): { productName: string; ref: string; action: string; productId?: string; suggestedDose?: number; suggestedQty?: number }[] {
+  const recs: { productName: string; ref: string; action: string; productId?: string; suggestedDose?: number; suggestedQty?: number }[] = [];
   const selectedRefs = new Set(selections.map(s => (s.ref || '').toUpperCase().trim()));
 
   for (const combo of combos) {
@@ -76,21 +77,30 @@ function getComboRecommendations(
       for (const mp of missing) {
         const prod = products.find(p => (p.ref || '').toUpperCase() === (mp.ref || '').toUpperCase());
         if (prod) {
-          recs.push({ productName: prod.name, ref: mp.ref, action: `Incluir ${prod.name} para ativar combo "${combo.name}" (+${combo.discountPercent}%)` });
+          const suggestedDose = (mp.minDosePerHa + mp.maxDosePerHa) / 2;
+          const suggestedQty = Math.ceil(area * suggestedDose);
+          recs.push({
+            productName: prod.name, ref: mp.ref, productId: prod.id,
+            suggestedDose, suggestedQty,
+            action: `Incluir ${prod.name} (${suggestedDose.toFixed(2)}/${prod.unitType}/ha ≈ ${suggestedQty} ${prod.unitType}) → combo "${combo.name}" (+${combo.discountPercent}%)`
+          });
         }
       }
     }
-    // Check if dose is below minimum for selected products
     for (const cp of combo.products) {
       const sel = selections.find(s => (s.ref || '').toUpperCase().trim() === (cp.ref || '').toUpperCase().trim());
       if (sel && sel.dosePerHectare < cp.minDosePerHa) {
-        recs.push({ productName: sel.product.name, ref: cp.ref, action: `Subir dose de ${sel.product.name} para ${cp.minDosePerHa}/ha (combo "${combo.name}")` });
+        const suggestedQty = Math.ceil(area * cp.minDosePerHa);
+        recs.push({
+          productName: sel.product.name, ref: cp.ref, productId: sel.productId,
+          suggestedDose: cp.minDosePerHa, suggestedQty,
+          action: `Subir dose de ${sel.product.name} para ${cp.minDosePerHa}/ha (≈ ${suggestedQty} ${sel.product.unitType}) → combo "${combo.name}"`
+        });
       }
     }
   }
-  // Deduplicate by ref
   const seen = new Set<string>();
-  return recs.filter(r => { if (seen.has(r.ref)) return false; seen.add(r.ref); return true; }).slice(0, 3);
+  return recs.filter(r => { if (seen.has(r.ref)) return false; seen.add(r.ref); return true; }).slice(0, 5);
 }
 
 // ─── Due date precedence: municipio > mesorregiao > estado > default ───
@@ -324,7 +334,7 @@ export default function OperationStepperPage() {
   }, [campaign, clientState, clientCity, segment, clientDocument, clientType, clientWhitelist, rawCampaign]);
 
   // ─── Product selection ───
-  const toggleProduct = (productId: string) => {
+  const toggleProduct = (productId: string, suggestedDose?: number) => {
     const next = new Map(selectedProducts);
     if (next.has(productId)) {
       next.delete(productId);
@@ -333,10 +343,15 @@ export default function OperationStepperPage() {
       setFreeQuantities(nextFree);
     } else {
       const prod = products.find(p => p.id === productId)!;
-      const suggested = getSuggestedDoseForRef(combos, prod.ref || '');
-      next.set(productId, suggested ?? prod.dosePerHectare);
+      const dose = suggestedDose ?? getSuggestedDoseForRef(combos, prod.ref || '') ?? prod.dosePerHectare;
+      next.set(productId, dose);
     }
     setSelectedProducts(next);
+  };
+
+  const clearOrder = () => {
+    setSelectedProducts(new Map());
+    setFreeQuantities(new Map());
   };
 
   const updateDose = (productId: string, dose: number) => {
@@ -374,7 +389,7 @@ export default function OperationStepperPage() {
   const discountProgress = maxDiscount > 0 ? (activatedDiscount / maxDiscount) * 100 : 0;
 
   // Combo recommendations
-  const comboRecommendations = useMemo(() => getComboRecommendations(combos, selections, products), [combos, selections, products]);
+  const comboRecommendations = useMemo(() => getComboRecommendations(combos, selections, products, area), [combos, selections, products, area]);
 
   const pricingResults = useMemo(() => {
     if (!campaign) return [];
@@ -777,8 +792,8 @@ export default function OperationStepperPage() {
           {/* ═══ ORDER STEP ═══ */}
           {currentStepDef.id === 'order' && (
             <div className="space-y-4">
-              {/* Mode toggle + discount bar */}
-              <div className="glass-card p-4 space-y-3">
+              {/* Sticky discount bar + mode toggle */}
+              <div className="glass-card p-4 space-y-3 sticky top-0 z-10 backdrop-blur-md">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-3">
                     <span className="text-sm font-semibold text-foreground">Modo de Seleção:</span>
@@ -787,9 +802,16 @@ export default function OperationStepperPage() {
                       <button onClick={() => setQuantityMode('livre')} className={`px-3 py-1 text-xs font-medium transition-colors ${quantityMode === 'livre' ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground hover:bg-muted/80'}`}>Qtd Livre</button>
                     </div>
                   </div>
-                  {combos.length > 0 && (
-                    <span className="font-mono text-sm text-success font-bold">{activatedDiscount.toFixed(1)}% / {maxDiscount}%{complementaryDiscount > 0 && <span className="ml-2 text-info">+ {complementaryDiscount.toFixed(1)}%</span>}</span>
-                  )}
+                  <div className="flex items-center gap-3">
+                    {selectedProducts.size > 0 && (
+                      <Button size="sm" variant="ghost" onClick={clearOrder} className="text-destructive text-xs h-7 gap-1">
+                        <X className="w-3 h-3" /> Limpar Pedido
+                      </Button>
+                    )}
+                    {combos.length > 0 && (
+                      <span className="font-mono text-sm text-success font-bold">{activatedDiscount.toFixed(1)}% / {maxDiscount}%{complementaryDiscount > 0 && <span className="ml-2 text-info">+ {complementaryDiscount.toFixed(1)}%</span>}</span>
+                    )}
+                  </div>
                 </div>
                 {combos.length > 0 && (
                   <>
@@ -804,13 +826,22 @@ export default function OperationStepperPage() {
                         ))}
                       </div>
                     )}
-                    {/* Combo recommendations */}
+                    {/* Combo recommendations — clickable to add product */}
                     {comboRecommendations.length > 0 && (
                       <div className="space-y-1">
                         {comboRecommendations.map((rec, i) => (
-                          <div key={i} className="flex items-center gap-2 text-xs text-info bg-info/10 border border-info/20 rounded-md px-3 py-1.5">
-                            <Lightbulb className="w-3.5 h-3.5 shrink-0" /> {rec.action}
-                          </div>
+                          <button key={i} onClick={() => {
+                            if (rec.productId && !selectedProducts.has(rec.productId)) {
+                              toggleProduct(rec.productId, rec.suggestedDose);
+                              if (quantityMode === 'livre' && rec.suggestedQty) {
+                                updateFreeQuantity(rec.productId, rec.suggestedQty);
+                              }
+                            }
+                          }} className="flex items-center gap-2 text-xs text-info bg-info/10 border border-info/20 rounded-md px-3 py-1.5 w-full text-left hover:bg-info/20 transition-colors cursor-pointer">
+                            <Lightbulb className="w-3.5 h-3.5 shrink-0" />
+                            <span className="flex-1">{rec.action}</span>
+                            {rec.productId && !selectedProducts.has(rec.productId) && <Plus className="w-3.5 h-3.5 shrink-0 text-success" />}
+                          </button>
                         ))}
                       </div>
                     )}
