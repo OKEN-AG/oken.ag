@@ -277,20 +277,23 @@ export default function OperationStepperPage() {
   // ─── Eligible states & cities from campaign ───
   const allMunicipios = useMemo(() => getAllMunicipios(), []);
   const eligibleCitySet = useMemo(() => new Set(rawCampaign?.eligible_cities || []), [rawCampaign]);
+  const hasEligibilityFilter = eligibleCitySet.size > 0;
 
   const eligibleStates = useMemo(() => {
-    if (eligibleCitySet.size === 0) return [] as string[];
+    const source = hasEligibilityFilter
+      ? allMunicipios.filter(m => eligibleCitySet.has(m.ibge))
+      : allMunicipios;
     const states = new Set<string>();
-    allMunicipios.filter(m => eligibleCitySet.has(m.ibge)).forEach(m => states.add(m.uf));
+    source.forEach(m => states.add(m.uf));
     return [...states].sort();
-  }, [allMunicipios, eligibleCitySet]);
+  }, [allMunicipios, eligibleCitySet, hasEligibilityFilter]);
 
   const eligibleCitiesForState = useMemo(() => {
-    if (!clientState || eligibleCitySet.size === 0) return [] as typeof allMunicipios;
+    if (!clientState) return [] as typeof allMunicipios;
     return allMunicipios
-      .filter(m => m.uf === clientState && eligibleCitySet.has(m.ibge))
+      .filter(m => m.uf === clientState && (!hasEligibilityFilter || eligibleCitySet.has(m.ibge)))
       .sort((a, b) => a.name.localeCompare(b.name));
-  }, [allMunicipios, eligibleCitySet, clientState]);
+  }, [allMunicipios, eligibleCitySet, clientState, hasEligibilityFilter]);
 
   // ─── Eligibility (with PF/PJ) ───
   const eligibility = useMemo(() => {
@@ -671,29 +674,21 @@ export default function OperationStepperPage() {
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                 <div className="glass-card p-4">
                   <label className="stat-label">Estado (UF)</label>
-                  {eligibleStates.length > 0 ? (
-                    <Select value={clientState} onValueChange={v => { setClientState(v); setClientCity(''); }}>
-                      <SelectTrigger className="mt-1 bg-muted border-border text-foreground"><SelectValue placeholder="Selecione o estado" /></SelectTrigger>
-                      <SelectContent>
-                        {eligibleStates.map(uf => <SelectItem key={uf} value={uf}>{uf}</SelectItem>)}
-                      </SelectContent>
-                    </Select>
-                  ) : (
-                    <Input value={clientState} onChange={e => setClientState(e.target.value.toUpperCase())} maxLength={2} className="mt-1 bg-muted border-border text-foreground" placeholder="UF" />
-                  )}
+                  <Select value={clientState} onValueChange={v => { setClientState(v); setClientCity(''); }}>
+                    <SelectTrigger className="mt-1 bg-muted border-border text-foreground"><SelectValue placeholder="Selecione o estado" /></SelectTrigger>
+                    <SelectContent className="bg-popover z-50 max-h-[300px]">
+                      {eligibleStates.map(uf => <SelectItem key={uf} value={uf}>{uf}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
                 </div>
                 <div className="glass-card p-4">
                   <label className="stat-label">Cidade</label>
-                  {eligibleCitiesForState.length > 0 ? (
-                    <Select value={clientCity} onValueChange={setClientCity}>
-                      <SelectTrigger className="mt-1 bg-muted border-border text-foreground"><SelectValue placeholder="Selecione a cidade" /></SelectTrigger>
-                      <SelectContent>
-                        {eligibleCitiesForState.map(m => <SelectItem key={m.ibge} value={m.name}>{m.name}</SelectItem>)}
-                      </SelectContent>
-                    </Select>
-                  ) : (
-                    <Input value={clientCity} onChange={e => setClientCity(e.target.value)} className="mt-1 bg-muted border-border text-foreground" placeholder={clientState ? 'Nenhuma cidade elegível' : 'Selecione o estado primeiro'} disabled={!clientState} />
-                  )}
+                  <Select value={clientCity} onValueChange={setClientCity} disabled={!clientState}>
+                    <SelectTrigger className="mt-1 bg-muted border-border text-foreground"><SelectValue placeholder={clientState ? 'Selecione a cidade' : 'Selecione o estado primeiro'} /></SelectTrigger>
+                    <SelectContent className="bg-popover z-50 max-h-[300px]">
+                      {eligibleCitiesForState.map(m => <SelectItem key={m.ibge} value={m.name}>{m.name}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
                 </div>
                 <div className="glass-card p-4">
                   <label className="stat-label">E-mail</label>
