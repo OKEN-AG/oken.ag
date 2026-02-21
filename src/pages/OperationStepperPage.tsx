@@ -246,10 +246,6 @@ export default function OperationStepperPage() {
     },
   });
 
-  // ─── Active modules → visible steps ───
-  const activeModules: JourneyModule[] = rawCampaign?.active_modules as JourneyModule[] || [];
-  const visibleSteps = STEPS.filter(s => !s.module || activeModules.length === 0 || activeModules.includes(s.module));
-
   // ─── Derived data ───
   const segmentAdjustmentPercent = useMemo(() => {
     const match = campaignSegments?.find(s => s.active && s.segment_name.toLowerCase() === segment.toLowerCase());
@@ -262,6 +258,15 @@ export default function OperationStepperPage() {
     return paymentMethods[0] || null;
   }, [paymentMethods, selectedPaymentMethod]);
 
+  // ─── Active modules → visible steps ───
+  const activeModules: JourneyModule[] = rawCampaign?.active_modules as JourneyModule[] || [];
+  const isBarter = selectedPM?.method_name?.toLowerCase().includes('barter') || false;
+  const visibleSteps = STEPS.filter(s => {
+    if (s.module === 'barter' as JourneyModule) return isBarter;
+    if (!s.module) return true;
+    if (activeModules.length === 0) return true;
+    return activeModules.includes(s.module);
+  });
   const paymentMethodMarkup = selectedPM?.markup_percent || 0;
 
   // Due dates with precedence
@@ -945,18 +950,31 @@ export default function OperationStepperPage() {
             <div className="space-y-4">
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                 <div className="glass-card p-4">
-                  <label className="stat-label">Porto</label>
+                  <label className="stat-label">Local de Entrega</label>
+                  <Select value={freightOrigin} onValueChange={v => {
+                    setFreightOrigin(v);
+                    // Auto-select port from freight reducer destination
+                    const fr = freightReducers.find(f => f.origin === v);
+                    if (fr?.destination) setPort(fr.destination);
+                  }}>
+                    <SelectTrigger className="mt-1 bg-muted border-border text-foreground"><SelectValue placeholder="Selecione o local..." /></SelectTrigger>
+                    <SelectContent>
+                      {deliveryLocations.length > 0
+                        ? deliveryLocations.map((loc: any) => <SelectItem key={loc.id} value={loc.warehouse_name}>{loc.warehouse_name} — {loc.city}/{loc.state}</SelectItem>)
+                        : freightReducers.map(f => <SelectItem key={f.origin} value={f.origin}>{f.origin} → {f.destination} ({f.distanceKm}km)</SelectItem>)
+                      }
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="glass-card p-4">
+                  <label className="stat-label">Porto Referência</label>
                   <Select value={port} onValueChange={setPort}>
                     <SelectTrigger className="mt-1 bg-muted border-border text-foreground"><SelectValue /></SelectTrigger>
                     <SelectContent>{ports.map(p => <SelectItem key={p} value={p}>{p}</SelectItem>)}</SelectContent>
                   </Select>
-                </div>
-                <div className="glass-card p-4">
-                  <label className="stat-label">Origem Frete</label>
-                  <Select value={freightOrigin} onValueChange={setFreightOrigin}>
-                    <SelectTrigger className="mt-1 bg-muted border-border text-foreground"><SelectValue /></SelectTrigger>
-                    <SelectContent>{freightReducers.map(f => <SelectItem key={f.origin} value={f.origin}>{f.origin} → {f.destination} ({f.distanceKm}km)</SelectItem>)}</SelectContent>
-                  </Select>
+                  {freightReducer && freightReducer.totalReducer > 0 && (
+                    <div className="text-xs text-muted-foreground mt-1">Redutor logístico: R$ {freightReducer.totalReducer.toFixed(2)}/sc ({freightReducer.distanceKm}km)</div>
+                  )}
                 </div>
                 <div className="glass-card p-4">
                   <label className="stat-label">Comprador</label>
