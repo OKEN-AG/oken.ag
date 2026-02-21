@@ -256,6 +256,7 @@ export default function OperationStepperPage() {
   const filteredDueDates = useMemo(() => getDueDatesWithPrecedence(dueDates || [], clientCity, undefined, clientState), [dueDates, clientCity, clientState]);
 
   const dueDateOptions = useMemo(() => {
+    // 1. Try campaign_due_dates with region precedence
     const dates = filteredDueDates.length ? filteredDueDates : (dueDates || []);
     if (dates.length) {
       const uniqueDates = [...new Set(dates.map((d: any) => d.due_date))].sort();
@@ -265,8 +266,18 @@ export default function OperationStepperPage() {
         return { value: String(parseFloat((diffDays / 30).toFixed(4))), label: `${date.toLocaleDateString('pt-BR')} (${diffDays}d)`, date: d };
       });
     }
-    return [];
-  }, [filteredDueDates, dueDates]);
+    // 2. Try available_due_dates array from campaign
+    const availDates = rawCampaign?.available_due_dates as string[] | null;
+    if (availDates?.length) {
+      return availDates.sort().map(d => {
+        const date = new Date(d + 'T00:00:00');
+        const diffDays = Math.max(Math.round((date.getTime() - Date.now()) / 86400000), 1);
+        return { value: String(parseFloat((diffDays / 30).toFixed(4))), label: `${date.toLocaleDateString('pt-BR')} (${diffDays}d)`, date: d };
+      });
+    }
+    // 3. Fallback: standard month intervals
+    return [6, 9, 12, 15, 18].map(m => ({ value: String(m), label: `${m} meses`, date: '' }));
+  }, [filteredDueDates, dueDates, rawCampaign]);
 
   const segmentOptions = useMemo(() => {
     if (campaignSegments?.length) return campaignSegments.filter(s => s.active).map(s => ({ value: s.segment_name, label: s.segment_name }));
