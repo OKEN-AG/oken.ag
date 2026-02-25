@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useMemo, useState, useRef } from 'react';
 import * as XLSX from 'xlsx';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -16,16 +16,10 @@ import { Calendar } from '@/components/ui/calendar';
 import { format } from 'date-fns';
 import { cn } from '@/lib/utils';
 import { useCommodityPricing, useUpsertCommodityPricing, useFreightReducers, useUpsertFreightReducer, useDeleteFreightReducer } from '@/hooks/useCommodityPricing';
+import { useCommodityOptions } from '@/hooks/useCommoditiesMasterData';
 import { supabase } from '@/integrations/supabase/client';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-
-const COMMODITIES = [
-  { value: 'soja', label: 'Soja' },
-  { value: 'milho', label: 'Milho' },
-  { value: 'cafe', label: 'Café' },
-  { value: 'algodao', label: 'Algodão' },
-];
 
 const PRICE_TYPES = [
   { value: 'pre_existente', label: 'Pré-Existente' },
@@ -120,6 +114,20 @@ export default function CommoditiesTab({ campaignId, campaignCommodities = [] }:
   const deleteFreight = useDeleteFreightReducer();
 
   const [selectedCommodity, setSelectedCommodity] = useState(campaignCommodities[0] || 'soja');
+  const { options: commodityOptions } = useCommodityOptions(campaignCommodities);
+
+  useEffect(() => {
+    if (!commodityOptions.length) return;
+    if (!commodityOptions.some(option => option.value === selectedCommodity)) {
+      setSelectedCommodity(commodityOptions[0].value);
+    }
+  }, [commodityOptions, selectedCommodity]);
+
+  const commodityLabelByValue = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const option of commodityOptions) map.set(option.value, option.label);
+    return map;
+  }, [commodityOptions]);
   const [pricingForm, setPricingForm] = useState<any>(null);
   const [basisPorts, setBasisPorts] = useState<BasisPort[]>([]);
   const [newPort, setNewPort] = useState('');
@@ -845,9 +853,9 @@ export default function CommoditiesTab({ campaignId, campaignCommodities = [] }:
       <div className="flex items-center gap-4">
         <Label className="text-base font-semibold">Commodity:</Label>
         <div className="flex gap-2">
-          {(campaignCommodities.length > 0 ? campaignCommodities : COMMODITIES.map(c => c.value)).map(c => (
-            <Button key={c} variant={selectedCommodity === c ? 'default' : 'outline'} size="sm" onClick={() => setSelectedCommodity(c)}>
-              {COMMODITIES.find(x => x.value === c)?.label || c}
+          {commodityOptions.map(option => (
+            <Button key={option.value} variant={selectedCommodity === option.value ? 'default' : 'outline'} size="sm" onClick={() => setSelectedCommodity(option.value)}>
+              {option.label}
             </Button>
           ))}
         </div>
@@ -869,7 +877,7 @@ export default function CommoditiesTab({ campaignId, campaignCommodities = [] }:
         {/* Pricing Tab */}
         <TabsContent value="precificacao" className="mt-4">
           <div className="border border-border rounded-md p-4 space-y-4">
-            <Label className="font-semibold">Precificação - {COMMODITIES.find(x => x.value === selectedCommodity)?.label}</Label>
+            <Label className="font-semibold">Precificação - {commodityLabelByValue.get(selectedCommodity) || selectedCommodity}</Label>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
               {[
                 ['Bolsa', 'exchange', f.exchange, 'text'],
@@ -947,11 +955,12 @@ export default function CommoditiesTab({ campaignId, campaignCommodities = [] }:
             <div className="flex items-center justify-between">
               <Label className="font-semibold">Valorização Padrão por Commodity</Label>
             </div>
-            {(campaignCommodities.length > 0 ? campaignCommodities : COMMODITIES.map(c => c.value)).map(comm => {
+            {commodityOptions.map(option => {
+              const comm = option.value;
               const val = valorizations.find((v: any) => v.commodity === comm);
               return (
                 <div key={comm} className="flex items-center gap-3 p-3 border border-border rounded-md">
-                  <span className="font-medium text-sm w-24">{COMMODITIES.find(c => c.value === comm)?.label || comm}</span>
+                  <span className="font-medium text-sm w-24">{option.label}</span>
                   {val ? (
                     <>
                       <div className="space-y-1"><Label className="text-xs">Nominal</Label><Input type="number" step="0.01" value={val.nominal_value} onChange={e => updateValorization(val.id!, 'nominal_value', Number(e.target.value))} className="w-28 h-8" disabled={val.use_percent} /></div>
@@ -1424,7 +1433,7 @@ export default function CommoditiesTab({ campaignId, campaignCommodities = [] }:
         {/* API Configuration Tab */}
         <TabsContent value="consulta_api" className="mt-4">
           <div className="border border-border rounded-md p-4 space-y-4">
-            <Label className="font-semibold flex items-center gap-2"><Wifi className="w-4 h-4" /> Consulta API - {COMMODITIES.find(x => x.value === selectedCommodity)?.label}</Label>
+            <Label className="font-semibold flex items-center gap-2"><Wifi className="w-4 h-4" /> Consulta API - {commodityLabelByValue.get(selectedCommodity) || selectedCommodity}</Label>
             <p className="text-xs text-muted-foreground">Configure os parâmetros para consulta de preços em tempo real via APIs públicas (Yahoo Finance, B3, etc).</p>
 
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3">

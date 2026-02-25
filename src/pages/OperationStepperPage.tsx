@@ -3,6 +3,10 @@ import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '@/contexts/AuthContext';
 import { useActiveCampaigns, useCampaignData } from '@/hooks/useActiveCampaign';
+<<<<<<< codex/generalize-codebase-to-order-first-architecture-17gcfm
+import { useCommodityOptions } from '@/hooks/useCommoditiesMasterData';
+=======
+>>>>>>> main
 import { useOperation, useOperationItems, useOperationDocuments, useCreateOperation, useCreateOperationItems, useCreateOperationLog, useReplaceOperationItems, useUpdateOperation } from '@/hooks/useOperations';
 import { calculateAgronomicSelection } from '@/engines/agronomic';
 import { applyComboCascadeWithLedger, getSuggestedDoseForRef, getMaxPossibleDiscount, getActivatedDiscount, getComplementaryDiscount } from '@/engines/combo-cascade';
@@ -270,6 +274,15 @@ export default function OperationStepperPage() {
     if (activeModules.length === 0) return true;
     return activeModules.includes(s.module);
   });
+  const { options: commodityOptions } = useCommodityOptions((rawCampaign?.commodities || []) as string[], ['soja', 'milho']);
+
+  useEffect(() => {
+    if (!commodityOptions.length) return;
+    if (!commodityOptions.some(option => option.value === selectedCommodity)) {
+      setSelectedCommodity(commodityOptions[0].value);
+    }
+  }, [commodityOptions, selectedCommodity]);
+
   const paymentMethodMarkup = selectedPM?.markup_percent || 0;
 
   // Due dates with precedence
@@ -817,7 +830,11 @@ export default function OperationStepperPage() {
                   <Select value={selectedCommodity} onValueChange={setSelectedCommodity}>
                     <SelectTrigger className="mt-1 bg-muted border-border text-foreground"><SelectValue /></SelectTrigger>
                     <SelectContent>
-                      {(rawCampaign?.commodities?.length ? rawCampaign.commodities : ['soja', 'milho']).map((c: string) => <SelectItem key={c} value={c} className="capitalize">{c}</SelectItem>)}
+                      {commodityOptions.map(option => (
+                        <SelectItem key={option.value} value={option.value}>
+                          {option.label}
+                        </SelectItem>
+                      ))}
                     </SelectContent>
                   </Select>
                 </div>
