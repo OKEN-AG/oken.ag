@@ -151,6 +151,7 @@ export default function OperationStepperPage() {
   const [clientName, setClientName] = useState('');
   const [clientDocument, setClientDocument] = useState('');
   const [clientCity, setClientCity] = useState('');
+  const [clientCityCode, setClientCityCode] = useState('');
   const [clientState, setClientState] = useState('');
   const [clientType, setClientType] = useState<'PF' | 'PJ'>('PJ');
   const [clientEmail, setClientEmail] = useState('');
@@ -198,6 +199,10 @@ export default function OperationStepperPage() {
       setClientDocument(existingOp.client_document || '');
       setClientCity(existingOp.city || '');
       setClientState(existingOp.state || '');
+      if (existingOp.city && existingOp.state) {
+        const cityMatch = getAllMunicipios().find(m => m.uf === existingOp.state && normalizeKey(m.name) === normalizeKey(existingOp.city || ''));
+        setClientCityCode(cityMatch?.ibge || '');
+      }
       setSegment(existingOp.channel || '');
       setChannelEnum((existingOp.channel || 'distribuidor') as ChannelSegment);
       setArea(existingOp.area_hectares || 500);
@@ -222,6 +227,15 @@ export default function OperationStepperPage() {
       setSelectedCampaignId(activeCampaigns[0].id);
     }
   }, [activeCampaigns, selectedCampaignId]);
+
+  useEffect(() => {
+    if (!isNewOperation) return;
+    setClientState('');
+    setClientCity('');
+    setClientCityCode('');
+    setSelectedProducts(new Map());
+    setFreeQuantities(new Map());
+  }, [selectedCampaignId, isNewOperation]);
 
   // ─── Campaign sub-data ───
   const { data: campaignSegments } = useQuery({
@@ -363,31 +377,51 @@ export default function OperationStepperPage() {
 
   // ─── Eligible states & cities from campaign ───
   const allMunicipios = useMemo(() => getAllMunicipios(), []);
-  const eligibleCitySet = useMemo(() => new Set(rawCampaign?.eligible_cities || []), [rawCampaign]);
+  const normalizeKey = (v?: string) => String(v || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().toLowerCase();
+  const eligibleCitySet = useMemo(() => new Set((rawCampaign?.eligible_cities || []).map((v: any) => String(v))), [rawCampaign]);
+  const eligibleCityNameSet = useMemo(() => new Set((rawCampaign?.eligible_cities || []).map((v: any) => normalizeKey(String(v)))), [rawCampaign]);
   const hasEligibilityFilter = eligibleCitySet.size > 0;
+
+  const isMunicipioEligible = useCallback((m: { ibge: string; name: string }) => {
+    if (!hasEligibilityFilter) return true;
+    return eligibleCitySet.has(m.ibge) || eligibleCityNameSet.has(normalizeKey(m.name));
+  }, [hasEligibilityFilter, eligibleCitySet, eligibleCityNameSet]);
 
   const eligibleStates = useMemo(() => {
     const source = hasEligibilityFilter
-      ? allMunicipios.filter(m => eligibleCitySet.has(m.ibge))
+      ? allMunicipios.filter(m => isMunicipioEligible(m))
       : allMunicipios;
     const states = new Set<string>();
     source.forEach(m => states.add(m.uf));
     return [...states].sort();
-  }, [allMunicipios, eligibleCitySet, hasEligibilityFilter]);
+  }, [allMunicipios, hasEligibilityFilter, isMunicipioEligible]);
 
   const eligibleCitiesForState = useMemo(() => {
     if (!clientState) return [] as typeof allMunicipios;
     return allMunicipios
-      .filter(m => m.uf === clientState && (!hasEligibilityFilter || eligibleCitySet.has(m.ibge)))
+      .filter(m => m.uf === clientState && isMunicipioEligible(m))
       .sort((a, b) => a.name.localeCompare(b.name));
-  }, [allMunicipios, eligibleCitySet, clientState, hasEligibilityFilter]);
+  }, [allMunicipios, clientState, isMunicipioEligible]);
+
+  const selectedCityName = useMemo(() => {
+    if (clientCityCode) {
+      const byCode = allMunicipios.find(m => m.ibge === clientCityCode && m.uf === clientState);
+      if (byCode) return byCode.name;
+    }
+    return clientCity;
+  }, [allMunicipios, clientCityCode, clientCity, clientState]);
+
+  const usesIbgeCityEligibility = useMemo(() => {
+    if (!hasEligibilityFilter) return false;
+    return Array.from(eligibleCitySet).some(v => /^\d{6,8}$/.test(String(v)));
+  }, [eligibleCitySet, hasEligibilityFilter]);
 
   // ─── Eligibility (with PF/PJ) ───
   const eligibility = useMemo(() => {
     if (!campaign) return null;
     return checkEligibility(campaign, {
       state: clientState || undefined,
-      city: clientCity || undefined,
+      city: (usesIbgeCityEligibility ? clientCityCode : selectedCityName) || undefined,
       segment: segment as ChannelSegment || channelEnum,
       clientDocument: clientDocument || undefined,
       clientType,
@@ -395,7 +429,7 @@ export default function OperationStepperPage() {
       whitelist: clientWhitelist || [],
       blockIneligible: !!(rawCampaign as any)?.block_ineligible,
     });
-  }, [campaign, clientState, clientCity, segment, clientDocument, clientType, clientWhitelist, rawCampaign]);
+  }, [campaign, clientState, clientCity, clientCityCode, selectedCityName, usesIbgeCityEligibility, segment, clientDocument, clientType, clientWhitelist, rawCampaign]);
 
   // ─── Product selection ───
   const toggleProduct = (productId: string, suggestedDose?: number) => {
@@ -824,7 +858,7 @@ export default function OperationStepperPage() {
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                 <div className="glass-card p-4">
                   <label className="stat-label">Estado (UF)</label>
-                  <Select value={clientState} onValueChange={v => { setClientState(v); setClientCity(''); }}>
+                  <Select value={clientState} onValueChange={v => { setClientState(v); setClientCity(''); setClientCityCode(''); }}>
                     <SelectTrigger className="mt-1 bg-muted border-border text-foreground"><SelectValue placeholder="Selecione o estado" /></SelectTrigger>
                     <SelectContent className="bg-popover z-50 max-h-[300px]">
                       {eligibleStates.map(uf => <SelectItem key={uf} value={uf}>{uf}</SelectItem>)}
@@ -833,10 +867,10 @@ export default function OperationStepperPage() {
                 </div>
                 <div className="glass-card p-4">
                   <label className="stat-label">Cidade</label>
-                  <Select value={clientCity} onValueChange={setClientCity} disabled={!clientState}>
+                  <Select value={clientCityCode} onValueChange={v => { setClientCityCode(v); const found = eligibleCitiesForState.find(m => m.ibge === v); setClientCity(found?.name || ''); }} disabled={!clientState}>
                     <SelectTrigger className="mt-1 bg-muted border-border text-foreground"><SelectValue placeholder={clientState ? 'Selecione a cidade' : 'Selecione o estado primeiro'} /></SelectTrigger>
                     <SelectContent className="bg-popover z-50 max-h-[300px]">
-                      {eligibleCitiesForState.map(m => <SelectItem key={m.ibge} value={m.name}>{m.name}</SelectItem>)}
+                      {eligibleCitiesForState.map(m => <SelectItem key={m.ibge} value={m.ibge}>{m.name}</SelectItem>)}
                     </SelectContent>
                   </Select>
                 </div>
