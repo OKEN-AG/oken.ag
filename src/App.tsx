@@ -2,15 +2,12 @@ import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { AuthProvider } from "@/contexts/AuthContext";
 import ProtectedRoute from "@/components/ProtectedRoute";
 import AppLayout from "@/components/AppLayout";
 import Dashboard from "@/pages/Dashboard";
 import CampaignPage from "@/pages/CampaignPage";
-import SimulationPage from "@/pages/SimulationPage";
-import ParityPage from "@/pages/ParityPage";
-import DocumentsPage from "@/pages/DocumentsPage";
 import MonitoringPage from "@/pages/MonitoringPage";
 import AuthPage from "@/pages/AuthPage";
 import NotFound from "./pages/NotFound";
@@ -18,6 +15,7 @@ import CampaignsListPage from "@/pages/admin/CampaignsListPage";
 import CampaignFormPage from "@/pages/admin/CampaignFormPage";
 import OperationStepperPage from "@/pages/OperationStepperPage";
 import BuyerPortalPage from "@/pages/BuyerPortalPage";
+import CommoditiesMasterDataPage from "@/pages/admin/CommoditiesMasterDataPage";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -44,14 +42,15 @@ const App = () => (
                   <Routes>
                     <Route path="/" element={<Dashboard />} />
                     <Route path="/campanha" element={<CampaignPage />} />
-                    <Route path="/simulacao" element={<SimulationPage />} />
-                    <Route path="/paridade" element={<ParityPage />} />
-                    <Route path="/documentos" element={<DocumentsPage />} />
+                    <Route path="/simulacao" element={<Navigate to="/operacao/novo" replace />} />
+                    <Route path="/paridade" element={<Navigate to="/operacao/novo" replace />} />
+                    <Route path="/documentos" element={<Navigate to="/operacao/novo" replace />} />
                     <Route path="/monitoramento" element={<MonitoringPage />} />
                     <Route path="/operacao/novo" element={<OperationStepperPage />} />
                     <Route path="/operacao/:id" element={<OperationStepperPage />} />
                     <Route path="/admin/campanhas" element={<CampaignsListPage />} />
                     <Route path="/admin/campanhas/:id" element={<CampaignFormPage />} />
+                    <Route path="/admin/commodities-masterdata" element={<CommoditiesMasterDataPage />} />
                     <Route path="/compradores" element={<BuyerPortalPage />} />
                     <Route path="*" element={<NotFound />} />
                   </Routes>
