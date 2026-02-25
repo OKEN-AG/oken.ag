@@ -3,7 +3,7 @@ import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '@/contexts/AuthContext';
 import { useActiveCampaigns, useCampaignData } from '@/hooks/useActiveCampaign';
-import { useOperation, useOperationItems, useOperationDocuments, useCreateOperation, useCreateOperationItems, useCreateOperationLog, useUpdateOperation } from '@/hooks/useOperations';
+import { useOperation, useOperationItems, useOperationDocuments, useCreateOperation, useCreateOperationItems, useCreateOperationLog, useReplaceOperationItems, useUpdateOperation } from '@/hooks/useOperations';
 import { calculateAgronomicSelection } from '@/engines/agronomic';
 import { applyComboCascadeWithLedger, getSuggestedDoseForRef, getMaxPossibleDiscount, getActivatedDiscount, getComplementaryDiscount } from '@/engines/combo-cascade';
 import { decomposePricing, calculateGrossToNet, generatePriceAuditTrail, normalizePrice } from '@/engines/pricing';
@@ -184,6 +184,7 @@ export default function OperationStepperPage() {
   // ─── Mutations ───
   const createOperation = useCreateOperation();
   const createItems = useCreateOperationItems();
+  const replaceItems = useReplaceOperationItems();
   const createLog = useCreateOperationLog();
   const updateOperation = useUpdateOperation();
 
@@ -568,6 +569,24 @@ export default function OperationStepperPage() {
     try {
       let opId = operationId;
 
+      const items = pricingResults.map(pr => {
+        const sel = selections.find(s => s.productId === pr.productId)!;
+        return {
+          operation_id: opId!,
+          product_id: pr.productId,
+          dose_per_hectare: sel.dosePerHectare,
+          raw_quantity: sel.rawQuantity,
+          rounded_quantity: sel.roundedQuantity,
+          boxes: sel.boxes,
+          pallets: sel.pallets,
+          base_price: pr.basePrice,
+          normalized_price: pr.normalizedPrice,
+          interest_component: pr.interestComponent,
+          margin_component: pr.marginComponent,
+          subtotal: pr.subtotal,
+        };
+      });
+
       if (isNewOperation) {
         const op = await createOperation.mutateAsync({
           campaign_id: selectedCampaignId, user_id: user.id, client_name: clientName || 'Sem nome',
@@ -581,23 +600,37 @@ export default function OperationStepperPage() {
         });
         opId = op.id;
 
-        const items = pricingResults.map(pr => {
-          const sel = selections.find(s => s.productId === pr.productId)!;
-          return { operation_id: opId!, product_id: pr.productId, dose_per_hectare: sel.dosePerHectare, raw_quantity: sel.rawQuantity, rounded_quantity: sel.roundedQuantity, boxes: sel.boxes, pallets: sel.pallets, base_price: pr.basePrice, normalized_price: pr.normalizedPrice, interest_component: pr.interestComponent, margin_component: pr.marginComponent, subtotal: pr.subtotal };
-        });
+        for (const item of items) item.operation_id = opId!;
         await createItems.mutateAsync(items);
       } else {
+        if (existingOp?.status === 'simulacao') {
+          await replaceItems.mutateAsync({ operationId: opId!, items });
+        }
+
         await updateOperation.mutateAsync({
-          id: opId!, client_name: clientName, client_document: clientDocument || undefined,
-          channel: channelEnum, city: clientCity, state: clientState, due_months: dueMonths,
-          area_hectares: area, gross_revenue: grossToNet.grossRevenue, combo_discount: grossToNet.comboDiscount,
-          net_revenue: grossToNet.netRevenue, financial_revenue: grossToNet.financialRevenue,
-          distributor_margin: grossToNet.distributorMargin, commodity: selectedCommodity as any,
-          total_sacas: insurancePremium?.totalSacas ?? parity.quantitySacas,
-          commodity_price: parity.commodityPricePerUnit, reference_price: parity.referencePrice,
-          has_existing_contract: hasContract, insurance_premium_sacas: insurancePremium?.additionalSacas ?? 0,
-          counterparty,
-          payment_method: 'barter' as const,
+          id: opId!,
+          updates: {
+            client_name: clientName,
+            client_document: clientDocument || undefined,
+            channel: channelEnum,
+            city: clientCity,
+            state: clientState,
+            due_months: dueMonths,
+            area_hectares: area,
+            gross_revenue: grossToNet.grossRevenue,
+            combo_discount: grossToNet.comboDiscount,
+            net_revenue: grossToNet.netRevenue,
+            financial_revenue: grossToNet.financialRevenue,
+            distributor_margin: grossToNet.distributorMargin,
+            commodity: selectedCommodity as any,
+            total_sacas: insurancePremium?.totalSacas ?? parity.quantitySacas,
+            commodity_price: parity.commodityPricePerUnit,
+            reference_price: parity.referencePrice,
+            has_existing_contract: hasContract,
+            insurance_premium_sacas: insurancePremium?.additionalSacas ?? 0,
+            counterparty,
+            payment_method: 'barter' as const,
+          },
         });
       }
 

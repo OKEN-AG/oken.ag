@@ -18,6 +18,7 @@ import CampaignsListPage from "@/pages/admin/CampaignsListPage";
 import CampaignFormPage from "@/pages/admin/CampaignFormPage";
 import OperationStepperPage from "@/pages/OperationStepperPage";
 import BuyerPortalPage from "@/pages/BuyerPortalPage";
+import CommoditiesMasterDataPage from "@/pages/admin/CommoditiesMasterDataPage";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -52,6 +53,7 @@ const App = () => (
                     <Route path="/operacao/:id" element={<OperationStepperPage />} />
                     <Route path="/admin/campanhas" element={<CampaignsListPage />} />
                     <Route path="/admin/campanhas/:id" element={<CampaignFormPage />} />
+                    <Route path="/admin/commodities-masterdata" element={<CommoditiesMasterDataPage />} />
                     <Route path="/compradores" element={<BuyerPortalPage />} />
                     <Route path="*" element={<NotFound />} />
                   </Routes>
