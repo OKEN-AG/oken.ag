@@ -17,6 +17,8 @@ import EligibilityTab, { type SegmentRow } from '@/components/campaign/Eligibili
 import ProductsTab from '@/components/campaign/ProductsTab';
 import CombosTab from '@/components/campaign/CombosTab';
 import CommoditiesTab from '@/components/campaign/CommoditiesTab';
+import { useCommodityOptions } from '@/hooks/useCommoditiesMasterData';
+import { normalizeCommodityCode } from '@/lib/commodity';
 
 const JOURNEY_MODULES = [
   { value: 'adesao', label: 'Termo de Adesão', group: 'formalizacao' },
@@ -101,6 +103,8 @@ export default function CampaignFormPage() {
   const [segments, setSegments] = useState<SegmentRow[]>([]);
   const [dueDates, setDueDates] = useState<DueDateRow[]>([]);
   const [selectedCities, setSelectedCities] = useState<string[]>([]);
+  const { options: commodityOptions } = useCommodityOptions();
+
 
   useEffect(() => {
     if (existing) {
@@ -111,7 +115,7 @@ export default function CampaignFormPage() {
         currency: e.currency || 'USD',
         target: e.target,
         active: e.active,
-        commodities: e.commodities || [],
+        commodities: (e.commodities || []).map(normalizeCommodityCode),
         exchange_rate_products: Number(e.exchange_rate_products),
         exchange_rate_barter: Number(e.exchange_rate_barter),
         interest_rate: Number(e.interest_rate),
@@ -166,12 +170,24 @@ export default function CampaignFormPage() {
       return;
     }
 
+    const validCommodityValues = new Set(commodityOptions.map(c => normalizeCommodityCode(c.value)));
+    const hasMasterOptions = commodityOptions.length > 0;
+    const normalizedCommodities = (form.commodities || []).map(normalizeCommodityCode).filter(Boolean);
+    const sanitizedCommodities = hasMasterOptions
+      ? normalizedCommodities.filter(c => validCommodityValues.has(c))
+      : normalizedCommodities;
+
+    if (hasMasterOptions && sanitizedCommodities.length !== (form.commodities || []).length) {
+      onFieldChange('commodities', sanitizedCommodities);
+      toast.warning('Algumas commodities removidas não estão mais ativas no MasterData.');
+    }
+
     // Block saving an active campaign without required fields
     if (form.active) {
       const errors: string[] = [];
       if (!form.start_date || !form.end_date) errors.push('Vigência (início e fim) deve ser definida');
       if (form.start_date && form.end_date && form.start_date > form.end_date) errors.push('Data de início deve ser anterior à data de fim');
-      if (!form.commodities || form.commodities.length === 0) errors.push('Pelo menos 1 commodity deve ser selecionada');
+      if (!sanitizedCommodities || sanitizedCommodities.length === 0) errors.push('Pelo menos 1 commodity deve ser selecionada');
       if (selectedCities.length === 0) errors.push('Defina pelo menos 1 cidade/estado na aba Elegibilidade');
       if (errors.length > 0) {
         toast.error('Não é possível salvar campanha ativa:\n' + errors.join('\n'));
@@ -203,7 +219,7 @@ export default function CampaignFormPage() {
         eligible_mesoregions: mesos,
         price_list_format: priceFormat,
         currency: form.currency,
-        commodities: form.commodities,
+        commodities: sanitizedCommodities,
         code_custom: form.code_custom,
         company_name: form.company_name,
         division: form.division,
