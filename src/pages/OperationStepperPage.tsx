@@ -3,7 +3,9 @@ import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '@/contexts/AuthContext';
 import { useActiveCampaigns, useCampaignData } from '@/hooks/useActiveCampaign';
-import { useOperation, useOperationItems, useOperationDocuments, useCreateOperation, useCreateOperationItems, useCreateOperationLog, useUpdateOperation } from '@/hooks/useOperations';
+import { useCommodityOptions } from '@/hooks/useCommoditiesMasterData';
+import { DEFAULT_COMMODITY_FALLBACK, normalizeCommodityCode } from '@/lib/commodity';
+import { useOperation, useOperationItems, useOperationDocuments, useCreateOperation, useCreateOperationItems, useCreateOperationLog, useReplaceOperationItems, useUpdateOperation } from '@/hooks/useOperations';
 import { calculateAgronomicSelection } from '@/engines/agronomic';
 import { applyComboCascadeWithLedger, getSuggestedDoseForRef, getMaxPossibleDiscount, getActivatedDiscount, getComplementaryDiscount } from '@/engines/combo-cascade';
 import { decomposePricing, calculateGrossToNet, generatePriceAuditTrail, normalizePrice } from '@/engines/pricing';
@@ -149,6 +151,7 @@ export default function OperationStepperPage() {
   const [clientName, setClientName] = useState('');
   const [clientDocument, setClientDocument] = useState('');
   const [clientCity, setClientCity] = useState('');
+  const [clientCityCode, setClientCityCode] = useState('');
   const [clientState, setClientState] = useState('');
   const [clientType, setClientType] = useState<'PF' | 'PJ'>('PJ');
   const [clientEmail, setClientEmail] = useState('');
@@ -167,7 +170,7 @@ export default function OperationStepperPage() {
   // ─── Payment step state ───
   const [dueMonths, setDueMonths] = useState(12);
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState('');
-  const [selectedCommodity, setSelectedCommodity] = useState('soja');
+  const [selectedCommodity, setSelectedCommodity] = useState(normalizeCommodityCode(DEFAULT_COMMODITY_FALLBACK[0]));
 
   // ─── Barter step state ───
   const [port, setPort] = useState('');
@@ -184,6 +187,7 @@ export default function OperationStepperPage() {
   // ─── Mutations ───
   const createOperation = useCreateOperation();
   const createItems = useCreateOperationItems();
+  const replaceItems = useReplaceOperationItems();
   const createLog = useCreateOperationLog();
   const updateOperation = useUpdateOperation();
 
@@ -195,6 +199,10 @@ export default function OperationStepperPage() {
       setClientDocument(existingOp.client_document || '');
       setClientCity(existingOp.city || '');
       setClientState(existingOp.state || '');
+      if (existingOp.city && existingOp.state) {
+        const cityMatch = getAllMunicipios().find(m => m.uf === existingOp.state && normalizeKey(m.name) === normalizeKey(existingOp.city || ''));
+        setClientCityCode(cityMatch?.ibge || '');
+      }
       setSegment(existingOp.channel || '');
       setChannelEnum((existingOp.channel || 'distribuidor') as ChannelSegment);
       setArea(existingOp.area_hectares || 500);
@@ -219,6 +227,15 @@ export default function OperationStepperPage() {
       setSelectedCampaignId(activeCampaigns[0].id);
     }
   }, [activeCampaigns, selectedCampaignId]);
+
+  useEffect(() => {
+    if (!isNewOperation) return;
+    setClientState('');
+    setClientCity('');
+    setClientCityCode('');
+    setSelectedProducts(new Map());
+    setFreeQuantities(new Map());
+  }, [selectedCampaignId, isNewOperation]);
 
   // ─── Campaign sub-data ───
   const { data: campaignSegments } = useQuery({
@@ -260,6 +277,21 @@ export default function OperationStepperPage() {
     return paymentMethods[0] || null;
   }, [paymentMethods, selectedPaymentMethod]);
 
+  const campaignCurrency = useMemo(() => ((rawCampaign as any)?.currency || campaign?.currency || 'BRL').toUpperCase(), [rawCampaign, campaign]);
+
+  const resolvePaymentMethod = useCallback((methodName?: string | null) => {
+    const normalized = String(methodName || '').toLowerCase();
+    if (normalized.includes('barter')) return 'barter' as const;
+    if (normalized.includes('usd') || campaignCurrency === 'USD') return 'usd' as const;
+    return 'brl' as const;
+  }, [campaignCurrency]);
+
+  useEffect(() => {
+    if (!existingOp || !(existingOp as any).payment_method || !paymentMethods?.length) return;
+    const matchPm = paymentMethods.find(pm => resolvePaymentMethod(pm.method_name) === (existingOp as any).payment_method);
+    if (matchPm?.id) setSelectedPaymentMethod(matchPm.id);
+  }, [existingOp, paymentMethods, resolvePaymentMethod]);
+
   // ─── Active modules → visible steps ───
   const activeModules: JourneyModule[] = rawCampaign?.active_modules as JourneyModule[] || [];
   const isBarter = selectedPM?.method_name?.toLowerCase().includes('barter') || false;
@@ -269,6 +301,21 @@ export default function OperationStepperPage() {
     if (activeModules.length === 0) return true;
     return activeModules.includes(s.module);
   });
+  const { options: commodityOptions } = useCommodityOptions((rawCampaign?.commodities || []) as string[], [...DEFAULT_COMMODITY_FALLBACK]);
+
+  useEffect(() => {
+    if (!selectedPaymentMethod && paymentMethods?.length) {
+      setSelectedPaymentMethod(paymentMethods[0].id);
+    }
+  }, [paymentMethods, selectedPaymentMethod]);
+
+  useEffect(() => {
+    if (!commodityOptions.length) return;
+    if (!commodityOptions.some(option => normalizeCommodityCode(option.value) === normalizeCommodityCode(selectedCommodity))) {
+      setSelectedCommodity(commodityOptions[0].value);
+    }
+  }, [commodityOptions, selectedCommodity]);
+
   const paymentMethodMarkup = selectedPM?.markup_percent || 0;
 
   // Due dates with precedence
@@ -297,12 +344,22 @@ export default function OperationStepperPage() {
     // 3. Fallback: standard month intervals
     return [6, 9, 12, 15, 18].map(m => ({ value: String(m), label: `${m} meses`, date: '' }));
   }, [filteredDueDates, dueDates, rawCampaign]);
+  const selectedDueDate = useMemo(() => {
+    const selected = dueDateOptions.find(o => o.value === String(dueMonths));
+    return selected?.date || null;
+  }, [dueDateOptions, dueMonths]);
 
   const segmentOptions = useMemo(() => {
     if (campaignSegments?.length) return campaignSegments.filter(s => s.active).map(s => ({ value: s.segment_name, label: s.segment_name }));
     if (campaign?.margins?.length) return campaign.margins.map(m => ({ value: m.segment, label: m.segment }));
     return [{ value: 'direto', label: 'Direto' }, { value: 'distribuidor', label: 'Distribuidor' }, { value: 'cooperativa', label: 'Cooperativa' }];
   }, [campaignSegments, campaign]);
+
+  useEffect(() => {
+    if (!segment && segmentOptions.length > 0) {
+      setSegment(segmentOptions[0].value);
+    }
+  }, [segment, segmentOptions]);
 
   // Derive the DB channel_segment enum from campaign target
   const deriveChannelEnum = (target?: string): ChannelSegment => {
@@ -320,31 +377,51 @@ export default function OperationStepperPage() {
 
   // ─── Eligible states & cities from campaign ───
   const allMunicipios = useMemo(() => getAllMunicipios(), []);
-  const eligibleCitySet = useMemo(() => new Set(rawCampaign?.eligible_cities || []), [rawCampaign]);
+  const normalizeKey = (v?: string) => String(v || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().toLowerCase();
+  const eligibleCitySet = useMemo(() => new Set((rawCampaign?.eligible_cities || []).map((v: any) => String(v))), [rawCampaign]);
+  const eligibleCityNameSet = useMemo(() => new Set((rawCampaign?.eligible_cities || []).map((v: any) => normalizeKey(String(v)))), [rawCampaign]);
   const hasEligibilityFilter = eligibleCitySet.size > 0;
+
+  const isMunicipioEligible = useCallback((m: { ibge: string; name: string }) => {
+    if (!hasEligibilityFilter) return true;
+    return eligibleCitySet.has(m.ibge) || eligibleCityNameSet.has(normalizeKey(m.name));
+  }, [hasEligibilityFilter, eligibleCitySet, eligibleCityNameSet]);
 
   const eligibleStates = useMemo(() => {
     const source = hasEligibilityFilter
-      ? allMunicipios.filter(m => eligibleCitySet.has(m.ibge))
+      ? allMunicipios.filter(m => isMunicipioEligible(m))
       : allMunicipios;
     const states = new Set<string>();
     source.forEach(m => states.add(m.uf));
     return [...states].sort();
-  }, [allMunicipios, eligibleCitySet, hasEligibilityFilter]);
+  }, [allMunicipios, hasEligibilityFilter, isMunicipioEligible]);
 
   const eligibleCitiesForState = useMemo(() => {
     if (!clientState) return [] as typeof allMunicipios;
     return allMunicipios
-      .filter(m => m.uf === clientState && (!hasEligibilityFilter || eligibleCitySet.has(m.ibge)))
+      .filter(m => m.uf === clientState && isMunicipioEligible(m))
       .sort((a, b) => a.name.localeCompare(b.name));
-  }, [allMunicipios, eligibleCitySet, clientState, hasEligibilityFilter]);
+  }, [allMunicipios, clientState, isMunicipioEligible]);
+
+  const selectedCityName = useMemo(() => {
+    if (clientCityCode) {
+      const byCode = allMunicipios.find(m => m.ibge === clientCityCode && m.uf === clientState);
+      if (byCode) return byCode.name;
+    }
+    return clientCity;
+  }, [allMunicipios, clientCityCode, clientCity, clientState]);
+
+  const usesIbgeCityEligibility = useMemo(() => {
+    if (!hasEligibilityFilter) return false;
+    return Array.from(eligibleCitySet).some(v => /^\d{6,8}$/.test(String(v)));
+  }, [eligibleCitySet, hasEligibilityFilter]);
 
   // ─── Eligibility (with PF/PJ) ───
   const eligibility = useMemo(() => {
     if (!campaign) return null;
     return checkEligibility(campaign, {
       state: clientState || undefined,
-      city: clientCity || undefined,
+      city: (usesIbgeCityEligibility ? clientCityCode : selectedCityName) || undefined,
       segment: segment as ChannelSegment || channelEnum,
       clientDocument: clientDocument || undefined,
       clientType,
@@ -352,7 +429,7 @@ export default function OperationStepperPage() {
       whitelist: clientWhitelist || [],
       blockIneligible: !!(rawCampaign as any)?.block_ineligible,
     });
-  }, [campaign, clientState, clientCity, segment, clientDocument, clientType, clientWhitelist, rawCampaign]);
+  }, [campaign, clientState, clientCity, clientCityCode, selectedCityName, usesIbgeCityEligibility, segment, clientDocument, clientType, clientWhitelist, rawCampaign]);
 
   // ─── Product selection ───
   const toggleProduct = (productId: string, suggestedDose?: number) => {
@@ -434,7 +511,7 @@ export default function OperationStepperPage() {
 
   const selectedCommodityPricing: CommodityPricing | null = useMemo(() => {
     if (!rawCommodityPricing?.length) return commodityPricing;
-    const match = rawCommodityPricing.find((cp: any) => cp.commodity === selectedCommodity);
+    const match = rawCommodityPricing.find((cp: any) => normalizeCommodityCode(cp.commodity) === normalizeCommodityCode(selectedCommodity));
     if (!match) return commodityPricing;
     return {
       commodity: match.commodity as any, exchange: match.exchange, contract: match.contract,
@@ -568,6 +645,24 @@ export default function OperationStepperPage() {
     try {
       let opId = operationId;
 
+      const items = pricingResults.map(pr => {
+        const sel = selections.find(s => s.productId === pr.productId)!;
+        return {
+          operation_id: opId!,
+          product_id: pr.productId,
+          dose_per_hectare: sel.dosePerHectare,
+          raw_quantity: sel.rawQuantity,
+          rounded_quantity: sel.roundedQuantity,
+          boxes: sel.boxes,
+          pallets: sel.pallets,
+          base_price: pr.basePrice,
+          normalized_price: pr.normalizedPrice,
+          interest_component: pr.interestComponent,
+          margin_component: pr.marginComponent,
+          subtotal: pr.subtotal,
+        };
+      });
+
       if (isNewOperation) {
         const op = await createOperation.mutateAsync({
           campaign_id: selectedCampaignId, user_id: user.id, client_name: clientName || 'Sem nome',
@@ -575,29 +670,52 @@ export default function OperationStepperPage() {
           state: clientState || undefined, due_months: dueMonths, area_hectares: area,
           gross_revenue: grossToNet.grossRevenue, combo_discount: grossToNet.comboDiscount,
           net_revenue: grossToNet.netRevenue, financial_revenue: grossToNet.financialRevenue,
-          distributor_margin: grossToNet.distributorMargin, commodity: selectedCommodity as any,
+          distributor_margin: grossToNet.distributorMargin, commodity: normalizeCommodityCode(selectedCommodity) as any,
+          total_sacas: insurancePremium?.totalSacas ?? parity.quantitySacas,
+          commodity_price: parity.commodityPricePerUnit,
+          reference_price: parity.referencePrice,
+          has_existing_contract: hasContract,
+          insurance_premium_sacas: insurancePremium?.additionalSacas ?? 0,
+          due_date: selectedDueDate,
           counterparty,
-          status: 'simulacao' as const,
+          payment_method: resolvePaymentMethod(selectedPM?.method_name),
+          status: (currentStepDef.id === 'summary' ? 'pedido' : 'simulacao') as const,
         });
         opId = op.id;
 
-        const items = pricingResults.map(pr => {
-          const sel = selections.find(s => s.productId === pr.productId)!;
-          return { operation_id: opId!, product_id: pr.productId, dose_per_hectare: sel.dosePerHectare, raw_quantity: sel.rawQuantity, rounded_quantity: sel.roundedQuantity, boxes: sel.boxes, pallets: sel.pallets, base_price: pr.basePrice, normalized_price: pr.normalizedPrice, interest_component: pr.interestComponent, margin_component: pr.marginComponent, subtotal: pr.subtotal };
-        });
+        for (const item of items) item.operation_id = opId!;
         await createItems.mutateAsync(items);
       } else {
+        if (existingOp?.status === 'simulacao') {
+          await replaceItems.mutateAsync({ operationId: opId!, items });
+        }
+
         await updateOperation.mutateAsync({
-          id: opId!, client_name: clientName, client_document: clientDocument || undefined,
-          channel: channelEnum, city: clientCity, state: clientState, due_months: dueMonths,
-          area_hectares: area, gross_revenue: grossToNet.grossRevenue, combo_discount: grossToNet.comboDiscount,
-          net_revenue: grossToNet.netRevenue, financial_revenue: grossToNet.financialRevenue,
-          distributor_margin: grossToNet.distributorMargin, commodity: selectedCommodity as any,
-          total_sacas: insurancePremium?.totalSacas ?? parity.quantitySacas,
-          commodity_price: parity.commodityPricePerUnit, reference_price: parity.referencePrice,
-          has_existing_contract: hasContract, insurance_premium_sacas: insurancePremium?.additionalSacas ?? 0,
-          counterparty,
-          payment_method: 'barter' as const,
+          id: opId!,
+          updates: {
+            client_name: clientName,
+            client_document: clientDocument || undefined,
+            channel: channelEnum,
+            city: clientCity,
+            state: clientState,
+            due_months: dueMonths,
+            due_date: selectedDueDate,
+            area_hectares: area,
+            gross_revenue: grossToNet.grossRevenue,
+            combo_discount: grossToNet.comboDiscount,
+            net_revenue: grossToNet.netRevenue,
+            financial_revenue: grossToNet.financialRevenue,
+            distributor_margin: grossToNet.distributorMargin,
+            commodity: normalizeCommodityCode(selectedCommodity) as any,
+            total_sacas: insurancePremium?.totalSacas ?? parity.quantitySacas,
+            commodity_price: parity.commodityPricePerUnit,
+            reference_price: parity.referencePrice,
+            has_existing_contract: hasContract,
+            insurance_premium_sacas: insurancePremium?.additionalSacas ?? 0,
+            counterparty,
+            payment_method: resolvePaymentMethod(selectedPM?.method_name),
+            status: existingOp?.status === 'simulacao' && currentStepDef.id === 'summary' ? 'pedido' : existingOp?.status,
+          },
         });
       }
 
@@ -606,7 +724,7 @@ export default function OperationStepperPage() {
         campaign: campaign!, rawCampaign, selections, pricingResults,
         comboActivations, comboDefinitions: combos, eligibility: eligibility!,
         grossToNet, consumptionLedger: comboCascade.consumptionLedger,
-        orderContext: { clientName, clientDocument, channel: channelEnum, state: clientState, city: clientCity, areaHectares: area, dueMonths, commodity: selectedCommodity },
+        orderContext: { clientName, clientDocument, channel: channelEnum, state: clientState, city: clientCity, areaHectares: area, dueMonths, commodity: normalizeCommodityCode(selectedCommodity) },
         commodityData: {
           type: selectedCommodity, exchange: pricing.exchange, contract: pricing.contract,
           exchangePrice: pricing.exchangePrice, exchangeRateBolsa: pricing.exchangeRateBolsa,
@@ -625,7 +743,7 @@ export default function OperationStepperPage() {
       });
 
       await supabase.from('order_pricing_snapshots').insert({ operation_id: opId!, snapshot: snapshot as any, snapshot_type: isNewOperation ? 'simulation' : 'order', created_by: user.id });
-      await createLog.mutateAsync({ operation_id: opId!, user_id: user.id, action: isNewOperation ? 'simulacao_criada' : 'operacao_atualizada', details: { area, segment, dueMonths, productsCount: selections.length } });
+      await createLog.mutateAsync({ operation_id: opId!, user_id: user.id, action: isNewOperation ? (currentStepDef.id === 'summary' ? 'pedido_criado' : 'simulacao_criada') : 'operacao_atualizada', details: { area, segment, dueMonths, dueDate: selectedDueDate, productsCount: selections.length, paymentMethod: resolvePaymentMethod(selectedPM?.method_name) } });
 
       toast.success(isNewOperation ? 'Operação criada!' : 'Operação atualizada!');
       if (isNewOperation) navigate(`/operacao/${opId}`, { replace: true });
@@ -651,7 +769,7 @@ export default function OperationStepperPage() {
   const goNext = () => { if (currentStep < visibleSteps.length - 1 && canProceed(visibleSteps[currentStep].id)) setCurrentStep(currentStep + 1); };
   const goPrev = () => { if (currentStep > 0) setCurrentStep(currentStep - 1); };
 
-  const formatCurrency = (v: number) => v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+  const formatCurrency = (v: number) => v.toLocaleString('pt-BR', { style: 'currency', currency: campaignCurrency === 'USD' ? 'USD' : 'BRL' });
   const currentStepDef = visibleSteps[currentStep];
 
   if (loadingCampaigns) return <div className="p-6"><Skeleton className="h-64 w-full" /></div>;
@@ -740,7 +858,7 @@ export default function OperationStepperPage() {
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                 <div className="glass-card p-4">
                   <label className="stat-label">Estado (UF)</label>
-                  <Select value={clientState} onValueChange={v => { setClientState(v); setClientCity(''); }}>
+                  <Select value={clientState} onValueChange={v => { setClientState(v); setClientCity(''); setClientCityCode(''); }}>
                     <SelectTrigger className="mt-1 bg-muted border-border text-foreground"><SelectValue placeholder="Selecione o estado" /></SelectTrigger>
                     <SelectContent className="bg-popover z-50 max-h-[300px]">
                       {eligibleStates.map(uf => <SelectItem key={uf} value={uf}>{uf}</SelectItem>)}
@@ -749,10 +867,10 @@ export default function OperationStepperPage() {
                 </div>
                 <div className="glass-card p-4">
                   <label className="stat-label">Cidade</label>
-                  <Select value={clientCity} onValueChange={setClientCity} disabled={!clientState}>
+                  <Select value={clientCityCode} onValueChange={v => { setClientCityCode(v); const found = eligibleCitiesForState.find(m => m.ibge === v); setClientCity(found?.name || ''); }} disabled={!clientState}>
                     <SelectTrigger className="mt-1 bg-muted border-border text-foreground"><SelectValue placeholder={clientState ? 'Selecione a cidade' : 'Selecione o estado primeiro'} /></SelectTrigger>
                     <SelectContent className="bg-popover z-50 max-h-[300px]">
-                      {eligibleCitiesForState.map(m => <SelectItem key={m.ibge} value={m.name}>{m.name}</SelectItem>)}
+                      {eligibleCitiesForState.map(m => <SelectItem key={m.ibge} value={m.ibge}>{m.name}</SelectItem>)}
                     </SelectContent>
                   </Select>
                 </div>
@@ -784,7 +902,11 @@ export default function OperationStepperPage() {
                   <Select value={selectedCommodity} onValueChange={setSelectedCommodity}>
                     <SelectTrigger className="mt-1 bg-muted border-border text-foreground"><SelectValue /></SelectTrigger>
                     <SelectContent>
-                      {(rawCampaign?.commodities?.length ? rawCampaign.commodities : ['soja', 'milho']).map((c: string) => <SelectItem key={c} value={c} className="capitalize">{c}</SelectItem>)}
+                      {commodityOptions.map(option => (
+                        <SelectItem key={option.value} value={option.value}>
+                          {option.label}
+                        </SelectItem>
+                      ))}
                     </SelectContent>
                   </Select>
                 </div>
@@ -884,7 +1006,7 @@ export default function OperationStepperPage() {
                         {isSelected ? <Button size="sm" variant="ghost" onClick={e => { e.stopPropagation(); toggleProduct(product.id); }} className="text-destructive h-6 w-6 p-0"><Minus className="w-3 h-3" /></Button>
                           : <Button size="sm" variant="ghost" className="text-success h-6 w-6 p-0"><Plus className="w-3 h-3" /></Button>}
                       </div>
-                      <div className="text-xs text-muted-foreground">{product.category} — R$ {displayPrice.toFixed(2)}/{product.unitType}</div>
+                      <div className="text-xs text-muted-foreground">{product.category} — {formatCurrency(displayPrice)}/{product.unitType}</div>
                       {isSelected && (
                         <div className="mt-2 pt-2 border-t border-border space-y-2">
                           {quantityMode === 'dose' ? (

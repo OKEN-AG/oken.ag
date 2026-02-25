@@ -5,6 +5,8 @@ import StatCard from '@/components/StatCard';
 import { Progress } from '@/components/ui/progress';
 import { Button } from '@/components/ui/button';
 import { useOperations } from '@/hooks/useOperations';
+import { supabase } from '@/integrations/supabase/client';
+import { useQuery } from '@tanstack/react-query';
 import { Skeleton } from '@/components/ui/skeleton';
 
 const healthColor = (v: number) => v >= 90 ? 'text-success' : v >= 70 ? 'text-warning' : 'text-destructive';
@@ -12,7 +14,21 @@ const healthColor = (v: number) => v >= 90 ? 'text-success' : v >= 70 ? 'text-wa
 export default function MonitoringPage() {
   const navigate = useNavigate();
   const { data: operations, isLoading } = useOperations();
-  const formatCurrency = (v: number) => v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+  const { data: campaignCurrencyMap = {} } = useQuery({
+    queryKey: ['monitoring-campaign-currencies', operations?.map(o => o.campaign_id).join(',')],
+    enabled: !!operations?.length,
+    queryFn: async () => {
+      const ids = Array.from(new Set((operations || []).map(o => o.campaign_id).filter(Boolean)));
+      if (ids.length === 0) return {} as Record<string, string>;
+      const { data, error } = await supabase.from('campaigns').select('id, currency').in('id', ids);
+      if (error) throw error;
+      const map: Record<string, string> = {};
+      for (const row of data || []) map[row.id] = (row.currency || 'BRL').toUpperCase();
+      return map;
+    },
+  });
+
+  const formatCurrency = (v: number, currency: string = 'BRL') => v.toLocaleString('pt-BR', { style: 'currency', currency: currency === 'USD' ? 'USD' : 'BRL' });
 
   // Filter to monitoring-relevant statuses
   const monitored = (operations || []).filter(o => ['garantido', 'faturado', 'monitorando', 'liquidado'].includes(o.status));
@@ -36,9 +52,9 @@ export default function MonitoringPage() {
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         <StatCard label="Operações Monitoradas" value={String(monitored.length)} icon={<BarChart3 className="w-4 h-4" />} subtitle={`${liquidatedCount} liquidadas`} />
-        <StatCard label="Sacas Comprometidas" value={totalSacas.toLocaleString('pt-BR')} icon={<Wheat className="w-4 h-4" />} subtitle={`${formatCurrency(totalGross)} bruto`} />
+        <StatCard label="Sacas Comprometidas" value={totalSacas.toLocaleString('pt-BR')} icon={<Wheat className="w-4 h-4" />} subtitle={`${formatCurrency(totalGross, 'BRL')} bruto`} />
         <StatCard label="Cobertura de Garantia" value={`${coveragePercent}%`} icon={<Shield className="w-4 h-4" />} subtitle={`${withSacas}/${monitored.length} com sacas`} />
-        <StatCard label="Valor Líquido Total" value={formatCurrency(totalNet)} icon={<TrendingUp className="w-4 h-4" />} />
+        <StatCard label="Valor Líquido Total" value={formatCurrency(totalNet, 'BRL')} icon={<TrendingUp className="w-4 h-4" />} />
       </div>
 
       {monitored.length === 0 ? (
@@ -47,12 +63,13 @@ export default function MonitoringPage() {
         <div className="space-y-4">
           {monitored.map((op, i) => {
             const sacasHealth = (op.total_sacas || 0) > 0 ? 100 : 0;
+            const currency = campaignCurrencyMap[op.campaign_id] || 'BRL';
             return (
               <motion.div key={op.id} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.05 }} className="glass-card p-5">
                 <div className="flex items-center justify-between mb-4">
                   <div>
                     <div className="text-sm font-semibold text-foreground">{op.client_name || 'Sem nome'}</div>
-                    <div className="text-xs text-muted-foreground">{formatCurrency(op.gross_revenue || 0)} · {new Date(op.created_at).toLocaleDateString('pt-BR')}</div>
+                    <div className="text-xs text-muted-foreground">{formatCurrency(op.gross_revenue || 0, currency)} · {new Date(op.created_at).toLocaleDateString('pt-BR')}</div>
                   </div>
                   <div className="flex items-center gap-2">
                     <span className={`engine-badge ${
@@ -63,7 +80,7 @@ export default function MonitoringPage() {
                       {op.status === 'liquidado' ? <CheckCircle className="w-3 h-3 inline mr-1" /> : null}
                       {op.status}
                     </span>
-                    <Button variant="ghost" size="sm" onClick={() => navigate('/documentos', { state: { operationId: op.id } })}>
+                    <Button variant="ghost" size="sm" onClick={() => navigate(`/operacao/${op.id}`)}>
                       <ExternalLink className="w-4 h-4" />
                     </Button>
                   </div>
@@ -79,11 +96,11 @@ export default function MonitoringPage() {
                   </div>
                   <div>
                     <div className="stat-label">Preço Ref.</div>
-                    <div className="font-mono text-sm text-foreground">{formatCurrency(op.reference_price || 0)}/saca</div>
+                    <div className="font-mono text-sm text-foreground">{formatCurrency(op.reference_price || 0, currency)}/saca</div>
                   </div>
                   <div>
                     <div className="stat-label">Valor Líquido</div>
-                    <div className="font-mono text-sm text-foreground">{formatCurrency(op.net_revenue || 0)}</div>
+                    <div className="font-mono text-sm text-foreground">{formatCurrency(op.net_revenue || 0, currency)}</div>
                   </div>
                   <div>
                     <div className="stat-label">Saúde</div>
