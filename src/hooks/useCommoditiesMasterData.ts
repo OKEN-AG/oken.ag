@@ -1,6 +1,7 @@
 import { useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
+import { normalizeCommodityCode, toCommodityLabel } from '@/lib/commodity';
 
 type CommodityMasterRow = {
   code: string;
@@ -32,23 +33,42 @@ export function useCommodityOptions(campaignCommodities: string[] = [], fallback
   const { data: commoditiesMasterData = [], ...query } = useCommoditiesMasterData();
 
   const options = useMemo(() => {
-    const fromMaster: CommodityOption[] = commoditiesMasterData
-      .map(item => ({
-        value: String(item.code || '').toLowerCase(),
-        label: item.name || item.code,
-      }))
-      .filter(item => !!item.value);
+    const optionsMap = new Map<string, CommodityOption>();
 
-    if (campaignCommodities.length === 0) {
-      if (fromMaster.length > 0) return fromMaster;
-      return fallback.map(c => ({ value: c.toLowerCase(), label: c.charAt(0).toUpperCase() + c.slice(1) }));
+    for (const item of commoditiesMasterData) {
+      const value = normalizeCommodityCode(item.code);
+      if (!value) continue;
+      optionsMap.set(value, {
+        value,
+        label: item.name || toCommodityLabel(value),
+      });
     }
 
-    const allowed = new Set(campaignCommodities.map(c => c.toLowerCase()));
-    const filtered = fromMaster.filter(item => allowed.has(item.value));
-    if (filtered.length > 0) return filtered;
+    const normalizedCampaignCommodities = (campaignCommodities || [])
+      .map(normalizeCommodityCode)
+      .filter(Boolean);
 
-    return campaignCommodities.map(c => ({ value: c.toLowerCase(), label: c.charAt(0).toUpperCase() + c.slice(1) }));
+    if (normalizedCampaignCommodities.length > 0) {
+      for (const code of normalizedCampaignCommodities) {
+        if (!optionsMap.has(code)) {
+          optionsMap.set(code, {
+            value: code,
+            label: toCommodityLabel(code),
+          });
+        }
+      }
+
+      return normalizedCampaignCommodities
+        .map(code => optionsMap.get(code))
+        .filter((option): option is CommodityOption => !!option);
+    }
+
+    if (optionsMap.size > 0) return Array.from(optionsMap.values());
+
+    return fallback
+      .map(normalizeCommodityCode)
+      .filter(Boolean)
+      .map(code => ({ value: code, label: toCommodityLabel(code) }));
   }, [commoditiesMasterData, campaignCommodities, fallback]);
 
   return { options, commoditiesMasterData, ...query };

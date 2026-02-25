@@ -14,6 +14,7 @@ import { Calendar } from '@/components/ui/calendar';
 import { format } from 'date-fns';
 import { cn } from '@/lib/utils';
 import { useCommodityOptions } from '@/hooks/useCommoditiesMasterData';
+import { normalizeCommodityCode } from '@/lib/commodity';
 
 export type ClientRow = { document: string; name: string };
 
@@ -132,8 +133,14 @@ export default function GeneralTab({ form, onFieldChange, clients, onClientsChan
   };
 
   const toggleCommodity = (value: string) => {
-    const current = form.commodities || [];
-    onFieldChange('commodities', current.includes(value) ? current.filter(c => c !== value) : [...current, value]);
+    const normalizedValue = normalizeCommodityCode(value);
+    const current = (form.commodities || []).map(normalizeCommodityCode);
+    onFieldChange(
+      'commodities',
+      current.includes(normalizedValue)
+        ? current.filter(c => c !== normalizedValue)
+        : [...current, normalizedValue],
+    );
   };
 
   return (
@@ -219,7 +226,7 @@ export default function GeneralTab({ form, onFieldChange, clients, onClientsChan
           <div className="flex gap-4 flex-wrap">
             {commodityOptions.map(c => (
               <label key={c.value} className="flex items-center gap-2 text-sm">
-                <Checkbox checked={(form.commodities || []).includes(c.value)} onCheckedChange={() => toggleCommodity(c.value)} />
+                <Checkbox checked={(form.commodities || []).map(normalizeCommodityCode).includes(normalizeCommodityCode(c.value))} onCheckedChange={() => toggleCommodity(c.value)} />
                 {c.label}
               </label>
             ))}

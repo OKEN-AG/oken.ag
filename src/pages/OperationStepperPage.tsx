@@ -4,6 +4,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '@/contexts/AuthContext';
 import { useActiveCampaigns, useCampaignData } from '@/hooks/useActiveCampaign';
 import { useCommodityOptions } from '@/hooks/useCommoditiesMasterData';
+import { DEFAULT_COMMODITY_FALLBACK, normalizeCommodityCode } from '@/lib/commodity';
 import { useOperation, useOperationItems, useOperationDocuments, useCreateOperation, useCreateOperationItems, useCreateOperationLog, useReplaceOperationItems, useUpdateOperation } from '@/hooks/useOperations';
 import { calculateAgronomicSelection } from '@/engines/agronomic';
 import { applyComboCascadeWithLedger, getSuggestedDoseForRef, getMaxPossibleDiscount, getActivatedDiscount, getComplementaryDiscount } from '@/engines/combo-cascade';
@@ -168,7 +169,7 @@ export default function OperationStepperPage() {
   // ─── Payment step state ───
   const [dueMonths, setDueMonths] = useState(12);
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState('');
-  const [selectedCommodity, setSelectedCommodity] = useState('soja');
+  const [selectedCommodity, setSelectedCommodity] = useState(normalizeCommodityCode(DEFAULT_COMMODITY_FALLBACK[0]));
 
   // ─── Barter step state ───
   const [port, setPort] = useState('');
@@ -271,11 +272,11 @@ export default function OperationStepperPage() {
     if (activeModules.length === 0) return true;
     return activeModules.includes(s.module);
   });
-  const { options: commodityOptions } = useCommodityOptions((rawCampaign?.commodities || []) as string[], ['soja', 'milho']);
+  const { options: commodityOptions } = useCommodityOptions((rawCampaign?.commodities || []) as string[], [...DEFAULT_COMMODITY_FALLBACK]);
 
   useEffect(() => {
     if (!commodityOptions.length) return;
-    if (!commodityOptions.some(option => option.value === selectedCommodity)) {
+    if (!commodityOptions.some(option => normalizeCommodityCode(option.value) === normalizeCommodityCode(selectedCommodity))) {
       setSelectedCommodity(commodityOptions[0].value);
     }
   }, [commodityOptions, selectedCommodity]);
@@ -445,7 +446,7 @@ export default function OperationStepperPage() {
 
   const selectedCommodityPricing: CommodityPricing | null = useMemo(() => {
     if (!rawCommodityPricing?.length) return commodityPricing;
-    const match = rawCommodityPricing.find((cp: any) => cp.commodity === selectedCommodity);
+    const match = rawCommodityPricing.find((cp: any) => normalizeCommodityCode(cp.commodity) === normalizeCommodityCode(selectedCommodity));
     if (!match) return commodityPricing;
     return {
       commodity: match.commodity as any, exchange: match.exchange, contract: match.contract,
@@ -604,7 +605,7 @@ export default function OperationStepperPage() {
           state: clientState || undefined, due_months: dueMonths, area_hectares: area,
           gross_revenue: grossToNet.grossRevenue, combo_discount: grossToNet.comboDiscount,
           net_revenue: grossToNet.netRevenue, financial_revenue: grossToNet.financialRevenue,
-          distributor_margin: grossToNet.distributorMargin, commodity: selectedCommodity as any,
+          distributor_margin: grossToNet.distributorMargin, commodity: normalizeCommodityCode(selectedCommodity) as any,
           counterparty,
           status: 'simulacao' as const,
         });
@@ -632,7 +633,7 @@ export default function OperationStepperPage() {
             net_revenue: grossToNet.netRevenue,
             financial_revenue: grossToNet.financialRevenue,
             distributor_margin: grossToNet.distributorMargin,
-            commodity: selectedCommodity as any,
+            commodity: normalizeCommodityCode(selectedCommodity) as any,
             total_sacas: insurancePremium?.totalSacas ?? parity.quantitySacas,
             commodity_price: parity.commodityPricePerUnit,
             reference_price: parity.referencePrice,
@@ -649,7 +650,7 @@ export default function OperationStepperPage() {
         campaign: campaign!, rawCampaign, selections, pricingResults,
         comboActivations, comboDefinitions: combos, eligibility: eligibility!,
         grossToNet, consumptionLedger: comboCascade.consumptionLedger,
-        orderContext: { clientName, clientDocument, channel: channelEnum, state: clientState, city: clientCity, areaHectares: area, dueMonths, commodity: selectedCommodity },
+        orderContext: { clientName, clientDocument, channel: channelEnum, state: clientState, city: clientCity, areaHectares: area, dueMonths, commodity: normalizeCommodityCode(selectedCommodity) },
         commodityData: {
           type: selectedCommodity, exchange: pricing.exchange, contract: pricing.contract,
           exchangePrice: pricing.exchangePrice, exchangeRateBolsa: pricing.exchangeRateBolsa,

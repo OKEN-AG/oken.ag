@@ -733,7 +733,7 @@ export default function CommoditiesTab({ campaignId, campaignCommodities = [] }:
           for (let i = headerIdx + 1; i < lines.length; i++) {
             const line = lines[i].trim();
             if (!line) continue;
-            const parts = line.split('\t').map(p => p.trim());
+            const parts = line.split(/\t|;|,(?=(?:[^"]*"[^"]*")*[^"]*$)/).map(p => p.replace(/^"|"$/g, '').trim());
             if (!parts[1]) continue;
             const lat = parseConabCoord(parts[9]);
             const lng = parseConabCoord(parts[10]);
@@ -1060,7 +1060,7 @@ export default function CommoditiesTab({ campaignId, campaignCommodities = [] }:
                   for (let i = startIdx; i < lines.length; i++) {
                     const line = lines[i].trim();
                     if (!line) continue; // skip blank lines
-                    const parts = line.split('\t').map(p => p.trim());
+                    const parts = line.split(/\t|;|,(?=(?:[^"]*"[^"]*")*[^"]*$)/).map(p => p.replace(/^"|"$/g, '').trim());
                     if (!parts[1]) continue; // skip empty rows
                     const lat = parseConabCoord(parts[9]);
                     const lng = parseConabCoord(parts[10]);

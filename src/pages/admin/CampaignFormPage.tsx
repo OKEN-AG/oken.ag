@@ -18,6 +18,7 @@ import ProductsTab from '@/components/campaign/ProductsTab';
 import CombosTab from '@/components/campaign/CombosTab';
 import CommoditiesTab from '@/components/campaign/CommoditiesTab';
 import { useCommodityOptions } from '@/hooks/useCommoditiesMasterData';
+import { normalizeCommodityCode } from '@/lib/commodity';
 
 const JOURNEY_MODULES = [
   { value: 'adesao', label: 'Termo de Adesão', group: 'formalizacao' },
@@ -114,7 +115,7 @@ export default function CampaignFormPage() {
         currency: e.currency || 'USD',
         target: e.target,
         active: e.active,
-        commodities: e.commodities || [],
+        commodities: (e.commodities || []).map(normalizeCommodityCode),
         exchange_rate_products: Number(e.exchange_rate_products),
         exchange_rate_barter: Number(e.exchange_rate_barter),
         interest_rate: Number(e.interest_rate),
@@ -169,11 +170,12 @@ export default function CampaignFormPage() {
       return;
     }
 
-    const validCommodityValues = new Set(commodityOptions.map(c => c.value));
+    const validCommodityValues = new Set(commodityOptions.map(c => normalizeCommodityCode(c.value)));
     const hasMasterOptions = commodityOptions.length > 0;
+    const normalizedCommodities = (form.commodities || []).map(normalizeCommodityCode).filter(Boolean);
     const sanitizedCommodities = hasMasterOptions
-      ? (form.commodities || []).filter(c => validCommodityValues.has(c))
-      : (form.commodities || []);
+      ? normalizedCommodities.filter(c => validCommodityValues.has(c))
+      : normalizedCommodities;
 
     if (hasMasterOptions && sanitizedCommodities.length !== (form.commodities || []).length) {
       onFieldChange('commodities', sanitizedCommodities);
