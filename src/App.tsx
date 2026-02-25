@@ -8,9 +8,6 @@ import ProtectedRoute from "@/components/ProtectedRoute";
 import AppLayout from "@/components/AppLayout";
 import Dashboard from "@/pages/Dashboard";
 import CampaignPage from "@/pages/CampaignPage";
-import SimulationPage from "@/pages/SimulationPage";
-import ParityPage from "@/pages/ParityPage";
-import DocumentsPage from "@/pages/DocumentsPage";
 import MonitoringPage from "@/pages/MonitoringPage";
 import AuthPage from "@/pages/AuthPage";
 import NotFound from "./pages/NotFound";
@@ -18,6 +15,8 @@ import CampaignsListPage from "@/pages/admin/CampaignsListPage";
 import CampaignFormPage from "@/pages/admin/CampaignFormPage";
 import OperationStepperPage from "@/pages/OperationStepperPage";
 import BuyerPortalPage from "@/pages/BuyerPortalPage";
+import CommoditiesMasterDataPage from "@/pages/admin/CommoditiesMasterDataPage";
+import LegacyRouteRedirectPage from "@/pages/LegacyRouteRedirectPage";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -44,14 +43,15 @@ const App = () => (
                   <Routes>
                     <Route path="/" element={<Dashboard />} />
                     <Route path="/campanha" element={<CampaignPage />} />
-                    <Route path="/simulacao" element={<SimulationPage />} />
-                    <Route path="/paridade" element={<ParityPage />} />
-                    <Route path="/documentos" element={<DocumentsPage />} />
+                    <Route path="/simulacao" element={<LegacyRouteRedirectPage source="simulacao" />} />
+                    <Route path="/paridade" element={<LegacyRouteRedirectPage source="paridade" />} />
+                    <Route path="/documentos" element={<LegacyRouteRedirectPage source="documentos" />} />
                     <Route path="/monitoramento" element={<MonitoringPage />} />
                     <Route path="/operacao/novo" element={<OperationStepperPage />} />
                     <Route path="/operacao/:id" element={<OperationStepperPage />} />
                     <Route path="/admin/campanhas" element={<CampaignsListPage />} />
                     <Route path="/admin/campanhas/:id" element={<CampaignFormPage />} />
+                    <Route path="/admin/commodities-masterdata" element={<CommoditiesMasterDataPage />} />
                     <Route path="/compradores" element={<BuyerPortalPage />} />
                     <Route path="*" element={<NotFound />} />
                   </Routes>
