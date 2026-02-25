@@ -429,6 +429,11 @@ export default function OperationStepperPage() {
     return true;
   }, [hasCityFilter, hasStateFilter, eligibleCitySet, eligibleCityNameSet, eligibleStateSet]);
 
+  const isMunicipioEligible = useCallback((m: { ibge: string; name: string }) => {
+    if (!hasEligibilityFilter) return true;
+    return eligibleCitySet.has(m.ibge) || eligibleCityNameSet.has(normalizeKey(m.name));
+  }, [hasEligibilityFilter, eligibleCitySet, eligibleCityNameSet]);
+
   const eligibleStates = useMemo(() => {
     if (hasCityFilter) {
       const states = new Set<string>();
