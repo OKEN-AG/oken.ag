@@ -91,7 +91,7 @@ export default function ProductsTab({ campaignId }: Props) {
       const kgOrLiters = parts[6] ? parseLocaleNumber(parts[6]) : 1;
 
       rows.push({
-        code: String(parts[0] || '').trim(),
+        code: String(parts[0] || '').replace(/^\uFEFF/, '').trim(),
         name: String(parts[1] || '').trim(),
         ref: String(parts[2] || '').trim().toUpperCase(),
         price_cash: parseLocaleNumber(parts[3]),

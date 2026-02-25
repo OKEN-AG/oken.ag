@@ -711,45 +711,6 @@ export type Database = {
           },
         ]
       }
-      commodities_master_data: {
-        Row: {
-          active: boolean
-          code: string
-          created_at: string
-          id: string
-          kg_per_unit: number | null
-          liters_per_unit: number | null
-          metadata: Json
-          name: string
-          unit: string
-          updated_at: string
-        }
-        Insert: {
-          active?: boolean
-          code: string
-          created_at?: string
-          id?: string
-          kg_per_unit?: number | null
-          liters_per_unit?: number | null
-          metadata?: Json
-          name: string
-          unit?: string
-          updated_at?: string
-        }
-        Update: {
-          active?: boolean
-          code?: string
-          created_at?: string
-          id?: string
-          kg_per_unit?: number | null
-          liters_per_unit?: number | null
-          metadata?: Json
-          name?: string
-          unit?: string
-          updated_at?: string
-        }
-        Relationships: []
-      }
       commodity_pricing: {
         Row: {
           api_source: string | null
