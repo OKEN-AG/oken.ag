@@ -2,7 +2,7 @@ import { NavLink, useLocation } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import {
   LayoutDashboard, Settings, ShoppingCart, BarChart3,
-  Wheat, FileText, ChevronLeft, ChevronRight, LogOut,
+  ChevronLeft, ChevronRight, LogOut,
   FolderCog, Users, Database } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useActiveCampaigns, useCampaignData } from '@/hooks/useActiveCampaign';
@@ -15,9 +15,6 @@ const navItems: { to: string; icon: any; label: string; module?: JourneyModule }
   { to: '/', icon: LayoutDashboard, label: 'Dashboard' },
   { to: '/campanha', icon: Settings, label: 'Campanha' },
   { to: '/operacao/novo', icon: ShoppingCart, label: 'Nova Operação' },
-  { to: '/simulacao', icon: ShoppingCart, label: 'Simulação (Legacy)', module: 'simulacao' },
-  { to: '/paridade', icon: Wheat, label: 'Paridade (Legacy)', module: 'barter' },
-  { to: '/documentos', icon: FileText, label: 'Documentos (Legacy)', module: 'documentos' },
   { to: '/monitoramento', icon: BarChart3, label: 'Monitoramento' },
 ];
 
