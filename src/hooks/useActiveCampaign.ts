@@ -242,6 +242,7 @@ export function useCampaignData(campaignId?: string) {
     maxDiscountInternal: campaign.max_discount_internal,
     maxDiscountReseller: campaign.max_discount_reseller,
     priceListFormat: campaign.price_list_format as any,
+    currency: (campaign.currency || 'BRL') as any,
     activeModules: (campaign.active_modules || []) as any[],
     availableDueDates: (campaign.available_due_dates || []),
     createdAt: campaign.created_at,

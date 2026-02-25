@@ -1,6 +1,13 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
+import type { Database } from '@/integrations/supabase/types';
 import { useAuth } from '@/contexts/AuthContext';
+
+type DbOperationRow = Database['public']['Tables']['operations']['Row'];
+type DbOperationInsert = Database['public']['Tables']['operations']['Insert'];
+type DbOperationUpdate = Database['public']['Tables']['operations']['Update'];
+type DbOperationItemInsert = Database['public']['Tables']['operation_items']['Insert'];
+type DbOperationLogInsert = Database['public']['Tables']['operation_logs']['Insert'];
 
 export function useOperations() {
   const { user } = useAuth();
@@ -67,7 +74,7 @@ export function useOperationDocuments(operationId?: string) {
 export function useCreateOperation() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (operation: any) => {
+    mutationFn: async (operation: DbOperationInsert) => {
       const { data, error } = await supabase
         .from('operations')
         .insert(operation)
@@ -83,7 +90,7 @@ export function useCreateOperation() {
 export function useUpdateOperation() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async ({ id, ...updates }: { id: string; [key: string]: any }) => {
+    mutationFn: async ({ id, updates }: { id: string; updates: DbOperationUpdate }) => {
       const { data, error } = await supabase
         .from('operations')
         .update(updates)
@@ -103,7 +110,7 @@ export function useUpdateOperation() {
 export function useCreateOperationItems() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (items: any[]) => {
+    mutationFn: async (items: DbOperationItemInsert[]) => {
       const { error } = await supabase.from('operation_items').insert(items);
       if (error) throw error;
     },
@@ -111,9 +118,33 @@ export function useCreateOperationItems() {
   });
 }
 
+export function useReplaceOperationItems() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ operationId, items }: { operationId: string; items: DbOperationItemInsert[] }) => {
+      const { error: deleteError } = await supabase
+        .from('operation_items')
+        .delete()
+        .eq('operation_id', operationId);
+      if (deleteError) throw deleteError;
+
+      if (items.length === 0) return;
+
+      const { error: insertError } = await supabase
+        .from('operation_items')
+        .insert(items);
+      if (insertError) throw insertError;
+    },
+    onSuccess: (_, vars) => {
+      qc.invalidateQueries({ queryKey: ['operation-items'] });
+      qc.invalidateQueries({ queryKey: ['operation-items', vars.operationId] });
+    },
+  });
+}
+
 export function useCreateOperationLog() {
   return useMutation({
-    mutationFn: async (log: { operation_id: string; user_id: string; action: string; details?: any }) => {
+    mutationFn: async (log: DbOperationLogInsert) => {
       const { error } = await supabase.from('operation_logs').insert(log);
       if (error) throw error;
     },
@@ -130,13 +161,13 @@ export function useOperationStats() {
         .from('operations')
         .select('id, status, gross_revenue, total_sacas, client_name, created_at, commodity_price');
       if (error) throw error;
-      
+
       const totalVolume = (data || []).reduce((s, o) => s + (o.gross_revenue || 0), 0);
       const totalSacas = (data || []).reduce((s, o) => s + (o.total_sacas || 0), 0);
       const activeCount = (data || []).filter(o => !['liquidado'].includes(o.status)).length;
-      
+
       return {
-        operations: data || [],
+        operations: (data || []) as DbOperationRow[],
         totalVolume,
         totalSacas,
         activeCount,
