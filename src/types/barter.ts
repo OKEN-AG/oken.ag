@@ -23,6 +23,7 @@ export interface Campaign {
   maxDiscountInternal: number; // %
   maxDiscountReseller: number; // %
   priceListFormat: PriceListFormat;
+  currency?: 'BRL' | 'USD';
   activeModules: JourneyModule[];
   availableDueDates: string[]; // ISO dates
   createdAt: string;
