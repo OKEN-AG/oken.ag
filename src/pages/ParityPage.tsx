@@ -300,13 +300,15 @@ export default function ParityPage() {
     try {
       await updateOperation.mutateAsync({
         id: selectedOperationId,
-        total_sacas: insurancePremium?.totalSacas ?? parity.quantitySacas,
-        commodity_price: parity.commodityPricePerUnit,
-        reference_price: parity.referencePrice,
-        has_existing_contract: hasContract,
-        insurance_premium_sacas: insurancePremium?.additionalSacas ?? 0,
-        payment_method: 'barter' as const,
-        status: 'pedido' as const,
+        updates: {
+          total_sacas: insurancePremium?.totalSacas ?? parity.quantitySacas,
+          commodity_price: parity.commodityPricePerUnit,
+          reference_price: parity.referencePrice,
+          has_existing_contract: hasContract,
+          insurance_premium_sacas: insurancePremium?.additionalSacas ?? 0,
+          payment_method: 'barter' as const,
+          status: 'pedido' as const,
+        },
       });
       await createLog.mutateAsync({
         operation_id: selectedOperationId,

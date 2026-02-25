@@ -3,7 +3,7 @@ import { motion } from 'framer-motion';
 import {
   LayoutDashboard, Settings, ShoppingCart, BarChart3,
   Wheat, FileText, ChevronLeft, ChevronRight, LogOut,
-  FolderCog, Users } from 'lucide-react';
+  FolderCog, Users, Database } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useActiveCampaigns, useCampaignData } from '@/hooks/useActiveCampaign';
 import { useSidebarCollapsed } from '@/contexts/SidebarContext';
@@ -23,6 +23,7 @@ const navItems: { to: string; icon: any; label: string; module?: JourneyModule }
 
 const adminItems = [
   { to: '/admin/campanhas', icon: FolderCog, label: 'Campanhas' },
+  { to: '/admin/commodities-masterdata', icon: Database, label: 'Commodities MasterData' },
   { to: '/compradores', icon: Users, label: 'Portal Comprador' },
 ];
 
