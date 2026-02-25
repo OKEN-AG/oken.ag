@@ -16,20 +16,36 @@ export function parseLocaleNumber(value: unknown): number {
   const str = String(value ?? '').trim();
   if (!str) return 0;
 
-  // Keep digits and separators only
+  // Keep digits, separators and minus only
   const cleaned = str.replace(/[^\d,.-]/g, '');
   if (!cleaned) return 0;
 
   const hasComma = cleaned.includes(',');
   const hasDot = cleaned.includes('.');
-
   let normalized = cleaned;
 
   if (hasComma && hasDot) {
-    // Assume pt-BR style: 1.234,56
-    normalized = cleaned.replace(/\./g, '').replace(',', '.');
+    // Choose decimal separator by last occurrence.
+    // Examples:
+    // - 1.234,56 => comma decimal
+    // - 1,234.56 => dot decimal
+    const lastComma = cleaned.lastIndexOf(',');
+    const lastDot = cleaned.lastIndexOf('.');
+    if (lastComma > lastDot) {
+      normalized = cleaned.replace(/\./g, '').replace(',', '.');
+    } else {
+      normalized = cleaned.replace(/,/g, '');
+    }
   } else if (hasComma) {
+    // 1234,56 => 1234.56
     normalized = cleaned.replace(',', '.');
+  } else if (hasDot) {
+    // If there are multiple dots, treat them as thousand separators except last
+    const parts = cleaned.split('.');
+    if (parts.length > 2) {
+      const decimal = parts.pop();
+      normalized = `${parts.join('')}.${decimal}`;
+    }
   }
 
   const parsed = Number.parseFloat(normalized);

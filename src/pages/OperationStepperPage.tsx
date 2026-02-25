@@ -105,25 +105,60 @@ function getComboRecommendations(
   return recs.filter(r => { if (seen.has(r.ref)) return false; seen.add(r.ref); return true; }).slice(0, 5);
 }
 
-// ─── Due date precedence: municipio > mesorregiao > estado > default ───
+// ─── Due date precedence: municipio/cidade > mesorregiao > estado > regiao > default ───
 function getDueDatesWithPrecedence(
   dueDates: any[],
   clientCity?: string,
   clientMesoregion?: string,
-  clientState?: string
+  clientState?: string,
+  clientRegion?: string
 ): any[] {
   if (!dueDates?.length) return [];
-  // Try city first
-  const byCity = dueDates.filter(d => d.region_type === 'municipio' && d.region_value?.toLowerCase() === clientCity?.toLowerCase());
+
+  const normalize = (value?: string) => String(value || '')
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .trim()
+    .toLowerCase();
+  const sameType = (value: any, types: string[]) => types.includes(String(value || '').trim().toLowerCase());
+
+  const normalizedCity = normalize(clientCity);
+  const normalizedMeso = normalize(clientMesoregion);
+  const normalizedState = String(clientState || '').trim().toUpperCase();
+  const normalizedRegion = normalize(clientRegion);
+
+  const byCity = dueDates.filter(d =>
+    sameType(d.region_type, ['municipio', 'cidade']) &&
+    normalize(d.region_value) === normalizedCity
+  );
   if (byCity.length > 0) return byCity;
-  // Try mesoregion
-  const byMeso = dueDates.filter(d => d.region_type === 'mesorregiao' && d.region_value?.toLowerCase() === clientMesoregion?.toLowerCase());
+
+  const byMeso = dueDates.filter(d =>
+    sameType(d.region_type, ['mesorregiao']) &&
+    normalize(d.region_value) === normalizedMeso
+  );
   if (byMeso.length > 0) return byMeso;
-  // Try state
-  const byState = dueDates.filter(d => d.region_type === 'estado' && d.region_value?.toUpperCase() === clientState?.toUpperCase());
+
+  const byState = dueDates.filter(d =>
+    sameType(d.region_type, ['estado', 'uf']) &&
+    String(d.region_value || '').trim().toUpperCase() === normalizedState
+  );
   if (byState.length > 0) return byState;
-  // Default: all
-  return dueDates;
+
+  const byRegion = dueDates.filter(d =>
+    sameType(d.region_type, ['regiao', 'region']) &&
+    normalize(d.region_value) === normalizedRegion
+  );
+  if (byRegion.length > 0) return byRegion;
+
+  const defaults = dueDates.filter(d => {
+    const t = String(d.region_type || '').trim().toLowerCase();
+    const v = normalize(d.region_value);
+    return ['default', 'geral', 'all', 'todos'].includes(t) || (t === '' && v === '') || ['default', 'geral', 'all', 'todos'].includes(v);
+  });
+  if (defaults.length > 0) return defaults;
+
+  return [];
 }
 
 export default function OperationStepperPage() {
@@ -319,7 +354,7 @@ export default function OperationStepperPage() {
   const paymentMethodMarkup = selectedPM?.markup_percent || 0;
 
   // Due dates with precedence
-  const filteredDueDates = useMemo(() => getDueDatesWithPrecedence(dueDates || [], clientCity, undefined, clientState), [dueDates, clientCity, clientState]);
+  const filteredDueDates = useMemo(() => getDueDatesWithPrecedence(dueDates || [], clientCity, undefined, clientState, undefined), [dueDates, clientCity, clientState]);
 
   const dueDateOptions = useMemo(() => {
     // 1. Try campaign_due_dates with region precedence
@@ -378,9 +413,21 @@ export default function OperationStepperPage() {
   // ─── Eligible states & cities from campaign ───
   const allMunicipios = useMemo(() => getAllMunicipios(), []);
   const normalizeKey = (v?: string) => String(v || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().toLowerCase();
+  const toSafeNumber = (value: string, fallback = 0) => {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : fallback;
+  };
+  const eligibleStateSet = useMemo(() => new Set((rawCampaign?.eligible_states || []).map((v: any) => String(v || '').trim().toUpperCase())), [rawCampaign]);
   const eligibleCitySet = useMemo(() => new Set((rawCampaign?.eligible_cities || []).map((v: any) => String(v))), [rawCampaign]);
   const eligibleCityNameSet = useMemo(() => new Set((rawCampaign?.eligible_cities || []).map((v: any) => normalizeKey(String(v)))), [rawCampaign]);
-  const hasEligibilityFilter = eligibleCitySet.size > 0;
+  const hasCityFilter = eligibleCitySet.size > 0;
+  const hasStateFilter = eligibleStateSet.size > 0;
+
+  const isMunicipioEligible = useCallback((m: { ibge: string; name: string; uf: string }) => {
+    if (hasCityFilter) return eligibleCitySet.has(m.ibge) || eligibleCityNameSet.has(normalizeKey(m.name));
+    if (hasStateFilter) return eligibleStateSet.has(String(m.uf || '').trim().toUpperCase());
+    return true;
+  }, [hasCityFilter, hasStateFilter, eligibleCitySet, eligibleCityNameSet, eligibleStateSet]);
 
   const isMunicipioEligible = useCallback((m: { ibge: string; name: string }) => {
     if (!hasEligibilityFilter) return true;
@@ -388,13 +435,16 @@ export default function OperationStepperPage() {
   }, [hasEligibilityFilter, eligibleCitySet, eligibleCityNameSet]);
 
   const eligibleStates = useMemo(() => {
-    const source = hasEligibilityFilter
-      ? allMunicipios.filter(m => isMunicipioEligible(m))
-      : allMunicipios;
+    if (hasCityFilter) {
+      const states = new Set<string>();
+      allMunicipios.filter(m => isMunicipioEligible(m)).forEach(m => states.add(m.uf));
+      return [...states].sort();
+    }
+    if (hasStateFilter) return [...eligibleStateSet].sort();
     const states = new Set<string>();
-    source.forEach(m => states.add(m.uf));
+    allMunicipios.forEach(m => states.add(m.uf));
     return [...states].sort();
-  }, [allMunicipios, hasEligibilityFilter, isMunicipioEligible]);
+  }, [allMunicipios, hasCityFilter, hasStateFilter, eligibleStateSet, isMunicipioEligible]);
 
   const eligibleCitiesForState = useMemo(() => {
     if (!clientState) return [] as typeof allMunicipios;
@@ -412,9 +462,9 @@ export default function OperationStepperPage() {
   }, [allMunicipios, clientCityCode, clientCity, clientState]);
 
   const usesIbgeCityEligibility = useMemo(() => {
-    if (!hasEligibilityFilter) return false;
+    if (!hasCityFilter) return false;
     return Array.from(eligibleCitySet).some(v => /^\d{6,8}$/.test(String(v)));
-  }, [eligibleCitySet, hasEligibilityFilter]);
+  }, [eligibleCitySet, hasCityFilter]);
 
   // ─── Eligibility (with PF/PJ) ───
   const eligibility = useMemo(() => {
@@ -428,8 +478,9 @@ export default function OperationStepperPage() {
       campaignClientTypes: (rawCampaign as any)?.client_type || [],
       whitelist: clientWhitelist || [],
       blockIneligible: !!(rawCampaign as any)?.block_ineligible,
+      currency: campaignCurrency === 'USD' ? 'USD' : 'BRL',
     });
-  }, [campaign, clientState, clientCity, clientCityCode, selectedCityName, usesIbgeCityEligibility, segment, clientDocument, clientType, clientWhitelist, rawCampaign]);
+  }, [campaign, clientState, clientCity, clientCityCode, selectedCityName, usesIbgeCityEligibility, segment, clientDocument, clientType, clientWhitelist, rawCampaign, campaignCurrency]);
 
   // ─── Product selection ───
   const toggleProduct = (productId: string, suggestedDose?: number) => {
@@ -828,7 +879,7 @@ export default function OperationStepperPage() {
                 </div>
                 <div className="glass-card p-4">
                   <label className="stat-label">Área (ha)</label>
-                  <Input type="number" value={area} onChange={e => setArea(Number(e.target.value))} className="mt-1 bg-muted border-border font-mono text-foreground" min={1} />
+                  <Input type="number" value={area} onChange={e => setArea(toSafeNumber(e.target.value, 1))} className="mt-1 bg-muted border-border font-mono text-foreground" min={1} />
                 </div>
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -1012,12 +1063,12 @@ export default function OperationStepperPage() {
                           {quantityMode === 'dose' ? (
                             <div className="flex items-center gap-2">
                               <label className="text-xs text-muted-foreground w-16">Dose/ha:</label>
-                              <Input type="number" value={dose} step={0.05} min={product.minDose} max={product.maxDose} onChange={e => { e.stopPropagation(); updateDose(product.id, Number(e.target.value)); }} onClick={e => e.stopPropagation()} className="h-7 bg-muted border-border font-mono text-xs text-foreground" />
+                              <Input type="number" value={dose} step={0.05} min={product.minDose} max={product.maxDose} onChange={e => { e.stopPropagation(); updateDose(product.id, toSafeNumber(e.target.value)); }} onClick={e => e.stopPropagation()} className="h-7 bg-muted border-border font-mono text-xs text-foreground" />
                             </div>
                           ) : (
                             <div className="flex items-center gap-2">
                               <label className="text-xs text-muted-foreground w-16">Qtd ({product.unitType}):</label>
-                              <Input type="number" value={freeQuantities.get(product.id) || ''} min={0} onChange={e => { e.stopPropagation(); updateFreeQuantity(product.id, Number(e.target.value)); }} onClick={e => e.stopPropagation()} className="h-7 bg-muted border-border font-mono text-xs text-foreground" placeholder="0" />
+                              <Input type="number" value={freeQuantities.get(product.id) || ''} min={0} onChange={e => { e.stopPropagation(); updateFreeQuantity(product.id, toSafeNumber(e.target.value)); }} onClick={e => e.stopPropagation()} className="h-7 bg-muted border-border font-mono text-xs text-foreground" placeholder="0" />
                             </div>
                           )}
                           {selection && (
@@ -1143,7 +1194,7 @@ export default function OperationStepperPage() {
                     <Switch checked={hasContract} onCheckedChange={setHasContract} />
                     <Label className="text-xs">Contrato existente</Label>
                   </div>
-                  {hasContract && <Input type="number" value={userPrice} onChange={e => setUserPrice(Number(e.target.value))} placeholder="Preço/sc" className="bg-muted border-border font-mono text-foreground" />}
+                  {hasContract && <Input type="number" value={userPrice} onChange={e => setUserPrice(toSafeNumber(e.target.value))} placeholder="Preço/sc" className="bg-muted border-border font-mono text-foreground" />}
                 </div>
               </div>
               <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
@@ -1267,7 +1318,7 @@ export default function OperationStepperPage() {
                       <div>
                         <div className="stat-label">Índice de Cumprimento</div>
                         <div className="flex items-center gap-2 mt-1">
-                          <Input type="number" value={performanceIndex} min={0} max={100} onChange={e => setPerformanceIndex(Math.min(100, Math.max(0, Number(e.target.value))))} className="h-8 w-20 bg-muted border-border font-mono text-xs text-foreground" />
+                          <Input type="number" value={performanceIndex} min={0} max={100} onChange={e => setPerformanceIndex(Math.min(100, Math.max(0, toSafeNumber(e.target.value))))} className="h-8 w-20 bg-muted border-border font-mono text-xs text-foreground" />
                           <span className="text-xs text-muted-foreground">%</span>
                         </div>
                       </div>
