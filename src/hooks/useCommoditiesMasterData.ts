@@ -18,13 +18,13 @@ export function useCommoditiesMasterData() {
   return useQuery({
     queryKey: ['commodities-master-data-options'],
     queryFn: async () => {
-      const { data, error } = await (supabase as any)
+      const { data, error } = await supabase
         .from('commodities_master_data')
         .select('code, name, active')
         .eq('active', true)
         .order('name', { ascending: true });
       if (error) throw error;
-      return (data || []) as unknown as CommodityMasterRow[];
+      return (data || []) as CommodityMasterRow[];
     },
   });
 }

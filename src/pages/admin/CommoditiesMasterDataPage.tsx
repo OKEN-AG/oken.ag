@@ -32,12 +32,12 @@ export default function CommoditiesMasterDataPage() {
   const { data, isLoading } = useQuery({
     queryKey: ['commodities-master-data'],
     queryFn: async () => {
-      const { data: rows, error } = await (supabase as any)
+      const { data: rows, error } = await supabase
         .from('commodities_master_data')
         .select('id, code, name, unit, kg_per_unit, liters_per_unit, active')
         .order('name', { ascending: true });
       if (error) throw error;
-      return (rows || []) as unknown as CommodityRow[];
+      return (rows || []) as CommodityRow[];
     },
   });
 
@@ -55,7 +55,7 @@ export default function CommoditiesMasterDataPage() {
         throw new Error('Código e nome são obrigatórios');
       }
 
-      const { error } = await (supabase as any).from('commodities_master_data').insert(payload);
+      const { error } = await supabase.from('commodities_master_data').insert(payload);
       if (error) throw error;
     },
     onSuccess: () => {
@@ -68,7 +68,7 @@ export default function CommoditiesMasterDataPage() {
 
   const toggleCommodity = useMutation({
     mutationFn: async ({ id, active }: { id: string; active: boolean }) => {
-      const { error } = await (supabase as any)
+      const { error } = await supabase
         .from('commodities_master_data')
         .update({ active })
         .eq('id', id);

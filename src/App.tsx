@@ -17,6 +17,7 @@ import OperationStepperPage from "@/pages/OperationStepperPage";
 import BuyerPortalPage from "@/pages/BuyerPortalPage";
 import CommoditiesMasterDataPage from "@/pages/admin/CommoditiesMasterDataPage";
 import LegacyRouteRedirectPage from "@/pages/LegacyRouteRedirectPage";
+import OrdersListPage from "@/pages/admin/OrdersListPage";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -52,6 +53,7 @@ const App = () => (
                     <Route path="/admin/campanhas" element={<CampaignsListPage />} />
                     <Route path="/admin/campanhas/:id" element={<CampaignFormPage />} />
                     <Route path="/admin/commodities-masterdata" element={<CommoditiesMasterDataPage />} />
+                    <Route path="/admin/pedidos" element={<OrdersListPage />} />
                     <Route path="/compradores" element={<BuyerPortalPage />} />
                     <Route path="*" element={<NotFound />} />
                   </Routes>
