@@ -12,6 +12,7 @@ import { decomposePricing, calculateGrossToNet, generatePriceAuditTrail, normali
 import { checkEligibility } from '@/engines/eligibility';
 import { buildSnapshot } from '@/engines/snapshot';
 import { calculateCommodityNetPrice, calculateParity, calculateIVP, blackScholes } from '@/engines/parity';
+import { formatCpfCnpj, parsePtBrNumber } from '@/lib/ptbr';
 import { buildWagonStages, canAdvance, getBlockingReason, calculateGuaranteeCoverage } from '@/engines/orchestrator';
 import type { AgronomicSelection, ChannelSegment, Product, JourneyModule, DocumentType, CommodityPricing, FreightReducer, ContractPriceType, GuaranteeCoverage } from '@/types/barter';
 import { getAllMunicipios } from '@/data/municipios';
@@ -413,10 +414,6 @@ export default function OperationStepperPage() {
   // ─── Eligible states & cities from campaign ───
   const allMunicipios = useMemo(() => getAllMunicipios(), []);
   const normalizeKey = (v?: string) => String(v || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().toLowerCase();
-  const toSafeNumber = (value: string, fallback = 0) => {
-    const parsed = Number(value);
-    return Number.isFinite(parsed) ? parsed : fallback;
-  };
   const eligibleStateSet = useMemo(() => new Set((rawCampaign?.eligible_states || []).map((v: any) => String(v || '').trim().toUpperCase())), [rawCampaign]);
   const eligibleCitySet = useMemo(() => new Set((rawCampaign?.eligible_cities || []).map((v: any) => String(v))), [rawCampaign]);
   const eligibleCityNameSet = useMemo(() => new Set((rawCampaign?.eligible_cities || []).map((v: any) => normalizeKey(String(v)))), [rawCampaign]);
@@ -428,11 +425,6 @@ export default function OperationStepperPage() {
     if (hasStateFilter) return eligibleStateSet.has(String(m.uf || '').trim().toUpperCase());
     return true;
   }, [hasCityFilter, hasStateFilter, eligibleCitySet, eligibleCityNameSet, eligibleStateSet]);
-
-  const isMunicipioEligible = useCallback((m: { ibge: string; name: string }) => {
-    if (!hasEligibilityFilter) return true;
-    return eligibleCitySet.has(m.ibge) || eligibleCityNameSet.has(normalizeKey(m.name));
-  }, [hasEligibilityFilter, eligibleCitySet, eligibleCityNameSet]);
 
   const eligibleStates = useMemo(() => {
     if (hasCityFilter) {
@@ -879,7 +871,7 @@ export default function OperationStepperPage() {
                 </div>
                 <div className="glass-card p-4">
                   <label className="stat-label">Área (ha)</label>
-                  <Input type="number" value={area} onChange={e => setArea(toSafeNumber(e.target.value, 1))} className="mt-1 bg-muted border-border font-mono text-foreground" min={1} />
+                  <Input type="text" inputMode="decimal" value={area} onChange={e => setArea(Math.max(1, parsePtBrNumber(e.target.value)))} className="mt-1 bg-muted border-border font-mono text-foreground" />
                 </div>
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -889,7 +881,7 @@ export default function OperationStepperPage() {
                 </div>
                 <div className="glass-card p-4">
                   <label className="stat-label">CPF/CNPJ</label>
-                  <Input value={clientDocument} onChange={e => setClientDocument(e.target.value)} placeholder="Documento" className="mt-1 bg-muted border-border text-foreground" />
+                  <Input value={clientDocument} onChange={e => setClientDocument(formatCpfCnpj(e.target.value))} placeholder="Documento" className="mt-1 bg-muted border-border text-foreground" />
                 </div>
                 <div className="glass-card p-4">
                   <label className="stat-label">Tipo</label>
@@ -1063,12 +1055,12 @@ export default function OperationStepperPage() {
                           {quantityMode === 'dose' ? (
                             <div className="flex items-center gap-2">
                               <label className="text-xs text-muted-foreground w-16">Dose/ha:</label>
-                              <Input type="number" value={dose} step={0.05} min={product.minDose} max={product.maxDose} onChange={e => { e.stopPropagation(); updateDose(product.id, toSafeNumber(e.target.value)); }} onClick={e => e.stopPropagation()} className="h-7 bg-muted border-border font-mono text-xs text-foreground" />
+                              <Input type="text" inputMode="decimal" value={dose} onChange={e => { e.stopPropagation(); updateDose(product.id, parsePtBrNumber(e.target.value)); }} onClick={e => e.stopPropagation()} className="h-7 bg-muted border-border font-mono text-xs text-foreground" />
                             </div>
                           ) : (
                             <div className="flex items-center gap-2">
                               <label className="text-xs text-muted-foreground w-16">Qtd ({product.unitType}):</label>
-                              <Input type="number" value={freeQuantities.get(product.id) || ''} min={0} onChange={e => { e.stopPropagation(); updateFreeQuantity(product.id, toSafeNumber(e.target.value)); }} onClick={e => e.stopPropagation()} className="h-7 bg-muted border-border font-mono text-xs text-foreground" placeholder="0" />
+                              <Input type="text" inputMode="decimal" value={freeQuantities.get(product.id) || ''} onChange={e => { e.stopPropagation(); updateFreeQuantity(product.id, parsePtBrNumber(e.target.value)); }} onClick={e => e.stopPropagation()} className="h-7 bg-muted border-border font-mono text-xs text-foreground" placeholder="0" />
                             </div>
                           )}
                           {selection && (
@@ -1194,7 +1186,7 @@ export default function OperationStepperPage() {
                     <Switch checked={hasContract} onCheckedChange={setHasContract} />
                     <Label className="text-xs">Contrato existente</Label>
                   </div>
-                  {hasContract && <Input type="number" value={userPrice} onChange={e => setUserPrice(toSafeNumber(e.target.value))} placeholder="Preço/sc" className="bg-muted border-border font-mono text-foreground" />}
+                  {hasContract && <Input type="text" inputMode="decimal" value={userPrice} onChange={e => setUserPrice(parsePtBrNumber(e.target.value))} placeholder="Preço/sc" className="bg-muted border-border font-mono text-foreground" />}
                 </div>
               </div>
               <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
@@ -1318,7 +1310,7 @@ export default function OperationStepperPage() {
                       <div>
                         <div className="stat-label">Índice de Cumprimento</div>
                         <div className="flex items-center gap-2 mt-1">
-                          <Input type="number" value={performanceIndex} min={0} max={100} onChange={e => setPerformanceIndex(Math.min(100, Math.max(0, toSafeNumber(e.target.value))))} className="h-8 w-20 bg-muted border-border font-mono text-xs text-foreground" />
+                          <Input type="text" inputMode="decimal" value={performanceIndex} onChange={e => setPerformanceIndex(Math.min(100, Math.max(0, parsePtBrNumber(e.target.value))))} className="h-8 w-20 bg-muted border-border font-mono text-xs text-foreground" />
                           <span className="text-xs text-muted-foreground">%</span>
                         </div>
                       </div>

@@ -19,6 +19,7 @@ import CombosTab from '@/components/campaign/CombosTab';
 import CommoditiesTab from '@/components/campaign/CommoditiesTab';
 import { useCommodityOptions } from '@/hooks/useCommoditiesMasterData';
 import { normalizeCommodityCode } from '@/lib/commodity';
+import { formatCpfCnpj } from '@/lib/ptbr';
 
 const JOURNEY_MODULES = [
   { value: 'adesao', label: 'Termo de Adesão', group: 'formalizacao' },
@@ -148,7 +149,7 @@ export default function CampaignFormPage() {
       supabase.from('campaign_segments').select('*').eq('campaign_id', campaignId),
       supabase.from('campaign_due_dates').select('*').eq('campaign_id', campaignId),
     ]);
-    if (clientsRes.data) setClients(clientsRes.data.map((c: any) => ({ document: c.document, name: c.name })));
+    if (clientsRes.data) setClients(clientsRes.data.map((c: any) => ({ document: formatCpfCnpj(c.document || ''), name: c.name })));
     if (methodsRes.data) setPaymentMethods(methodsRes.data.map((m: any) => ({
       method_name: m.method_name, markup_percent: Number(m.markup_percent),
       active: m.active, annual_interest_rate: Number(m.annual_interest_rate),
