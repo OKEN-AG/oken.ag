@@ -2,6 +2,7 @@ import { useState, useMemo, useCallback, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { useLocation } from 'react-router-dom';
 import { useActiveCampaigns, useCampaignData } from '@/hooks/useActiveCampaign';
+import { useCommodityOptions } from '@/hooks/useCommoditiesMasterData';
 import { useOperations, useUpdateOperation, useCreateOperationLog } from '@/hooks/useOperations';
 import { useAuth } from '@/contexts/AuthContext';
 import { useRealtimePricing } from '@/hooks/useRealtimePricing';
@@ -97,6 +98,8 @@ export default function ParityPage() {
       return data;
     },
   });
+
+  const { options: commodityOptions } = useCommodityOptions((rawCampaign?.commodities || []) as string[], ['soja', 'milho', 'cafe', 'algodao']);
 
   const updateOperation = useUpdateOperation();
   const createLog = useCreateOperationLog();
@@ -300,13 +303,15 @@ export default function ParityPage() {
     try {
       await updateOperation.mutateAsync({
         id: selectedOperationId,
-        total_sacas: insurancePremium?.totalSacas ?? parity.quantitySacas,
-        commodity_price: parity.commodityPricePerUnit,
-        reference_price: parity.referencePrice,
-        has_existing_contract: hasContract,
-        insurance_premium_sacas: insurancePremium?.additionalSacas ?? 0,
-        payment_method: 'barter' as const,
-        status: 'pedido' as const,
+        updates: {
+          total_sacas: insurancePremium?.totalSacas ?? parity.quantitySacas,
+          commodity_price: parity.commodityPricePerUnit,
+          reference_price: parity.referencePrice,
+          has_existing_contract: hasContract,
+          insurance_premium_sacas: insurancePremium?.additionalSacas ?? 0,
+          payment_method: 'barter' as const,
+          status: 'pedido' as const,
+        },
       });
       await createLog.mutateAsync({
         operation_id: selectedOperationId,
@@ -383,8 +388,10 @@ export default function ParityPage() {
           <Select value={selectedCommodity} onValueChange={setSelectedCommodity}>
             <SelectTrigger className="mt-1 bg-muted border-border text-foreground"><SelectValue /></SelectTrigger>
             <SelectContent>
-              {(rawCampaign?.commodities?.length ? rawCampaign.commodities : ['soja', 'milho', 'cafe', 'algodao']).map((c: string) => (
-                <SelectItem key={c} value={c} className="capitalize">{c}</SelectItem>
+              {commodityOptions.map(option => (
+                <SelectItem key={option.value} value={option.value}>
+                  {option.label}
+                </SelectItem>
               ))}
             </SelectContent>
           </Select>
@@ -480,7 +487,7 @@ export default function ParityPage() {
             freightReducer={effectiveFreightReducer}
             commodityNetPrice={effectiveCommodityPrice}
             showInsurance={showInsurance}
-            commodityName={selectedCommodity.charAt(0).toUpperCase() + selectedCommodity.slice(1)}
+            commodityName={commodityOptions.find(c => c.value === selectedCommodity)?.label || (selectedCommodity.charAt(0).toUpperCase() + selectedCommodity.slice(1))}
             valorizationBonus={valorizationBonus}
             formatCurrency={formatCurrency}
             formatNum={formatNum}
