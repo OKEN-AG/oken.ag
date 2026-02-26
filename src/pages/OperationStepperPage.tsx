@@ -28,8 +28,9 @@ import {
   ChevronLeft, ChevronRight, Check, AlertCircle, MapPin, ShoppingCart,
   TrendingUp, Wheat, FileText, Save, Loader2, Plus, Minus, X, FileSearch,
   Train, ArrowRight, PenLine, ShieldCheck, Lock, CheckCircle, AlertTriangle, Clock,
-  Zap, Lightbulb
+  Zap, Lightbulb, Eye
 } from 'lucide-react';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 
 // ─── Step definitions ───
 const STEPS = [
@@ -231,8 +232,9 @@ export default function OperationStepperPage() {
   const [segment, setSegment] = useState<string>(''); // segmento comercial
   const [channelEnum, setChannelEnum] = useState<ChannelSegment>('distribuidor'); // compat legado para telas antigas
   const [area, setArea] = useState(500);
-  const [quantityMode, setQuantityMode] = useState<'dose' | 'livre'>('dose'); // dose/ha or free quantity
+  const [quantityMode, setQuantityMode] = useState<'dose' | 'livre'>('dose');
   const [freeQuantities, setFreeQuantities] = useState<Map<string, number>>(new Map());
+  const [showCampaignPreview, setShowCampaignPreview] = useState(false);
 
   // ─── Order step state ───
   const [selectedProducts, setSelectedProducts] = useState<Map<string, number>>(new Map());
@@ -1016,12 +1018,19 @@ export default function OperationStepperPage() {
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                 <div className="glass-card p-4 lg:col-span-2">
                   <label className="stat-label">Campanha</label>
-                  <Select value={selectedCampaignId} onValueChange={v => { setSelectedCampaignId(v); setSelectedProducts(new Map()); }}>
-                    <SelectTrigger className="mt-1 bg-muted border-border text-foreground"><SelectValue placeholder="Selecione..." /></SelectTrigger>
-                    <SelectContent>
-                      {activeCampaigns?.map(c => <SelectItem key={c.id} value={c.id}>{c.name} ({c.season})</SelectItem>)}
-                    </SelectContent>
-                  </Select>
+                  <div className="flex items-center gap-2 mt-1">
+                    <Select value={selectedCampaignId} onValueChange={v => { setSelectedCampaignId(v); setSelectedProducts(new Map()); }}>
+                      <SelectTrigger className="bg-muted border-border text-foreground flex-1"><SelectValue placeholder="Selecione..." /></SelectTrigger>
+                      <SelectContent>
+                        {activeCampaigns?.map(c => <SelectItem key={c.id} value={c.id}>{c.name} ({c.season})</SelectItem>)}
+                      </SelectContent>
+                    </Select>
+                    {selectedCampaignId && (
+                      <Button variant="outline" size="icon" className="shrink-0 h-9 w-9 border-border" onClick={() => setShowCampaignPreview(true)} title="Ver parâmetros da campanha">
+                        <Eye className="w-4 h-4" />
+                      </Button>
+                    )}
+                  </div>
                 </div>
                 <div className="glass-card p-4">
                   <label className="stat-label">Área (ha)</label>
@@ -1604,6 +1613,90 @@ export default function OperationStepperPage() {
           )}
         </div>
       </div>
+
+      {/* Campaign Preview Dialog */}
+      <Dialog open={showCampaignPreview} onOpenChange={setShowCampaignPreview}>
+        <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="text-lg">{campaign?.name || 'Campanha'}</DialogTitle>
+          </DialogHeader>
+          {campaign && (
+            <div className="space-y-5 text-sm">
+              {/* Geral */}
+              <div>
+                <h3 className="font-semibold text-foreground mb-2">Parâmetros Gerais</h3>
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="bg-muted/50 rounded p-2"><span className="text-muted-foreground text-xs">Safra</span><div className="font-medium">{rawCampaign?.season}</div></div>
+                  <div className="bg-muted/50 rounded p-2"><span className="text-muted-foreground text-xs">Moeda</span><div className="font-medium">{campaign.currency || 'BRL'}</div></div>
+                  <div className="bg-muted/50 rounded p-2"><span className="text-muted-foreground text-xs">Direcionamento</span><div className="font-medium capitalize">{campaign.target?.replace(/_/g, ' ')}</div></div>
+                  <div className="bg-muted/50 rounded p-2"><span className="text-muted-foreground text-xs">Formato Lista</span><div className="font-medium">{rawCampaign?.price_list_format?.replace(/_/g, ' ')}</div></div>
+                  {rawCampaign?.start_date && <div className="bg-muted/50 rounded p-2"><span className="text-muted-foreground text-xs">Início</span><div className="font-medium">{new Date(rawCampaign.start_date).toLocaleDateString('pt-BR')}</div></div>}
+                  {rawCampaign?.end_date && <div className="bg-muted/50 rounded p-2"><span className="text-muted-foreground text-xs">Fim</span><div className="font-medium">{new Date(rawCampaign.end_date).toLocaleDateString('pt-BR')}</div></div>}
+                  {rawCampaign?.commodities?.length > 0 && <div className="bg-muted/50 rounded p-2 col-span-2"><span className="text-muted-foreground text-xs">Commodities</span><div className="font-medium capitalize">{rawCampaign.commodities.join(', ')}</div></div>}
+                </div>
+              </div>
+
+              {/* Elegibilidade */}
+              <div>
+                <h3 className="font-semibold text-foreground mb-2">Elegibilidade</h3>
+                <div className="space-y-2">
+                  {campaign.eligibility.states.length > 0 && (
+                    <div><span className="text-muted-foreground text-xs">Estados</span><div className="flex flex-wrap gap-1 mt-1">{campaign.eligibility.states.map(s => <span key={s} className="engine-badge bg-primary/10 text-primary">{s}</span>)}</div></div>
+                  )}
+                  {campaign.eligibility.mesoregions.length > 0 && (
+                    <div><span className="text-muted-foreground text-xs">Mesorregiões</span><div className="flex flex-wrap gap-1 mt-1">{campaign.eligibility.mesoregions.map(m => <span key={m} className="engine-badge bg-info/10 text-info">{m}</span>)}</div></div>
+                  )}
+                  {campaign.eligibility.distributorSegments.length > 0 && (
+                    <div><span className="text-muted-foreground text-xs">Segmentos de Distribuidor</span><div className="flex flex-wrap gap-1 mt-1">{campaign.eligibility.distributorSegments.map(s => <span key={s} className="engine-badge bg-warning/10 text-warning capitalize">{s}</span>)}</div></div>
+                  )}
+                  {campaign.availableDueDates.length > 0 && (
+                    <div><span className="text-muted-foreground text-xs">Vencimentos</span><div className="flex flex-wrap gap-1 mt-1">{campaign.availableDueDates.map(d => <span key={d} className="engine-badge bg-muted text-muted-foreground">{new Date(d).toLocaleDateString('pt-BR')}</span>)}</div></div>
+                  )}
+                  {campaign.eligibility.states.length === 0 && campaign.eligibility.mesoregions.length === 0 && (
+                    <p className="text-muted-foreground text-xs">Sem restrição territorial configurada.</p>
+                  )}
+                </div>
+              </div>
+
+              {/* Módulos */}
+              <div>
+                <h3 className="font-semibold text-foreground mb-2">Módulos Ativos</h3>
+                {campaign.activeModules.length > 0 ? (
+                  <div className="flex flex-wrap gap-1.5">
+                    {campaign.activeModules.map((m, i) => (
+                      <span key={m} className="engine-badge bg-primary/10 text-primary">{i + 1}. {m}</span>
+                    ))}
+                  </div>
+                ) : <p className="text-muted-foreground text-xs">Todos os módulos ativos (padrão).</p>}
+              </div>
+
+              {/* Combos */}
+              <div>
+                <h3 className="font-semibold text-foreground mb-2">Combos ({combos.length})</h3>
+                {combos.length === 0 ? <p className="text-muted-foreground text-xs">Nenhum combo configurado.</p> : (
+                  <div className="space-y-2">
+                    {combos.map(combo => (
+                      <div key={combo.id} className="bg-muted/50 rounded p-3">
+                        <div className="font-medium text-foreground mb-1">{combo.name} <span className="text-xs text-muted-foreground">({combo.products.length} produtos)</span></div>
+                        <div className="flex flex-wrap gap-1.5">
+                          {combo.products.map((p: any) => {
+                            const prod = products.find(pr => pr.id === p.productId);
+                            return (
+                              <span key={p.productId} className="text-xs bg-background rounded px-2 py-0.5 border border-border">
+                                {prod?.name || p.productId} <span className="text-muted-foreground">({p.minDosePerHa}–{p.maxDosePerHa} {prod?.unitType || 'L'}/ha)</span>
+                              </span>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
