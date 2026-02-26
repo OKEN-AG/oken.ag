@@ -72,8 +72,17 @@ function getComboRecommendations(
   const productsByRef = new Map(products.map(p => [String(p.ref || '').toUpperCase().trim(), p]));
   const selectionsByRef = new Map(selections.map(sel => [String(sel.ref || '').toUpperCase().trim(), sel]));
 
+  // Sort combos: highest discount first, then by fewest missing products (closest to activate), then by most products (widest coverage)
   const prioritizedCombos = [...combos]
-    .sort((a, b) => (b.discountPercent - a.discountPercent) || (b.products.length - a.products.length))
+    .map(combo => {
+      const missingCount = combo.products.filter((cp: any) => !selectedRefs.has((cp.ref || '').toUpperCase().trim())).length;
+      return { ...combo, missingCount };
+    })
+    .sort((a, b) => {
+      if (b.discountPercent !== a.discountPercent) return b.discountPercent - a.discountPercent;
+      if (a.missingCount !== b.missingCount) return a.missingCount - b.missingCount;
+      return b.products.length - a.products.length;
+    })
     .slice(0, 30);
 
   for (const combo of prioritizedCombos) {
