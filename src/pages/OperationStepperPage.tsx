@@ -1142,29 +1142,31 @@ export default function OperationStepperPage() {
                             });
                           const handleComboClick = () => {
                             if (ca.applied) return;
-                            // Add all combo products at their min dose
+                            // Batch all products into a single state update
+                            const nextProducts = new Map(selectedProducts);
+                            const nextFree = new Map(freeQuantities);
                             for (const cp of comboProducts) {
                               const ref = (cp.ref || '').toUpperCase().trim();
                               const prod = products.find(p => (p.ref || '').toUpperCase().trim() === ref);
                               if (!prod) continue;
                               const minDose = cp.minDosePerHa || prod.minDose || prod.dosePerHectare;
-                              if (!selectedProducts.has(prod.id)) {
-                                toggleProduct(prod.id, minDose);
+                              if (!nextProducts.has(prod.id)) {
+                                nextProducts.set(prod.id, minDose);
                                 if (quantityMode === 'livre') {
-                                  const qty = Math.ceil(area * minDose);
-                                  updateFreeQuantity(prod.id, qty);
+                                  nextFree.set(prod.id, Math.ceil(area * minDose));
                                 }
                               } else {
-                                // Already selected — ensure dose meets minimum
-                                const currentDose = selectedProducts.get(prod.id) ?? 0;
+                                const currentDose = nextProducts.get(prod.id) ?? 0;
                                 if (currentDose < minDose) {
-                                  updateDose(prod.id, minDose);
+                                  nextProducts.set(prod.id, minDose);
                                   if (quantityMode === 'livre') {
-                                    updateFreeQuantity(prod.id, Math.ceil(area * minDose));
+                                    nextFree.set(prod.id, Math.ceil(area * minDose));
                                   }
                                 }
                               }
                             }
+                            setSelectedProducts(nextProducts);
+                            setFreeQuantities(nextFree);
                           };
                           return (
                             <button
