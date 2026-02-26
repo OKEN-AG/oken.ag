@@ -17,6 +17,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { NumericInput } from '@/components/NumericInput';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Progress } from '@/components/ui/progress';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -878,7 +879,7 @@ export default function OperationStepperPage() {
                 </div>
                 <div className="glass-card p-4">
                   <label className="stat-label">Área (ha)</label>
-                  <Input type="text" inputMode="decimal" value={area} onChange={e => setArea(Math.max(1, parsePtBrNumber(e.target.value)))} className="mt-1 bg-muted border-border font-mono text-foreground" />
+                  <NumericInput value={area} onChange={v => setArea(v)} min={1} decimals={0} className="mt-1 bg-muted border-border text-foreground" />
                 </div>
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -1069,12 +1070,12 @@ export default function OperationStepperPage() {
                           {quantityMode === 'dose' ? (
                             <div className="flex items-center gap-2">
                               <label className="text-xs text-muted-foreground w-24">{isPerAreaProduct(product) ? 'Dose/ha:' : 'Quantidade:'}</label>
-                              <Input type="text" inputMode="decimal" value={dose} onChange={e => { e.stopPropagation(); updateDose(product.id, parsePtBrNumber(e.target.value)); }} onClick={e => e.stopPropagation()} className="h-7 bg-muted border-border font-mono text-xs text-foreground" />
+                              <NumericInput value={dose} onChange={v => updateDose(product.id, v)} decimals={2} className="h-7 bg-muted border-border text-xs text-foreground" />
                             </div>
                           ) : (
                             <div className="flex items-center gap-2">
                               <label className="text-xs text-muted-foreground w-16">Qtd ({product.unitType}):</label>
-                              <Input type="text" inputMode="decimal" value={freeQuantities.get(product.id) || ''} onChange={e => { e.stopPropagation(); updateFreeQuantity(product.id, parsePtBrNumber(e.target.value)); }} onClick={e => e.stopPropagation()} className="h-7 bg-muted border-border font-mono text-xs text-foreground" placeholder="0" />
+                              <NumericInput value={freeQuantities.get(product.id) || 0} onChange={v => updateFreeQuantity(product.id, v)} decimals={0} placeholder="0" className="h-7 bg-muted border-border text-xs text-foreground" />
                             </div>
                           )}
                           {selection && (
@@ -1195,7 +1196,7 @@ export default function OperationStepperPage() {
                     <Switch checked={hasContract} onCheckedChange={setHasContract} />
                     <Label className="text-xs">Contrato existente</Label>
                   </div>
-                  {hasContract && <Input type="text" inputMode="decimal" value={userPrice} onChange={e => setUserPrice(parsePtBrNumber(e.target.value))} placeholder="Preço/sc" className="bg-muted border-border font-mono text-foreground" />}
+                  {hasContract && <NumericInput value={userPrice} onChange={setUserPrice} decimals={2} prefix="R$" placeholder="0,00" className="bg-muted border-border text-foreground" />}
                 </div>
               </div>
               <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
@@ -1319,7 +1320,7 @@ export default function OperationStepperPage() {
                       <div>
                         <div className="stat-label">Índice de Cumprimento</div>
                         <div className="flex items-center gap-2 mt-1">
-                          <Input type="text" inputMode="decimal" value={performanceIndex} onChange={e => setPerformanceIndex(Math.min(100, Math.max(0, parsePtBrNumber(e.target.value))))} className="h-8 w-20 bg-muted border-border font-mono text-xs text-foreground" />
+                          <NumericInput value={performanceIndex} onChange={setPerformanceIndex} min={0} max={100} decimals={0} className="h-8 w-20 bg-muted border-border text-xs text-foreground" />
                           <span className="text-xs text-muted-foreground">%</span>
                         </div>
                       </div>
