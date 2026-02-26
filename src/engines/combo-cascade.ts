@@ -1,12 +1,15 @@
 import type { ComboDefinition, ComboActivation, AgronomicSelection } from '@/types/barter';
 
 /**
- * COMBO CASCADE ENGINE v5 — Faithful to Excel "MATRIZ DESCONTO"
+ * COMBO CASCADE ENGINE v6 — 100% faithful to Excel "MATRIZ DESCONTO"
+ *
+ * KEY PRINCIPLE: NO dependency on input area. The engine derives area
+ * equivalents purely from VOLUME and DOSE rules of the combo.
  *
  * For each combo (OFERTA), per product rule:
- *   VOLUME (I)     = total qty of that REF from selections
- *   TESTE1 (J)     = VOLUME / doseMin   → area equivalent (min dose)
- *   TESTE2 (K)     = VOLUME / doseMax   → area equivalent (max dose)
+ *   VOLUME (I)     = total qty of that REF from selections (remaining after previous combos)
+ *   TESTE1 (J)     = VOLUME / doseMin   → area equivalent at minimum dose
+ *   TESTE2 (K)     = VOLUME / doseMax   → area equivalent at maximum dose
  *   AREA_CONSOL     = MIN(all TESTE1)    → limiting area of the group
  *   MINIMO (L)     = AREA_CONSOL * doseMin
  *   MAXIMO (M)     = AREA_CONSOL * doseMax
@@ -15,7 +18,7 @@ import type { ComboDefinition, ComboActivation, AgronomicSelection } from '@/typ
  *   CONSOL (P)     = VOL_ATIVADO * (1 - discount)
  *   AREA_CONSOL(Q) = if VOL_ATIVADO > 0 then AREA_CONSOL else 0
  *
- * Cascade: sorted by descountPercent desc, then product count desc.
+ * Cascade: sorted by discountPercent desc, then product count desc.
  * Remaining qty is reduced after each combo activation.
  */
 
@@ -87,6 +90,9 @@ export function getSuggestedDoseForRef(
 
 /**
  * Apply combo cascade with Excel-faithful logic.
+ * 
+ * The engine has ZERO dependency on the input area field.
+ * Area equivalents are derived purely from volume / doseMin per product rule.
  */
 export function applyComboCascadeWithLedger(
   combos: ComboDefinition[],
@@ -103,21 +109,11 @@ export function applyComboCascadeWithLedger(
 
   // Track remaining quantity per REF (starts with total from selections)
   const remainingQty = new Map<string, number>();
-  // Track area per REF (for implied-dose checks)
-  const areaLookup = new Map<string, number>();
   for (const sel of selections) {
     const ref = getSelectionRef(sel);
     if (ref) {
       remainingQty.set(ref, (remainingQty.get(ref) || 0) + sel.roundedQuantity);
-      if (!areaLookup.has(ref)) areaLookup.set(ref, sel.areaHectares || 0);
     }
-  }
-
-  // Build dose lookup: REF -> dosePerHectare (from selections)
-  const doseLookup = new Map<string, number>();
-  for (const sel of selections) {
-    const ref = getSelectionRef(sel);
-    if (ref && !doseLookup.has(ref)) doseLookup.set(ref, sel.dosePerHectare);
   }
 
   const activations: ComboActivation[] = [];
@@ -129,7 +125,8 @@ export function applyComboCascadeWithLedger(
     let allPresent = true;
     let areaConsolidada = Infinity;
 
-    // Phase 1: Check presence + calculate TESTE1 (area equiv by min dose)
+    // Phase 1: Check presence + calculate TESTE1/TESTE2 (area equivalents)
+    // NO dose check against input area — only volume presence matters
     for (const rule of combo.products) {
       const ruleRef = (rule.ref || '').toUpperCase().trim();
       if (!ruleRef) { allPresent = false; break; }
@@ -140,39 +137,22 @@ export function applyComboCascadeWithLedger(
       const doseMin = rule.minDosePerHa;
       const doseMax = rule.maxDosePerHa;
 
-      // Check eligibility: volume must be achievable within dose range for the area.
-      // Implied dose = volume / area. Accept if implied dose falls within [doseMin, doseMax],
-      // OR if volume >= area * doseMin (enough product to cover at minimum dose).
-      const area = areaLookup.get(ruleRef) || 0;
-      if (area > 0 && doseMin > 0) {
-        const impliedDose = volume / area;
-        // Use a 1% tolerance for floating-point edge cases
-        if (impliedDose < doseMin * 0.99 || (doseMax > 0 && impliedDose > doseMax * 1.01)) {
-          // Volume is outside achievable range for this combo rule
-          allPresent = false; break;
-        }
-      } else {
-        // Fallback: check stored dose from selection
-        const selectionDose = doseLookup.get(ruleRef) || 0;
-        if (selectionDose < doseMin || selectionDose > doseMax) {
-          allPresent = false; break;
-        }
-      }
-
-      // J = volume / doseMin (area equivalent)
+      // J = volume / doseMin (area equivalent) — Excel: IF(E5="","",IF(G5=0," ",I5/G5))
       const teste1 = doseMin > 0 ? volume / doseMin : Infinity;
-      // K = volume / doseMax
+      // K = volume / doseMax — Excel: IF(E5="","",IF(H5=0," ",I5/H5))
       const teste2 = doseMax > 0 ? volume / doseMax : 0;
 
-      // Track min area for the group (limiting area)
-      areaConsolidada = Math.min(areaConsolidada, teste1);
+      // Track min area for the group (limiting area) — Excel: MIN(J5:J14)
+      if (teste1 !== Infinity) {
+        areaConsolidada = Math.min(areaConsolidada, teste1);
+      }
 
       details.push({
         ref: ruleRef,
         volume,
         teste1,
         teste2,
-        minimo: 0, maximo: 0, volumeAtivado: 0, saldo: 0, consolidado: 0, // filled in Phase 2
+        minimo: 0, maximo: 0, volumeAtivado: 0, saldo: 0, consolidado: 0,
       });
     }
 
@@ -190,11 +170,11 @@ export function applyComboCascadeWithLedger(
 
     for (const item of details) {
       const rule = combo.products.find(p => (p.ref || '').toUpperCase().trim() === item.ref)!;
-      item.minimo = areaConsolidada * rule.minDosePerHa;           // L
-      item.maximo = areaConsolidada * rule.maxDosePerHa;           // M
-      item.volumeAtivado = Math.min(item.volume, item.maximo);     // N
-      item.saldo = item.volume - item.volumeAtivado;               // O
-      item.consolidado = item.volumeAtivado * (1 - combo.discountPercent / 100); // P
+      item.minimo = areaConsolidada * rule.minDosePerHa;           // L = MIN(J5:J14)*G5
+      item.maximo = areaConsolidada * rule.maxDosePerHa;           // M = MIN(J5:J14)*H5
+      item.volumeAtivado = Math.min(item.volume, item.maximo);     // N = IF(I5>M5, M5, I5)
+      item.saldo = item.volume - item.volumeAtivado;               // O = I5-N5
+      item.consolidado = item.volumeAtivado * (1 - combo.discountPercent / 100); // P = N5*(1-F5)
 
       // Consume from remaining
       comboLedger[item.ref] = item.volumeAtivado;
@@ -216,7 +196,7 @@ export function applyComboCascadeWithLedger(
     });
   }
 
-  // Complementary combos
+  // Complementary combos — activate only if at least one main combo was applied
   const hasActivatedOffers = activations.some(a => a.applied && !a.isComplementary);
   const maxActivatedArea = Math.max(0, ...activations.filter(a => a.applied).map(a => a.activatedHectares || 0));
 
@@ -239,15 +219,7 @@ export function applyComboCascadeWithLedger(
       const volume = remainingQty.get(ruleRef) || 0;
       if (volume <= 0) continue;
 
-      const area = areaLookup.get(ruleRef) || 0;
-      if (area > 0 && rule.minDosePerHa > 0) {
-        const impliedDose = volume / area;
-        if (impliedDose < rule.minDosePerHa * 0.99 || (rule.maxDosePerHa > 0 && impliedDose > rule.maxDosePerHa * 1.01)) continue;
-      } else {
-        const selectionDose = doseLookup.get(ruleRef) || 0;
-        if (selectionDose < rule.minDosePerHa || selectionDose > rule.maxDosePerHa) continue;
-      }
-
+      // For complementary: no dose check, just consume remaining volume
       matchedRefs.push(ruleRef);
       compDetails.push({
         ref: ruleRef, volume, teste1: 0, teste2: 0,
