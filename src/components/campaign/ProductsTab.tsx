@@ -264,10 +264,10 @@ export default function ProductsTab({ campaignId, currency = 'BRL' }: Props) {
                 <TableHead className="min-w-[200px] text-foreground">Produto</TableHead>
                 <TableHead className="w-16 text-foreground">REF</TableHead>
                 <TableHead className="w-28 text-foreground">Preço Cash</TableHead>
-                <TableHead className="w-28 text-foreground">Preço Prazo</TableHead>
                 <TableHead className="w-16 text-foreground">Caixa</TableHead>
                 <TableHead className="w-16 text-foreground">KG/L</TableHead>
-                <TableHead className="w-20 text-foreground">Dose/ha</TableHead>
+                <TableHead className="w-20 text-foreground">Dose Mín/ha</TableHead>
+                <TableHead className="w-20 text-foreground">Dose Máx/ha</TableHead>
                 <TableHead className="w-20"></TableHead>
               </TableRow>
             </TableHeader>
@@ -279,10 +279,10 @@ export default function ProductsTab({ campaignId, currency = 'BRL' }: Props) {
                   <TableCell>{renderCell(p, 'name')}</TableCell>
                   <TableCell>{renderCell(p, 'ref')}</TableCell>
                   <TableCell>{renderCell(p, 'price_cash', p.price_cash ? Number(p.price_cash).toFixed(2) : '0.00')}</TableCell>
-                  <TableCell>{renderCell(p, 'price_term', p.price_term ? Number(p.price_term).toFixed(2) : '0.00')}</TableCell>
                   <TableCell>{renderCell(p, 'units_per_box')}</TableCell>
                   <TableCell>{renderCell(p, 'dose_per_hectare')}</TableCell>
-                  <TableCell>{renderCell(p, 'min_dose', `${p.min_dose}-${p.max_dose}`)}</TableCell>
+                  <TableCell>{renderCell(p, 'min_dose', p.min_dose != null ? String(p.min_dose) : '0')}</TableCell>
+                  <TableCell>{renderCell(p, 'max_dose', p.max_dose != null ? String(p.max_dose) : '0')}</TableCell>
                   <TableCell>
                     <div className="flex gap-0.5">
                       <Button variant="ghost" size="icon" className="h-6 w-6" title="Lista de preço" onClick={() => setPriceProduct(p)}>
