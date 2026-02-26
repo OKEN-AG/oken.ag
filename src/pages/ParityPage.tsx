@@ -9,7 +9,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useRealtimePricing } from '@/hooks/useRealtimePricing';
 import { AlertCircle } from 'lucide-react';
 import { calculateCommodityNetPrice, calculateParity, blackScholes } from '@/engines/parity';
-import type { CommodityPricing, FreightReducer } from '@/types/barter';
+import type { CommodityPricing, CommodityType, FreightReducer } from '@/types/barter';
 import { Wheat, ArrowRight, TrendingUp, DollarSign, Truck, Shield, Save, Loader2, RefreshCw, MapPin, Zap, AlertTriangle } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -115,7 +115,7 @@ export default function ParityPage() {
 
   const hasCommodityData = !!commodityPricing;
   const pricing: CommodityPricing = commodityPricing || {
-    commodity: (selectedCommodity || 'soja'), exchange: 'CBOT', contract: 'K', exchangePrice: 0,
+    commodity: (selectedCommodity || 'soja') as CommodityType, exchange: 'CBOT', contract: 'K', exchangePrice: 0,
     optionCost: 0, exchangeRateBolsa: 0, exchangeRateOption: 0,
     basisByPort: {}, securityDeltaMarket: 0, securityDeltaFreight: 0,
     stopLoss: 0, bushelsPerTon: 36.744, pesoSacaKg: 60,

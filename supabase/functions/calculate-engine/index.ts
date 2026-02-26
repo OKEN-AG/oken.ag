@@ -1,10 +1,21 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.4";
 
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-};
+// CORS: restrict to allowed origins via env
+function getCorsHeaders(req: Request) {
+  const allowedRaw = Deno.env.get('ALLOWED_ORIGINS') || '*';
+  const origin = req.headers.get('Origin') || '';
+  let allowOrigin = '*';
+  if (allowedRaw !== '*') {
+    const allowed = allowedRaw.split(',').map(s => s.trim());
+    allowOrigin = allowed.includes(origin) ? origin : allowed[0];
+  }
+  return {
+    'Access-Control-Allow-Origin': allowOrigin,
+    'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version',
+    'Vary': 'Origin',
+  };
+}
 
 type RuntimeConfig = {
   calculationVersionDefault: string;
@@ -19,17 +30,6 @@ const defaultRuntimeConfig: RuntimeConfig = {
   snapshotTypeInput: 'memory_input',
   snapshotTypeDebt: 'memory_debt',
 };
-
-/**
- * CALCULATION ENGINE - Edge Function
- * Centralizes critical calculations server-side for integrity.
- *
- * Endpoints:
- * POST /calculate-pricing                 - Normalize prices and compute gross-to-net
- * POST /calculate-parity                  - Compute commodity parity
- * POST /calculate-input-memory            - Compute commodity memory (insumo)
- * POST /calculate-commodity-debt-memory   - Compute commodity memory (dívida)
- */
 
 function yearsBetween(startISO: string, endISO: string): number {
   const start = new Date(`${startISO}T00:00:00`).getTime();
@@ -60,14 +60,10 @@ function validateTemporalRules(payload: Record<string, unknown>) {
   const repasse = payload.dataRepasse ? new Date(`${payload.dataRepasse}T00:00:00`).getTime() : null;
   const excecao = String(payload.regraExcecaoTemporal || '').trim();
 
-  if (concessao > vencimento) {
-    throw new Error('Temporal validation failed: dataConcessao must be <= vencimento');
-  }
-  if (entrega > pagamento) {
-    throw new Error('Temporal validation failed: dataEntrega must be <= dataPagamento');
-  }
+  if (concessao > vencimento) throw new Error('Temporal: dataConcessao must be <= vencimento');
+  if (entrega > pagamento) throw new Error('Temporal: dataEntrega must be <= dataPagamento');
   if (repasse !== null && pagamento > repasse && !excecao) {
-    throw new Error('Temporal validation failed: dataPagamento must be <= dataRepasse (or provide regraExcecaoTemporal)');
+    throw new Error('Temporal: dataPagamento must be <= dataRepasse (or provide regraExcecaoTemporal)');
   }
 }
 
@@ -90,12 +86,13 @@ function buildFormulaMetadata(scenario: 'insumo' | 'divida') {
       periodoAntecipAnos: '(dataPagamento-dataRepasse)/365',
       precoEntregaAjustado: 'PV(rendimentoAntecipacaoAa,periodoAntecipAnos,precoLiquido)',
     };
-
   const dependencies = ['jurosCetAa','dataConcessao','vencimento','feeOkenPct','incentivoPct','precoBrutoCommodity','temImposto','descontoImpostosPct','dataRepasse','dataPagamento','rendimentoAntecipacaoAa'];
   return { formulas, dependencies };
 }
 
 serve(async (req: Request) => {
+  const corsHeaders = getCorsHeaders(req);
+
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
   }
@@ -105,12 +102,10 @@ serve(async (req: Request) => {
     const path = url.pathname.split('/').pop();
     const body = await req.json();
 
-    // Auth check
     const authHeader = req.headers.get('Authorization');
     if (!authHeader) {
       return new Response(JSON.stringify({ error: 'Unauthorized' }), {
-        status: 401,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
 
@@ -123,8 +118,7 @@ serve(async (req: Request) => {
     const { data: { user }, error: authError } = await supabase.auth.getUser();
     if (authError || !user) {
       return new Response(JSON.stringify({ error: 'Unauthorized' }), {
-        status: 401,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
 
@@ -142,41 +136,101 @@ serve(async (req: Request) => {
     let result: Record<string, unknown>;
 
     switch (path) {
+      // =====================================================================
+      // FIX 1.1: SERVER-AUTHORITATIVE PRICING
+      // No longer accepts pricePerUnit/currency/includesMargin from client.
+      // Fetches product prices from DB.
+      // =====================================================================
       case 'calculate-pricing': {
-        const { products, campaignId, segment, dueMonths } = body;
+        const { operationId, campaignId, segment, dueMonths, selections } = body;
 
+        // Validate required
+        if (!campaignId) throw new Error('campaignId is required');
+        if (!segment) throw new Error('segment is required');
+        if (dueMonths == null) throw new Error('dueMonths is required');
+
+        // Fetch campaign
         const { data: campaign, error: cErr } = await supabase
           .from('campaigns')
           .select('*')
           .eq('id', campaignId)
           .single();
-        if (cErr) throw cErr;
+        if (cErr || !campaign) throw new Error('Campaign not found');
 
+        // Fetch margins
         const { data: margins } = await supabase
           .from('channel_margins')
           .select('*')
           .eq('campaign_id', campaignId);
 
-        const pricingResults = products.map((item: {
-          productId: string;
-          pricePerUnit: number;
-          currency: string;
-          priceType: string;
-          includesMargin: boolean;
-          quantity: number;
-        }) => {
-          let price = item.pricePerUnit;
+        // Determine product list: from selections or operation_items
+        let productEntries: { productId: string; quantity: number }[] = [];
 
-          if (item.currency === 'USD') {
+        if (selections && Array.isArray(selections) && selections.length > 0) {
+          productEntries = selections.map((s: { productId: string; quantity: number }) => ({
+            productId: s.productId,
+            quantity: s.quantity,
+          }));
+        } else if (operationId) {
+          const { data: opItems } = await supabase
+            .from('operation_items')
+            .select('product_id, rounded_quantity')
+            .eq('operation_id', operationId);
+          productEntries = (opItems || []).map((item: { product_id: string; rounded_quantity: number }) => ({
+            productId: item.product_id,
+            quantity: item.rounded_quantity || 0,
+          }));
+        }
+
+        if (productEntries.length === 0) {
+          throw new Error('No products found — provide selections or operationId with items');
+        }
+
+        // Fetch product prices from DB (authoritative source)
+        const productIds = productEntries.map(p => p.productId);
+        const { data: products, error: pErr } = await supabase
+          .from('products')
+          .select('id, price_per_unit, price_cash, price_term, currency, price_type, includes_margin')
+          .in('id', productIds);
+        if (pErr) throw pErr;
+
+        const productMap = new Map((products || []).map((p: any) => [p.id, p]));
+
+        // Validate all products exist in campaign
+        const { data: campaignProducts } = await supabase
+          .from('campaign_products')
+          .select('product_id')
+          .eq('campaign_id', campaignId);
+        const validProductIds = new Set((campaignProducts || []).map((cp: any) => cp.product_id));
+
+        const pricingResults = productEntries.map(entry => {
+          const product = productMap.get(entry.productId);
+          if (!product) throw new Error(`Product ${entry.productId} not found in DB`);
+          if (!validProductIds.has(entry.productId)) {
+            throw new Error(`Product ${entry.productId} is not part of campaign ${campaignId}`);
+          }
+
+          // Use authoritative price from DB
+          let price = product.price_per_unit;
+          if (product.price_type === 'prazo' && product.price_term) {
+            price = product.price_term;
+          } else if (product.price_type === 'vista' && product.price_cash) {
+            price = product.price_cash;
+          }
+
+          // Currency conversion
+          if (product.currency === 'USD') {
             price *= campaign.exchange_rate_products;
           }
 
-          const interestMultiplier = item.priceType === 'vista' && dueMonths > 0
+          // Interest
+          const interestMultiplier = product.price_type === 'vista' && dueMonths > 0
             ? Math.pow(1 + campaign.interest_rate / 100, dueMonths) - 1
             : 0;
 
+          // Margin
           const margin = (margins || []).find((m: { segment: string }) => m.segment === segment);
-          const marginPercent = (!item.includesMargin && margin && segment !== 'direto')
+          const marginPercent = (!product.includes_margin && margin && segment !== 'direto')
             ? margin.margin_percent / 100
             : 0;
 
@@ -185,14 +239,14 @@ serve(async (req: Request) => {
           const normalizedPrice = priceWithInterest * (1 + marginPercent);
 
           return {
-            productId: item.productId,
+            productId: entry.productId,
             basePrice,
             normalizedPrice,
             interestComponent: basePrice * interestMultiplier,
             marginComponent: priceWithInterest * marginPercent,
             commercialPrice: normalizedPrice,
-            quantity: item.quantity,
-            subtotal: normalizedPrice * item.quantity,
+            quantity: entry.quantity,
+            subtotal: normalizedPrice * entry.quantity,
           };
         });
 
@@ -200,43 +254,75 @@ serve(async (req: Request) => {
         const totalInterest = pricingResults.reduce((s: number, p: { interestComponent: number; quantity: number }) => s + p.interestComponent * p.quantity, 0);
         const totalMargin = pricingResults.reduce((s: number, p: { marginComponent: number; quantity: number }) => s + p.marginComponent * p.quantity, 0);
 
-        result = {
-          pricingResults,
-          grossRevenue,
-          totalInterest,
-          totalMargin,
-        };
+        result = { pricingResults, grossRevenue, totalInterest, totalMargin };
 
-        if (body.operationId) {
+        if (operationId) {
           await supabase.from('operation_logs').insert({
-            operation_id: body.operationId,
+            operation_id: operationId,
             user_id: user.id,
             action: 'server_pricing_calculated',
-            details: { segment, dueMonths, grossRevenue, productsCount: products.length },
+            details: { segment, dueMonths, grossRevenue, productsCount: productEntries.length },
           });
         }
         break;
       }
 
+      // =====================================================================
+      // FIX 1.2: SERVER-AUTHORITATIVE PARITY
+      // Fetches commodity_pricing and freight from DB, not from client.
+      // =====================================================================
       case 'calculate-parity': {
-        const { totalAmountBRL, commodityPricing, port, freightReducer, userOverridePrice, grossAmountBRL } = body;
+        const { operationId, commodityPricingId, portName, freightReducerId, totalAmountBRL, userOverridePrice, grossAmountBRL } = body;
 
-        const pricing = commodityPricing;
-        const basisPrice = pricing.basis_by_port?.[port] ?? 0;
+        if (!totalAmountBRL || totalAmountBRL <= 0) throw new Error('totalAmountBRL must be > 0');
+
+        let pricing: any;
+        let freightReducer: any = null;
+
+        if (commodityPricingId) {
+          const { data: cp, error: cpErr } = await supabase
+            .from('commodity_pricing')
+            .select('*')
+            .eq('id', commodityPricingId)
+            .single();
+          if (cpErr || !cp) throw new Error('commodity_pricing not found');
+          pricing = cp;
+        } else if (body.commodityPricing) {
+          // Legacy fallback — log warning
+          console.warn('DEPRECATED: calculate-parity received commodityPricing from client. Use commodityPricingId.');
+          pricing = body.commodityPricing;
+        } else {
+          throw new Error('commodityPricingId is required');
+        }
+
+        if (freightReducerId) {
+          const { data: fr, error: frErr } = await supabase
+            .from('freight_reducers')
+            .select('*')
+            .eq('id', freightReducerId)
+            .single();
+          if (frErr || !fr) throw new Error('freight_reducer not found');
+          freightReducer = fr;
+        } else if (body.freightReducer) {
+          console.warn('DEPRECATED: calculate-parity received freightReducer from client. Use freightReducerId.');
+          freightReducer = body.freightReducer;
+        }
+
+        const port = portName || body.port || '';
+        const basisByPort = typeof pricing.basis_by_port === 'string' ? JSON.parse(pricing.basis_by_port) : (pricing.basis_by_port || {});
+        const basisPrice = basisByPort[port] ?? 0;
         const grossPrice = (pricing.exchange_price + basisPrice) * pricing.exchange_rate_bolsa;
         const afterMarketDelta = grossPrice * (1 - (pricing.security_delta_market || 0) / 100);
 
         let freightCost = 0;
         if (freightReducer) {
-          freightCost = freightReducer.total_reducer;
+          freightCost = freightReducer.total_reducer || 0;
           freightCost *= (1 + (pricing.security_delta_freight || 0) / 100);
         }
 
-        const commodityNetPrice = userOverridePrice || Math.max(afterMarketDelta - freightCost, Number(runtimeConfig.minimumCommodityPrice || defaultRuntimeConfig.minimumCommodityPrice));
+        const commodityNetPrice = userOverridePrice || Math.max(afterMarketDelta - freightCost, Number(runtimeConfig.minimumCommodityPrice));
         const quantitySacas = totalAmountBRL / commodityNetPrice;
-        const referencePrice = grossAmountBRL
-          ? grossAmountBRL / quantitySacas
-          : totalAmountBRL / quantitySacas;
+        const referencePrice = grossAmountBRL ? grossAmountBRL / quantitySacas : totalAmountBRL / quantitySacas;
         const valorization = ((referencePrice / commodityNetPrice) - 1) * 100;
 
         result = {
@@ -249,9 +335,9 @@ serve(async (req: Request) => {
           hasExistingContract: !!userOverridePrice,
         };
 
-        if (body.operationId) {
+        if (operationId) {
           await supabase.from('operation_logs').insert({
-            operation_id: body.operationId,
+            operation_id: operationId,
             user_id: user.id,
             action: 'server_parity_calculated',
             details: { totalAmountBRL, commodityNetPrice, quantitySacas, valorization },
@@ -260,27 +346,14 @@ serve(async (req: Request) => {
         break;
       }
 
+      // === calculate-input-memory (unchanged logic, just CORS fix) ===
       case 'calculate-input-memory': {
         requireFields(body, [
-          'precoFornecedor',
-          'markupPct',
-          'descontoPct',
-          'jurosCetAa',
-          'dataConcessao',
-          'vencimento',
-          'feeOkenPct',
-          'incentivoPct',
-          'commodity',
-          'periodoEntrega',
-          'localEntrega',
-          'precoBrutoCommodity',
-          'temImposto',
-          'descontoImpostosPct',
-          'dataEntrega',
-          'dataPagamento',
-          'dataRepasse',
-          'rendimentoAntecipacaoAa',
-          'feeMerchantPct',
+          'precoFornecedor', 'markupPct', 'descontoPct', 'jurosCetAa',
+          'dataConcessao', 'vencimento', 'feeOkenPct', 'incentivoPct',
+          'commodity', 'periodoEntrega', 'localEntrega', 'precoBrutoCommodity',
+          'temImposto', 'descontoImpostosPct', 'dataEntrega', 'dataPagamento',
+          'dataRepasse', 'rendimentoAntecipacaoAa', 'feeMerchantPct',
         ]);
 
         const periodoJurosAnos = yearsBetween(body.dataConcessao, body.vencimento);
@@ -296,8 +369,7 @@ serve(async (req: Request) => {
 
         const paridadeRealSacas = valorPontaComFee / precoEntregaAjustado;
         const montanteInsumoReferencia = fv(
-          Number(body.jurosCetAa),
-          periodoJurosAnos,
+          Number(body.jurosCetAa), periodoJurosAnos,
           Number(body.precoFornecedor) * (1 + Number(body.markupPct) + Number(body.feeOkenPct))
         );
 
@@ -309,29 +381,16 @@ serve(async (req: Request) => {
         const feeSacasFarmer = paridadeRealSacas - sacasTransfMerchant;
         const feeSacasMerchant = Number(body.feeMerchantPct) * sacasTransfMerchant;
         const walletMerchant = sacasTransfMerchant - feeSacasMerchant;
-
         const montantePagoMerchant = walletMerchant * precoLiquido;
         const revenueOken = (feeSacasFarmer + feeSacasMerchant) * precoLiquido;
 
         result = {
-          valorPresenteCredito,
-          periodoJurosAnos,
-          valorPontaSemFee,
-          valorPontaComFee,
-          precoLiquido,
-          periodoAteRepasseAnos,
-          precoEntregaAjustado,
-          paridadeRealSacas,
-          montanteInsumoReferencia,
-          precoValorizado,
-          valorizacaoNominal,
-          valorizacaoPercent,
-          feeSacasFarmer,
-          sacasTransfMerchant,
-          feeSacasMerchant,
-          walletMerchant,
-          montantePagoMerchant,
-          revenueOken,
+          valorPresenteCredito, periodoJurosAnos, valorPontaSemFee, valorPontaComFee,
+          precoLiquido, periodoAteRepasseAnos, precoEntregaAjustado,
+          paridadeRealSacas, montanteInsumoReferencia, precoValorizado,
+          valorizacaoNominal, valorizacaoPercent, feeSacasFarmer,
+          sacasTransfMerchant, feeSacasMerchant, walletMerchant,
+          montantePagoMerchant, revenueOken,
           calculationVersion: body.calculationVersion || runtimeConfig.calculationVersionDefault,
         };
 
@@ -342,36 +401,24 @@ serve(async (req: Request) => {
             snapshot: {
               version: body.calculationVersion || runtimeConfig.calculationVersionDefault,
               ...buildFormulaMetadata('insumo'),
-              input: body,
-              output: result,
+              input: body, output: result,
             },
             created_by: user.id,
           });
 
-
           await supabase.from('operation_calculation_inputs').upsert({
-            operation_id: body.operationId,
-            scenario_type: 'insumo',
+            operation_id: body.operationId, scenario_type: 'insumo',
             calculation_version: body.calculationVersion || runtimeConfig.calculationVersionDefault,
-            juros_cet_aa: Number(body.jurosCetAa),
-            fee_oken_pct: Number(body.feeOkenPct),
-            incentivo_pct: Number(body.incentivoPct),
-            commodity: String(body.commodity),
-            periodo_entrega: String(body.periodoEntrega),
-            local_entrega: String(body.localEntrega),
+            juros_cet_aa: Number(body.jurosCetAa), fee_oken_pct: Number(body.feeOkenPct),
+            incentivo_pct: Number(body.incentivoPct), commodity: String(body.commodity),
+            periodo_entrega: String(body.periodoEntrega), local_entrega: String(body.localEntrega),
             preco_bruto_commodity: Number(body.precoBrutoCommodity),
-            tem_imposto: Boolean(body.temImposto),
-            desconto_impostos_pct: Number(body.descontoImpostosPct),
-            data_concessao: String(body.dataConcessao),
-            vencimento: String(body.vencimento),
-            data_entrega: String(body.dataEntrega),
-            data_pagamento: String(body.dataPagamento),
-            data_repasse: String(body.dataRepasse),
-            rendimento_antecipacao_aa: Number(body.rendimentoAntecipacaoAa),
-            preco_fornecedor: Number(body.precoFornecedor),
-            markup_pct: Number(body.markupPct),
-            desconto_pct: Number(body.descontoPct),
-            fee_merchant_pct: Number(body.feeMerchantPct),
+            tem_imposto: Boolean(body.temImposto), desconto_impostos_pct: Number(body.descontoImpostosPct),
+            data_concessao: String(body.dataConcessao), vencimento: String(body.vencimento),
+            data_entrega: String(body.dataEntrega), data_pagamento: String(body.dataPagamento),
+            data_repasse: String(body.dataRepasse), rendimento_antecipacao_aa: Number(body.rendimentoAntecipacaoAa),
+            preco_fornecedor: Number(body.precoFornecedor), markup_pct: Number(body.markupPct),
+            desconto_pct: Number(body.descontoPct), fee_merchant_pct: Number(body.feeMerchantPct),
             formula_dependencies: buildFormulaMetadata('insumo').dependencies,
             formula_resolved: buildFormulaMetadata('insumo').formulas,
             input_audit_tags: body.inputAuditTags || {},
@@ -380,8 +427,7 @@ serve(async (req: Request) => {
           }, { onConflict: 'operation_id,scenario_type' });
 
           await supabase.from('operation_logs').insert({
-            operation_id: body.operationId,
-            user_id: user.id,
+            operation_id: body.operationId, user_id: user.id,
             action: 'server_input_memory_calculated',
             details: { version: body.calculationVersion || runtimeConfig.calculationVersionDefault, scenario: 'insumo' },
           });
@@ -389,25 +435,13 @@ serve(async (req: Request) => {
         break;
       }
 
+      // === calculate-commodity-debt-memory (unchanged logic, just CORS fix) ===
       case 'calculate-commodity-debt-memory': {
         requireFields(body, [
-          'valorDividaPv',
-          'jurosCetAa',
-          'dataConcessao',
-          'vencimento',
-          'feeOkenPct',
-          'incentivoPct',
-          'commodity',
-          'periodoEntrega',
-          'localEntrega',
-          'precoBrutoCommodity',
-          'temImposto',
-          'descontoImpostosPct',
-          'dataEntrega',
-          'dataPagamento',
-          'dataRepasse',
-          'rendimentoAntecipacaoAa',
-          'feeDealerPct',
+          'valorDividaPv', 'jurosCetAa', 'dataConcessao', 'vencimento',
+          'feeOkenPct', 'incentivoPct', 'commodity', 'periodoEntrega',
+          'localEntrega', 'precoBrutoCommodity', 'temImposto', 'descontoImpostosPct',
+          'dataEntrega', 'dataPagamento', 'dataRepasse', 'rendimentoAntecipacaoAa', 'feeDealerPct',
         ]);
 
         const periodoJurosAnos = yearsBetween(body.dataConcessao, body.vencimento);
@@ -431,28 +465,16 @@ serve(async (req: Request) => {
         const feeSacasFarmer = paridadeRealSacas - sacasTransfDealer;
         const feeSacasDealer = Number(body.feeDealerPct) * sacasTransfDealer;
         const walletDealer = sacasTransfDealer - feeSacasDealer;
-
         const montantePagoDealer = walletDealer * precoLiquido;
         const revenueOken = (feeSacasFarmer + feeSacasDealer) * precoLiquido;
 
         result = {
-          periodoJurosAnos,
-          valorPontaSemFee,
-          valorPontaComFee,
-          precoLiquido,
-          periodoAteRepasseAnos,
-          precoEntregaAjustado,
-          paridadeRealSacas,
-          montanteInsumoReferencia,
-          precoValorizado,
-          valorizacaoNominal,
-          valorizacaoPercent,
-          feeSacasFarmer,
-          sacasTransfDealer,
-          feeSacasDealer,
-          walletDealer,
-          montantePagoDealer,
-          revenueOken,
+          periodoJurosAnos, valorPontaSemFee, valorPontaComFee,
+          precoLiquido, periodoAteRepasseAnos, precoEntregaAjustado,
+          paridadeRealSacas, montanteInsumoReferencia, precoValorizado,
+          valorizacaoNominal, valorizacaoPercent, feeSacasFarmer,
+          sacasTransfDealer, feeSacasDealer, walletDealer,
+          montantePagoDealer, revenueOken,
           calculationVersion: body.calculationVersion || runtimeConfig.calculationVersionDefault,
         };
 
@@ -463,34 +485,23 @@ serve(async (req: Request) => {
             snapshot: {
               version: body.calculationVersion || runtimeConfig.calculationVersionDefault,
               ...buildFormulaMetadata('divida'),
-              input: body,
-              output: result,
+              input: body, output: result,
             },
             created_by: user.id,
           });
 
-
           await supabase.from('operation_calculation_inputs').upsert({
-            operation_id: body.operationId,
-            scenario_type: 'divida',
+            operation_id: body.operationId, scenario_type: 'divida',
             calculation_version: body.calculationVersion || runtimeConfig.calculationVersionDefault,
-            juros_cet_aa: Number(body.jurosCetAa),
-            fee_oken_pct: Number(body.feeOkenPct),
-            incentivo_pct: Number(body.incentivoPct),
-            commodity: String(body.commodity),
-            periodo_entrega: String(body.periodoEntrega),
-            local_entrega: String(body.localEntrega),
+            juros_cet_aa: Number(body.jurosCetAa), fee_oken_pct: Number(body.feeOkenPct),
+            incentivo_pct: Number(body.incentivoPct), commodity: String(body.commodity),
+            periodo_entrega: String(body.periodoEntrega), local_entrega: String(body.localEntrega),
             preco_bruto_commodity: Number(body.precoBrutoCommodity),
-            tem_imposto: Boolean(body.temImposto),
-            desconto_impostos_pct: Number(body.descontoImpostosPct),
-            data_concessao: String(body.dataConcessao),
-            vencimento: String(body.vencimento),
-            data_entrega: String(body.dataEntrega),
-            data_pagamento: String(body.dataPagamento),
-            data_repasse: String(body.dataRepasse),
-            rendimento_antecipacao_aa: Number(body.rendimentoAntecipacaoAa),
-            valor_divida_pv: Number(body.valorDividaPv),
-            fee_dealer_pct: Number(body.feeDealerPct),
+            tem_imposto: Boolean(body.temImposto), desconto_impostos_pct: Number(body.descontoImpostosPct),
+            data_concessao: String(body.dataConcessao), vencimento: String(body.vencimento),
+            data_entrega: String(body.dataEntrega), data_pagamento: String(body.dataPagamento),
+            data_repasse: String(body.dataRepasse), rendimento_antecipacao_aa: Number(body.rendimentoAntecipacaoAa),
+            valor_divida_pv: Number(body.valorDividaPv), fee_dealer_pct: Number(body.feeDealerPct),
             formula_dependencies: buildFormulaMetadata('divida').dependencies,
             formula_resolved: buildFormulaMetadata('divida').formulas,
             input_audit_tags: body.inputAuditTags || {},
@@ -499,8 +510,7 @@ serve(async (req: Request) => {
           }, { onConflict: 'operation_id,scenario_type' });
 
           await supabase.from('operation_logs').insert({
-            operation_id: body.operationId,
-            user_id: user.id,
+            operation_id: body.operationId, user_id: user.id,
             action: 'server_debt_memory_calculated',
             details: { version: body.calculationVersion || runtimeConfig.calculationVersionDefault, scenario: 'divida' },
           });
@@ -510,21 +520,19 @@ serve(async (req: Request) => {
 
       default:
         return new Response(JSON.stringify({ error: 'Unknown endpoint' }), {
-          status: 404,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });
     }
 
     return new Response(JSON.stringify(result), {
-      status: 200,
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
   } catch (error: unknown) {
+    const corsHeaders = getCorsHeaders(req);
     const message = error instanceof Error ? error.message : 'Internal error';
     const status = message.startsWith('Missing required fields:') ? 400 : 500;
     return new Response(JSON.stringify({ error: message }), {
-      status,
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      status, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
   }
 });
