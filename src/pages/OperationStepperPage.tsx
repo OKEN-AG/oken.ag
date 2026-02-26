@@ -232,9 +232,12 @@ export default function OperationStepperPage() {
   const [segment, setSegment] = useState<string>(''); // segmento comercial
   const [channelEnum, setChannelEnum] = useState<ChannelSegment>('distribuidor'); // compat legado para telas antigas
   const [area, setArea] = useState(500);
+  const [comboQty, setComboQty] = useState(1);
   const [quantityMode, setQuantityMode] = useState<'dose' | 'livre'>('dose');
   const [freeQuantities, setFreeQuantities] = useState<Map<string, number>>(new Map());
   const [showCampaignPreview, setShowCampaignPreview] = useState(false);
+  const [packagingSplits, setPackagingSplits] = useState<Map<string, { productId: string; qty: number }[]>>(new Map());
+  const effectiveArea = area * comboQty;
 
   // ─── Order step state ───
   const [selectedProducts, setSelectedProducts] = useState<Map<string, number>>(new Map());
@@ -312,6 +315,8 @@ export default function OperationStepperPage() {
     setClientCityCode('');
     setSelectedProducts(new Map());
     setFreeQuantities(new Map());
+    setPackagingSplits(new Map());
+    setComboQty(1);
   }, [selectedCampaignId, isNewOperation]);
 
   // ─── Campaign sub-data ───
@@ -615,7 +620,7 @@ export default function OperationStepperPage() {
 
     return JSON.stringify({
       selectedCampaignId,
-      area,
+      area: effectiveArea,
       segment,
       channelEnum,
       dueMonths,
@@ -640,7 +645,7 @@ export default function OperationStepperPage() {
       quantityMode,
       selectionKey,
     });
-  }, [selectedCampaignId, selectedProducts, area, segment, channelEnum, dueMonths, selectedDueDate, selectedPaymentMethod,
+  }, [selectedCampaignId, selectedProducts, effectiveArea, segment, channelEnum, dueMonths, selectedDueDate, selectedPaymentMethod,
       selectedCommodity, port, freightOrigin, selectedDeliveryLocationId, hasContract, userPrice, showInsurance,
       selectedBuyerId, contractPriceType, performanceIndex, clientState, selectedCityName,
       clientCityCode, usesIbgeCityEligibility, clientType, clientDocument, quantityMode, freeQuantities, selectedDistributorId, channelSegmentName]);
@@ -652,7 +657,7 @@ export default function OperationStepperPage() {
     lastSimulationKeyRef.current = simulationKey;
 
     const inputSelections = Array.from(selectedProducts.entries()).map(([id, dose]) => ({
-      productId: id, dosePerHectare: dose, areaHectares: area,
+      productId: id, dosePerHectare: dose, areaHectares: effectiveArea,
       overrideQuantity: quantityMode === 'livre' ? (freeQuantities.get(id) || undefined) : undefined,
     }));
     simulateDebounced({
@@ -670,7 +675,7 @@ export default function OperationStepperPage() {
         clientType, clientDocument: clientDocument || undefined, segment,
       },
     });
-  }, [selectedCampaignId, selectedProducts, area, segment, channelEnum, dueMonths, selectedDueDate, selectedPaymentMethod,
+  }, [selectedCampaignId, selectedProducts, effectiveArea, segment, channelEnum, dueMonths, selectedDueDate, selectedPaymentMethod,
       selectedCommodity, port, freightOrigin, selectedDeliveryLocationId, hasContract, userPrice, showInsurance,
       selectedBuyerId, contractPriceType, performanceIndex, clientState, selectedCityName,
       clientCityCode, usesIbgeCityEligibility, clientType, clientDocument, quantityMode, freeQuantities,
@@ -679,27 +684,68 @@ export default function OperationStepperPage() {
   // ─── Eligibility from backend result ───
   const eligibility = simResult?.eligibility ?? null;
 
-  // ─── Product selection ───
-
-  const isPerAreaProduct = (product: Product) => (product.pricingBasis || 'por_hectare') === 'por_hectare';
-  const toggleProduct = (productId: string, suggestedDose?: number) => {
-    const next = new Map(selectedProducts);
-    if (next.has(productId)) {
-      next.delete(productId);
-      const nextFree = new Map(freeQuantities);
-      nextFree.delete(productId);
-      setFreeQuantities(nextFree);
-    } else {
-      const prod = products.find(p => p.id === productId)!;
-      const dose = suggestedDose ?? getSuggestedDoseForRef(combos, prod.ref || '') ?? prod.dosePerHectare;
-      next.set(productId, dose);
+  // ─── Product grouping by REF ───
+  const productGroups = useMemo(() => {
+    const groups = new Map<string, { ref: string; variants: Product[]; defaultDose: number; minDose: number; maxDose: number; category: string; unitType: string; pricePerUnit: number }>();
+    for (const p of products) {
+      const ref = (p.ref || p.name).toUpperCase().trim();
+      if (!groups.has(ref)) {
+        groups.set(ref, { ref, variants: [], defaultDose: p.dosePerHectare, minDose: p.minDose, maxDose: p.maxDose, category: p.category, unitType: p.unitType, pricePerUnit: p.pricePerUnit });
+      }
+      groups.get(ref)!.variants.push(p);
     }
+    for (const g of groups.values()) {
+      g.variants.sort((a, b) => {
+        const aMax = Math.max(...(a.packageSizes?.length ? a.packageSizes : [1]));
+        const bMax = Math.max(...(b.packageSizes?.length ? b.packageSizes : [1]));
+        return bMax - aMax;
+      });
+    }
+    return Array.from(groups.values());
+  }, [products]);
+
+  const getRefForProduct = (productId: string): string => {
+    const p = products.find(pr => pr.id === productId);
+    return (p?.ref || p?.name || '').toUpperCase().trim();
+  };
+
+  const getPackageLabel = (p: Product) => {
+    const sizes = p.packageSizes?.length ? p.packageSizes : [];
+    const maxSize = sizes.length ? Math.max(...sizes) : 0;
+    return maxSize > 0 ? `${maxSize}${p.unitType} (${p.unitsPerBox}×${maxSize}${p.unitType})` : p.name;
+  };
+
+  // ─── Product selection ───
+  const isPerAreaProduct = (product: Product) => (product.pricingBasis || 'por_hectare') === 'por_hectare';
+
+  const toggleProduct = (productId: string, suggestedDose?: number) => {
+    const ref = getRefForProduct(productId);
+    const group = productGroups.find(g => g.ref === ref);
+    if (group) {
+      const selectedVariants = group.variants.filter(v => selectedProducts.has(v.id));
+      if (selectedVariants.length > 0) {
+        const next = new Map(selectedProducts);
+        const nextFree = new Map(freeQuantities);
+        for (const v of group.variants) { next.delete(v.id); nextFree.delete(v.id); }
+        setSelectedProducts(next);
+        setFreeQuantities(nextFree);
+        const nextSplits = new Map(packagingSplits);
+        nextSplits.delete(ref);
+        setPackagingSplits(nextSplits);
+        return;
+      }
+    }
+    const next = new Map(selectedProducts);
+    const prod = products.find(p => p.id === productId)!;
+    const dose = suggestedDose ?? getSuggestedDoseForRef(combos, prod.ref || '') ?? prod.dosePerHectare;
+    next.set(productId, dose);
     setSelectedProducts(next);
   };
 
   const clearOrder = () => {
     setSelectedProducts(new Map());
     setFreeQuantities(new Map());
+    setPackagingSplits(new Map());
     clearSimResult();
   };
 
@@ -709,10 +755,45 @@ export default function OperationStepperPage() {
     setSelectedProducts(next);
   };
 
+  const updateDoseForRef = (ref: string, dose: number) => {
+    const group = productGroups.find(g => g.ref === ref);
+    if (!group) return;
+    const next = new Map(selectedProducts);
+    for (const v of group.variants) { if (next.has(v.id)) next.set(v.id, dose); }
+    setSelectedProducts(next);
+  };
+
   const updateFreeQuantity = (productId: string, qty: number) => {
     const next = new Map(freeQuantities);
     next.set(productId, qty);
     setFreeQuantities(next);
+  };
+
+  const addPackagingVariant = (ref: string, productId: string) => {
+    if (selectedProducts.has(productId)) return;
+    const group = productGroups.find(g => g.ref === ref);
+    if (!group) return;
+    const existingVariant = group.variants.find(v => selectedProducts.has(v.id));
+    const dose = existingVariant ? (selectedProducts.get(existingVariant.id) || group.defaultDose) : group.defaultDose;
+    const next = new Map(selectedProducts);
+    next.set(productId, dose);
+    setSelectedProducts(next);
+    const nextFree = new Map(freeQuantities);
+    nextFree.set(productId, 0);
+    setFreeQuantities(nextFree);
+  };
+
+  const removePackagingVariant = (ref: string, productId: string) => {
+    const group = productGroups.find(g => g.ref === ref);
+    if (!group) return;
+    const selectedVariants = group.variants.filter(v => selectedProducts.has(v.id));
+    if (selectedVariants.length <= 1) return;
+    const next = new Map(selectedProducts);
+    next.delete(productId);
+    setSelectedProducts(next);
+    const nextFree = new Map(freeQuantities);
+    nextFree.delete(productId);
+    setFreeQuantities(nextFree);
   };
 
   // ─── Engine results derived from backend simulation ───
@@ -740,10 +821,10 @@ export default function OperationStepperPage() {
     const localSels: AgronomicSelection[] = Array.from(selectedProducts.entries()).map(([id, dose]) => {
       const prod = products.find(p => p.id === id);
       if (!prod) return null;
-      const qty = quantityMode === 'livre' ? (freeQuantities.get(id) || Math.ceil(area * dose)) : Math.ceil(area * dose);
+      const qty = quantityMode === 'livre' ? (freeQuantities.get(id) || Math.ceil(effectiveArea * dose)) : Math.ceil(effectiveArea * dose);
       return {
         productId: id, ref: prod.ref || '', product: prod,
-        dosePerHectare: dose, areaHectares: area,
+        dosePerHectare: dose, areaHectares: effectiveArea,
         rawQuantity: qty, roundedQuantity: qty, boxes: 0, pallets: 0,
       };
     }).filter(Boolean) as AgronomicSelection[];
@@ -752,7 +833,7 @@ export default function OperationStepperPage() {
     const actD = getActivatedDiscount(acts);
     const compD = getComplementaryDiscount(acts);
     return { activations: acts, maxDiscount: maxD, activatedDiscount: actD, complementaryDiscount: compD, progress: maxD > 0 ? (actD / maxD) * 100 : 0 };
-  }, [combos, selectedProducts, products, area, quantityMode, freeQuantities]);
+  }, [combos, selectedProducts, products, effectiveArea, quantityMode, freeQuantities]);
 
   // Prefer local instant values, fallback to backend
   const comboActivations = localComboResult?.activations ?? simResult?.comboActivations ?? [];
@@ -764,13 +845,12 @@ export default function OperationStepperPage() {
   // Combo recommendations — use local selectedProducts for instant feedback, fall back to backend selections
   const localSelections = useMemo(() => {
     if (selections.length > 0) return selections;
-    // Build lightweight selections from local state for instant combo hints
     return Array.from(selectedProducts.entries()).map(([id, dose]) => {
       const prod = products.find(p => p.id === id);
-      return prod ? { productId: id, ref: prod.ref || '', product: prod, dosePerHectare: dose, areaHectares: area, rawQuantity: area * dose, roundedQuantity: area * dose, boxes: 0, pallets: 0 } : null;
+      return prod ? { productId: id, ref: prod.ref || '', product: prod, dosePerHectare: dose, areaHectares: effectiveArea, rawQuantity: effectiveArea * dose, roundedQuantity: effectiveArea * dose, boxes: 0, pallets: 0 } : null;
     }).filter(Boolean) as any[];
-  }, [selections, selectedProducts, products, area]);
-  const comboRecommendations = useMemo(() => getComboRecommendations(combos, localSelections, products, area), [combos, localSelections, products, area]);
+  }, [selections, selectedProducts, products, effectiveArea]);
+  const comboRecommendations = useMemo(() => getComboRecommendations(combos, localSelections, products, effectiveArea), [combos, localSelections, products, effectiveArea]);
 
   const pricingResults = simResult?.pricingResults ?? [];
   const rawGrossToNet = simResult?.grossToNet;
@@ -917,8 +997,8 @@ export default function OperationStepperPage() {
       if (isNewOperation) {
         const op = await createOperation.mutateAsync({
           campaign_id: selectedCampaignId, user_id: user.id, client_name: clientName || 'Sem nome',
-          client_document: clientDocument || undefined, channel: channelEnum, distributor_id: selectedDistributorId || undefined, city: clientCity || undefined,
-          state: clientState || undefined, due_months: dueMonths, area_hectares: area,
+          client_document: clientDocument || undefined, channel: channelEnum, distributor_id: selectedDistributorId || undefined, city: clientCity || undefined, area_hectares: effectiveArea,
+          state: clientState || undefined, due_months: dueMonths,
           gross_revenue: grossToNet.grossRevenue, combo_discount: grossToNet.comboDiscount,
           net_revenue: grossToNet.netRevenue, financial_revenue: grossToNet.financialRevenue,
           distributor_margin: grossToNet.distributorMargin, commodity: normalizeCommodityCode(selectedCommodity) as any,
@@ -1092,8 +1172,13 @@ export default function OperationStepperPage() {
                   </div>
                 </div>
                 <div className="glass-card p-4">
-                  <label className="stat-label">Área (ha)</label>
-                  <NumericInput value={area} onChange={v => setArea(v)} min={1} decimals={0} className="mt-1 bg-muted border-border text-foreground" />
+                  <label className="stat-label">Área (HA) / Quantidade de Combos</label>
+                  <div className="flex items-center gap-2 mt-1">
+                    <NumericInput value={area} onChange={v => setArea(v)} min={1} decimals={0} className="bg-muted border-border text-foreground flex-1" />
+                    <span className="text-xs text-muted-foreground">×</span>
+                    <NumericInput value={comboQty} onChange={v => setComboQty(Math.max(1, v))} min={1} decimals={0} className="bg-muted border-border text-foreground w-20" />
+                  </div>
+                  {comboQty > 1 && <p className="text-[11px] text-info mt-1">Área efetiva: {effectiveArea.toLocaleString('pt-BR')} ha ({comboQty}× combos)</p>}
                 </div>
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -1335,43 +1420,94 @@ export default function OperationStepperPage() {
                   </>
                 )}
               </div>
-              {/* Product grid */}
+              {/* Product grid — grouped by REF */}
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-                {products.map(product => {
-                  const isSelected = selectedProducts.has(product.id);
-                  const dose = selectedProducts.get(product.id) ?? product.dosePerHectare;
-                  const selection = selections.find(s => s.productId === product.id);
-                  // Normalized price for display (always in BRL)
-                  const simPricing = simResult?.pricingResults?.find((p: any) => p.productId === product.id);
-                  const displayPrice = simPricing?.normalizedPrice ?? product.pricePerUnit;
+                {productGroups.map(group => {
+                  const selectedVariants = group.variants.filter(v => selectedProducts.has(v.id));
+                  const isSelected = selectedVariants.length > 0;
+                  const primaryVariant = selectedVariants[0] || group.variants[0];
+                  const dose = selectedProducts.get(primaryVariant.id) ?? group.defaultDose;
+                  const simPricing = simResult?.pricingResults?.find((p: any) => group.variants.some(v => v.id === p.productId));
+                  const displayPrice = simPricing?.normalizedPrice ?? group.pricePerUnit;
                   return (
-                    <div key={product.id} className={`glass-card p-4 cursor-pointer transition-all ${isSelected ? 'glow-border' : 'hover:border-muted-foreground/30'}`} onClick={() => !isSelected && toggleProduct(product.id)}>
+                    <div key={group.ref} className={`glass-card p-4 cursor-pointer transition-all ${isSelected ? 'glow-border' : 'hover:border-muted-foreground/30'}`} onClick={() => !isSelected && toggleProduct(group.variants[0].id)}>
                       <div className="flex items-center justify-between mb-1">
-                        <span className="text-sm font-semibold text-foreground">{product.name}</span>
-                        {isSelected ? <Button size="sm" variant="ghost" onClick={e => { e.stopPropagation(); toggleProduct(product.id); }} className="text-destructive h-6 w-6 p-0"><Minus className="w-3 h-3" /></Button>
+                        <span className="text-sm font-semibold text-foreground">{group.ref}</span>
+                        {isSelected ? <Button size="sm" variant="ghost" onClick={e => { e.stopPropagation(); toggleProduct(primaryVariant.id); }} className="text-destructive h-6 w-6 p-0"><Minus className="w-3 h-3" /></Button>
                           : <Button size="sm" variant="ghost" className="text-success h-6 w-6 p-0"><Plus className="w-3 h-3" /></Button>}
                       </div>
-                      <div className="text-xs text-muted-foreground">{product.category} — {formatCurrency(displayPrice)}/{product.unitType}</div>
+                      <div className="text-xs text-muted-foreground">{group.category} — {formatCurrency(displayPrice)}/{group.unitType}</div>
                       {isSelected && (
-                        <div className="mt-2 pt-2 border-t border-border space-y-2">
+                        <div className="mt-2 pt-2 border-t border-border space-y-2" onClick={e => e.stopPropagation()}>
                           {quantityMode === 'dose' ? (
                             <div className="flex items-center gap-2">
-                              <label className="text-xs text-muted-foreground w-24">{isPerAreaProduct(product) ? 'Dose/ha:' : 'Quantidade:'}</label>
-                              <NumericInput value={dose} onChange={v => updateDose(product.id, v)} decimals={2} className="h-7 bg-muted border-border text-xs text-foreground" />
+                              <label className="text-xs text-muted-foreground w-24">{isPerAreaProduct(primaryVariant) ? 'Dose/ha:' : 'Quantidade:'}</label>
+                              <NumericInput value={dose} onChange={v => updateDoseForRef(group.ref, v)} decimals={2} className="h-7 bg-muted border-border text-xs text-foreground" />
                             </div>
                           ) : (
                             <div className="flex items-center gap-2">
-                              <label className="text-xs text-muted-foreground w-16">Qtd ({product.unitType}):</label>
-                              <NumericInput value={freeQuantities.get(product.id) || 0} onChange={v => updateFreeQuantity(product.id, v)} decimals={0} placeholder="0" className="h-7 bg-muted border-border text-xs text-foreground" />
+                              <label className="text-xs text-muted-foreground w-16">Qtd ({group.unitType}):</label>
+                              <NumericInput value={freeQuantities.get(primaryVariant.id) || 0} onChange={v => updateFreeQuantity(primaryVariant.id, v)} decimals={0} placeholder="0" className="h-7 bg-muted border-border text-xs text-foreground" />
                             </div>
                           )}
-                          {selection && (
-                            <div className="grid grid-cols-3 gap-1 text-xs">
-                              <div className="bg-muted/50 rounded p-1 text-center"><div className="text-muted-foreground">Vol</div><div className="font-mono text-foreground">{selection.roundedQuantity.toFixed(0)}</div></div>
-                              <div className="bg-muted/50 rounded p-1 text-center"><div className="text-muted-foreground">Cx</div><div className="font-mono text-foreground">{selection.boxes}</div></div>
-                              <div className="bg-muted/50 rounded p-1 text-center"><div className="text-muted-foreground">Plt</div><div className="font-mono text-foreground">{selection.pallets}</div></div>
+                          {/* Packaging variants */}
+                          <div className="space-y-1.5">
+                            <div className="flex items-center justify-between">
+                              <span className="text-[10px] font-medium text-muted-foreground uppercase">Embalagem</span>
+                              {group.variants.length > 1 && selectedVariants.length < group.variants.length && (
+                                <button className="text-[10px] text-primary hover:underline" onClick={() => {
+                                  const unselected = group.variants.find(v => !selectedProducts.has(v.id));
+                                  if (unselected) addPackagingVariant(group.ref, unselected.id);
+                                }}>+ Dividir</button>
+                              )}
                             </div>
-                          )}
+                            {selectedVariants.map(variant => {
+                              const sel = selections.find(s => s.productId === variant.id);
+                              const totalQty = sel?.roundedQuantity ?? (quantityMode === 'livre' ? (freeQuantities.get(variant.id) || 0) : Math.ceil(effectiveArea * dose));
+                              return (
+                                <div key={variant.id} className="bg-muted/50 rounded p-2 space-y-1">
+                                  <div className="flex items-center justify-between">
+                                    <span className="text-[11px] font-medium text-foreground">{getPackageLabel(variant)}</span>
+                                    {selectedVariants.length > 1 && (
+                                      <button onClick={() => removePackagingVariant(group.ref, variant.id)} className="text-destructive hover:text-destructive/80"><X className="w-3 h-3" /></button>
+                                    )}
+                                  </div>
+                                  {selectedVariants.length > 1 && (
+                                    <div className="flex items-center gap-2">
+                                      <label className="text-[10px] text-muted-foreground">Qtd ({variant.unitType}):</label>
+                                      <NumericInput value={freeQuantities.get(variant.id) || totalQty} onChange={v => updateFreeQuantity(variant.id, v)} decimals={0} className="h-6 bg-background border-border text-[11px] text-foreground flex-1" />
+                                    </div>
+                                  )}
+                                  <div className="grid grid-cols-3 gap-1 text-[10px]">
+                                    <div className="text-center"><span className="text-muted-foreground">Vol</span><div className="font-mono text-foreground">{sel?.roundedQuantity?.toFixed(0) ?? totalQty}</div></div>
+                                    <div className="text-center"><span className="text-muted-foreground">Cx</span><div className="font-mono text-foreground">{sel?.boxes ?? 0}</div></div>
+                                    <div className="text-center"><span className="text-muted-foreground">Plt</span><div className="font-mono text-foreground">{sel?.pallets ?? 0}</div></div>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                            {/* Swap packaging (single variant mode) */}
+                            {selectedVariants.length === 1 && group.variants.length > 1 && (
+                              <div className="flex flex-wrap gap-1 mt-1">
+                                {group.variants.filter(v => !selectedProducts.has(v.id)).map(v => (
+                                  <button key={v.id} onClick={() => {
+                                    const next = new Map(selectedProducts);
+                                    const nextFree = new Map(freeQuantities);
+                                    const currentId = selectedVariants[0].id;
+                                    const currentDose = next.get(currentId) || group.defaultDose;
+                                    const currentQty = nextFree.get(currentId);
+                                    next.delete(currentId); nextFree.delete(currentId);
+                                    next.set(v.id, currentDose);
+                                    if (currentQty !== undefined) nextFree.set(v.id, currentQty);
+                                    setSelectedProducts(next);
+                                    setFreeQuantities(nextFree);
+                                  }} className="text-[10px] px-2 py-0.5 rounded bg-muted border border-border text-muted-foreground hover:bg-primary/10 hover:text-primary transition-colors">
+                                    {getPackageLabel(v)}
+                                  </button>
+                                ))}
+                              </div>
+                            )}
+                          </div>
                         </div>
                       )}
                     </div>
