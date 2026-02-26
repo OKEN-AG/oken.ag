@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
@@ -7,6 +7,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Plus, Trash2 } from 'lucide-react';
 import { NumericInput } from '@/components/NumericInput';
+import { getAllMunicipios } from '@/data/municipios';
 
 export type PaymentMethodRow = {
   method_name: string;
@@ -35,14 +36,41 @@ type Props = {
   onPaymentMethodsChange: (methods: PaymentMethodRow[]) => void;
   dueDates: DueDateRow[];
   onDueDatesChange: (dates: DueDateRow[]) => void;
+  selectedCities: string[];
 };
 
 const DEFAULT_METHODS = ['Duplicata', 'Boleto', 'Transferência/PIX', 'Barter', 'Cartão de Crédito'];
 
-export default function FinancialTab({ form, onFieldChange, paymentMethods, onPaymentMethodsChange, dueDates, onDueDatesChange }: Props) {
+export default function FinancialTab({ form, onFieldChange, paymentMethods, onPaymentMethodsChange, dueDates, onDueDatesChange, selectedCities }: Props) {
   const [newDueRegionType, setNewDueRegionType] = useState('estado');
   const [newDueRegionValue, setNewDueRegionValue] = useState('');
   const [newDueDate, setNewDueDate] = useState('');
+
+  // Derive eligible states and mesoregions from selectedCities
+  const allMunicipios = useMemo(() => getAllMunicipios(), []);
+  const eligibleStates = useMemo(() => {
+    const selected = allMunicipios.filter(m => selectedCities.includes(m.ibge));
+    return [...new Set(selected.map(m => m.uf))].sort();
+  }, [selectedCities, allMunicipios]);
+
+  const eligibleMesoregions = useMemo(() => {
+    const selected = allMunicipios.filter(m => selectedCities.includes(m.ibge));
+    return [...new Set(selected.map(m => m.mesoName))].sort();
+  }, [selectedCities, allMunicipios]);
+
+  const regionOptions = useMemo(() => {
+    if (newDueRegionType === 'estado') return eligibleStates;
+    if (newDueRegionType === 'mesorregiao') return eligibleMesoregions;
+    // For 'regiao', derive macro-regions from states
+    const macroMap: Record<string, string> = {
+      AC: 'Norte', AP: 'Norte', AM: 'Norte', PA: 'Norte', RO: 'Norte', RR: 'Norte', TO: 'Norte',
+      AL: 'Nordeste', BA: 'Nordeste', CE: 'Nordeste', MA: 'Nordeste', PB: 'Nordeste', PE: 'Nordeste', PI: 'Nordeste', RN: 'Nordeste', SE: 'Nordeste',
+      DF: 'Centro-Oeste', GO: 'Centro-Oeste', MT: 'Centro-Oeste', MS: 'Centro-Oeste',
+      ES: 'Sudeste', MG: 'Sudeste', RJ: 'Sudeste', SP: 'Sudeste',
+      PR: 'Sul', RS: 'Sul', SC: 'Sul',
+    };
+    return [...new Set(eligibleStates.map(uf => macroMap[uf]).filter(Boolean))].sort();
+  }, [newDueRegionType, eligibleStates, eligibleMesoregions]);
 
   const addDefaultMethods = () => {
     const existing = paymentMethods.map(m => m.method_name);
@@ -155,7 +183,7 @@ export default function FinancialTab({ form, onFieldChange, paymentMethods, onPa
         <div className="flex gap-2 items-end flex-wrap">
           <div className="space-y-1">
             <Label className="text-xs">Tipo</Label>
-            <Select value={newDueRegionType} onValueChange={setNewDueRegionType}>
+            <Select value={newDueRegionType} onValueChange={v => { setNewDueRegionType(v); setNewDueRegionValue(''); }}>
               <SelectTrigger className="w-[140px] h-9"><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="regiao">Região</SelectItem>
@@ -166,7 +194,18 @@ export default function FinancialTab({ form, onFieldChange, paymentMethods, onPa
           </div>
           <div className="space-y-1 flex-1 min-w-[150px]">
             <Label className="text-xs">Valor</Label>
-            <Input value={newDueRegionValue} onChange={e => setNewDueRegionValue(e.target.value)} placeholder="Ex: SP, Sul, Norte Central" className="h-9" />
+            {regionOptions.length > 0 ? (
+              <Select value={newDueRegionValue} onValueChange={setNewDueRegionValue}>
+                <SelectTrigger className="h-9"><SelectValue placeholder="Selecionar..." /></SelectTrigger>
+                <SelectContent>
+                  {regionOptions.map(opt => (
+                    <SelectItem key={opt} value={opt}>{opt}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            ) : (
+              <p className="text-xs text-muted-foreground py-2">Nenhuma região disponível. Configure a elegibilidade primeiro.</p>
+            )}
           </div>
           <div className="space-y-1">
             <Label className="text-xs">Vencimento</Label>

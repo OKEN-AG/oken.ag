@@ -433,6 +433,7 @@ export default function CampaignFormPage() {
             onPaymentMethodsChange={setPaymentMethods}
             dueDates={dueDates}
             onDueDatesChange={setDueDates}
+            selectedCities={selectedCities}
           />
         </TabsContent>
 
