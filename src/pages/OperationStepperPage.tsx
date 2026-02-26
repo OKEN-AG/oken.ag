@@ -1161,16 +1161,11 @@ export default function OperationStepperPage() {
                     </SelectContent>
                   </Select>
                 </div>
-                <div className="glass-card p-4">
-                  <label className="stat-label">Porto Referência</label>
-                  <Select value={port} onValueChange={setPort}>
-                    <SelectTrigger className="mt-1 bg-muted border-border text-foreground"><SelectValue /></SelectTrigger>
-                    <SelectContent>{ports.map(p => <SelectItem key={p} value={p}>{p}</SelectItem>)}</SelectContent>
-                  </Select>
-                  {freightReducer && freightReducer.totalReducer > 0 && (
-                    <div className="text-xs text-muted-foreground mt-1">Redutor logístico: R$ {freightReducer.totalReducer.toFixed(2)}/sc ({freightReducer.distanceKm}km)</div>
-                  )}
-                </div>
+                {freightReducer && freightReducer.totalReducer > 0 && (
+                  <div className="glass-card p-4">
+                    <div className="text-xs text-muted-foreground">Redutor logístico: R$ {freightReducer.totalReducer.toFixed(2)}/sc ({freightReducer.distanceKm}km) — Porto: {port || '—'}</div>
+                  </div>
+                )}
                 <div className="glass-card p-4">
                   <label className="stat-label">Comprador</label>
                   <Select value={selectedBuyerId} onValueChange={setSelectedBuyerId}>
