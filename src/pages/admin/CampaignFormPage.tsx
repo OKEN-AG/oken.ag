@@ -13,7 +13,7 @@ import { toast } from 'sonner';
 import { getAllMunicipios } from '@/data/municipios';
 import GeneralTab, { type ClientRow } from '@/components/campaign/GeneralTab';
 import FinancialTab, { type PaymentMethodRow, type DueDateRow } from '@/components/campaign/FinancialTab';
-import EligibilityTab, { type SegmentRow, type ChannelMarginRow } from '@/components/campaign/EligibilityTab';
+import EligibilityTab, { type SegmentRow, type ChannelMarginRow, type ChannelTypeRow } from '@/components/campaign/EligibilityTab';
 import ProductsTab from '@/components/campaign/ProductsTab';
 import CombosTab from '@/components/campaign/CombosTab';
 import CommoditiesTab from '@/components/campaign/CommoditiesTab';
@@ -112,6 +112,7 @@ export default function CampaignFormPage() {
   const [selectedCities, setSelectedCities] = useState<string[]>([]);
   const [channelSegments, setChannelSegments] = useState<ChannelSegmentRow[]>([]);
   const [distributors, setDistributors] = useState<DistributorRow[]>([]);
+  const [channelTypes, setChannelTypes] = useState<ChannelTypeRow[]>([]);
   const { options: commodityOptions } = useCommodityOptions();
 
 
@@ -152,7 +153,7 @@ export default function CampaignFormPage() {
   }, [existing]);
 
   const loadSubData = async (campaignId: string) => {
-    const [clientsRes, methodsRes, segmentsRes, datesRes, channelSegmentsRes, distributorsRes, channelMarginsRes] = await Promise.all([
+    const [clientsRes, methodsRes, segmentsRes, datesRes, channelSegmentsRes, distributorsRes, channelMarginsRes, channelTypesRes] = await Promise.all([
       supabase.from('campaign_clients').select('*').eq('campaign_id', campaignId),
       supabase.from('campaign_payment_methods').select('*').eq('campaign_id', campaignId),
       supabase.from('campaign_segments').select('*').eq('campaign_id', campaignId),
@@ -160,9 +161,10 @@ export default function CampaignFormPage() {
       (supabase as any).from('campaign_channel_segments').select('*').eq('campaign_id', campaignId),
       (supabase as any).from('campaign_distributors').select('*').eq('campaign_id', campaignId),
       supabase.from('channel_margins').select('*').eq('campaign_id', campaignId),
+      (supabase as any).from('campaign_channel_types').select('*').eq('campaign_id', campaignId),
     ]);
 
-    const firstError = clientsRes.error || methodsRes.error || segmentsRes.error || datesRes.error || (channelSegmentsRes as any).error || (distributorsRes as any).error || channelMarginsRes.error;
+    const firstError = clientsRes.error || methodsRes.error || segmentsRes.error || datesRes.error || (channelSegmentsRes as any).error || (distributorsRes as any).error || channelMarginsRes.error || (channelTypesRes as any).error;
     if (firstError) throw firstError;
 
     if (clientsRes.data) setClients(clientsRes.data.map((c: any) => ({ document: formatCpfCnpj(c.document || ''), name: c.name })));
@@ -177,9 +179,10 @@ export default function CampaignFormPage() {
     if (datesRes.data) setDueDates(datesRes.data.map((d: any) => ({
       region_type: d.region_type, region_value: d.region_value, due_date: d.due_date,
     })));
-    if (channelSegmentsRes.data) setChannelSegments((channelSegmentsRes.data as any[]).map(cs => ({ channel_segment_name: cs.channel_segment_name, margin_percent: Number(cs.margin_percent || 0), price_adjustment_percent: Number(cs.price_adjustment_percent || 0), active: !!cs.active })));
+    if (channelSegmentsRes.data) setChannelSegments((channelSegmentsRes.data as any[]).map(cs => ({ channel_segment_name: cs.channel_segment_name, margin_percent: Number(cs.margin_percent || 0), price_adjustment_percent: Number(cs.price_adjustment_percent || 0), active: !!cs.active, channel_type: cs.channel_type || '' })));
     if (distributorsRes.data) setDistributors((distributorsRes.data as any[]).map(d => ({ short_name: d.short_name || '', full_name: d.full_name || '', cnpj: d.cnpj || '', channel_segment_name: d.channel_segment_name || '', active: !!d.active })));
     if (channelMarginsRes.data) setChannelMargins((channelMarginsRes.data as any[]).map(m => ({ segment: m.segment, margin_percent: Number(m.margin_percent) })));
+    if (channelTypesRes.data) setChannelTypes((channelTypesRes.data as any[]).map(ct => ({ channel_type_name: ct.channel_type_name || '', model: ct.model || '', active: !!ct.active, price_adjustment_percent: Number(ct.price_adjustment_percent || 0) })));
   };
 
   const onFieldChange = (key: string, value: any) => setForm(prev => ({ ...prev, [key]: value }));
@@ -275,6 +278,7 @@ export default function CampaignFormPage() {
         (supabase as any).from('campaign_channel_segments').delete().eq('campaign_id', campaignId!),
         (supabase as any).from('campaign_distributors').delete().eq('campaign_id', campaignId!),
         supabase.from('channel_margins').delete().eq('campaign_id', campaignId!),
+        (supabase as any).from('campaign_channel_types').delete().eq('campaign_id', campaignId!),
       ]);
       const deleteError = (deleteResults as any[]).find(r => r?.error)?.error;
       if (deleteError) throw deleteError;
@@ -304,6 +308,9 @@ export default function CampaignFormPage() {
           : Promise.resolve({ error: null }),
         channelMargins.length > 0
           ? supabase.from('channel_margins').insert(channelMargins.map(m => ({ campaign_id: campaignId!, segment: m.segment, margin_percent: m.margin_percent })))
+          : Promise.resolve({ error: null }),
+        channelTypes.length > 0
+          ? (supabase as any).from('campaign_channel_types').insert(channelTypes.map(ct => ({ campaign_id: campaignId!, channel_type_name: ct.channel_type_name, model: ct.model, active: ct.active, price_adjustment_percent: ct.price_adjustment_percent })))
           : Promise.resolve({ error: null }),
       ]);
       const insertError = (insertResults as any[]).find(r => r?.error)?.error;
@@ -400,6 +407,9 @@ export default function CampaignFormPage() {
             onSegmentsChange={setSegments}
             channelMargins={channelMargins}
             onChannelMarginsChange={setChannelMargins}
+            channelTypes={channelTypes}
+            onChannelTypesChange={setChannelTypes}
+            campaignTarget={form.target}
             clientType={form.client_type}
             onClientTypeChange={v => onFieldChange('client_type', v)}
             minOrderAmount={form.min_order_amount}
@@ -414,6 +424,7 @@ export default function CampaignFormPage() {
             onChannelSegmentsChange={setChannelSegments}
             distributors={distributors}
             onDistributorsChange={setDistributors}
+            activeChannelTypes={channelTypes}
           />
         </TabsContent>
 

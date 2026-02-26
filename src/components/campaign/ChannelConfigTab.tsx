@@ -6,12 +6,14 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Plus, Trash2 } from 'lucide-react';
 import { NumericInput } from '@/components/NumericInput';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import type { ChannelTypeRow } from '@/components/campaign/EligibilityTab';
 
 export type ChannelSegmentRow = {
   channel_segment_name: string;
   margin_percent: number;
   price_adjustment_percent: number;
   active: boolean;
+  channel_type: string;
 };
 
 export type DistributorRow = {
@@ -27,11 +29,14 @@ type Props = {
   onChannelSegmentsChange: (rows: ChannelSegmentRow[]) => void;
   distributors: DistributorRow[];
   onDistributorsChange: (rows: DistributorRow[]) => void;
+  activeChannelTypes: ChannelTypeRow[];
 };
 
-export default function ChannelConfigTab({ channelSegments, onChannelSegmentsChange, distributors, onDistributorsChange }: Props) {
-  const addChannelSegment = () => onChannelSegmentsChange([...channelSegments, { channel_segment_name: '', margin_percent: 0, price_adjustment_percent: 0, active: true }]);
+export default function ChannelConfigTab({ channelSegments, onChannelSegmentsChange, distributors, onDistributorsChange, activeChannelTypes }: Props) {
+  const addChannelSegment = () => onChannelSegmentsChange([...channelSegments, { channel_segment_name: '', margin_percent: 0, price_adjustment_percent: 0, active: true, channel_type: '' }]);
   const addDistributor = () => onDistributorsChange([...distributors, { short_name: '', full_name: '', cnpj: '', channel_segment_name: '', active: true }]);
+
+  const activeTypes = activeChannelTypes.filter(ct => ct.active && ct.channel_type_name.trim());
 
   return (
     <div className="space-y-6">
@@ -42,10 +47,37 @@ export default function ChannelConfigTab({ channelSegments, onChannelSegmentsCha
         </div>
         <div className="border rounded-md overflow-hidden">
           <Table>
-            <TableHeader><TableRow><TableHead>Segmento do Canal</TableHead><TableHead>Margem %</TableHead><TableHead>Ajuste %</TableHead><TableHead>Ativo</TableHead><TableHead></TableHead></TableRow></TableHeader>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Tipo de Canal</TableHead>
+                <TableHead>Segmento do Canal</TableHead>
+                <TableHead>Margem %</TableHead>
+                <TableHead>Ajuste %</TableHead>
+                <TableHead>Ativo</TableHead>
+                <TableHead></TableHead>
+              </TableRow>
+            </TableHeader>
             <TableBody>
               {channelSegments.map((row, i) => (
                 <TableRow key={i}>
+                  <TableCell>
+                    <Select
+                      value={row.channel_type || '__none__'}
+                      onValueChange={v => {
+                        const next = [...channelSegments];
+                        next[i] = { ...row, channel_type: v === '__none__' ? '' : v };
+                        onChannelSegmentsChange(next);
+                      }}
+                    >
+                      <SelectTrigger><SelectValue placeholder={activeTypes.length === 0 ? 'Sem tipos ativos' : 'Selecione...'} /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="__none__">{activeTypes.length === 0 ? 'Sem tipos ativos' : 'Nenhum'}</SelectItem>
+                        {activeTypes.map(ct => (
+                          <SelectItem key={ct.channel_type_name} value={ct.channel_type_name}>{ct.channel_type_name}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </TableCell>
                   <TableCell><Input value={row.channel_segment_name} onChange={e => { const next=[...channelSegments]; next[i]={...row,channel_segment_name:e.target.value}; onChannelSegmentsChange(next); }} /></TableCell>
                   <TableCell>
                     <NumericInput value={row.margin_percent} onChange={v => { const next=[...channelSegments]; next[i]={...row,margin_percent:v}; onChannelSegmentsChange(next); }} decimals={2} min={-100} max={100} />
