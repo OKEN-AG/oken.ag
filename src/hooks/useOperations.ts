@@ -8,8 +8,9 @@ type DbOperationInsert = Database['public']['Tables']['operations']['Insert'];
 type DbOperationUpdate = Database['public']['Tables']['operations']['Update'];
 type DbOperationItemInsert = Database['public']['Tables']['operation_items']['Insert'];
 type DbOperationLogInsert = Database['public']['Tables']['operation_logs']['Insert'];
-type DbOperationCalculationInputRow = Database['public']['Tables']['operation_calculation_inputs']['Row'];
-type DbOperationCalculationInputInsert = Database['public']['Tables']['operation_calculation_inputs']['Insert'];
+// operation_calculation_inputs may not be in generated types yet — use `any` as fallback
+type DbOperationCalculationInputRow = any;
+type DbOperationCalculationInputInsert = any;
 
 export function useOperations() {
   const { user } = useAuth();
@@ -185,7 +186,7 @@ export function useOperationCalculationInputs(operationId?: string) {
     queryKey: ['operation-calculation-inputs', operationId],
     enabled: !!operationId,
     queryFn: async () => {
-      const { data, error } = await supabase
+      const { data, error } = await (supabase as any)
         .from('operation_calculation_inputs')
         .select('*')
         .eq('operation_id', operationId!)
@@ -200,7 +201,7 @@ export function useUpsertOperationCalculationInput() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (payload: DbOperationCalculationInputInsert) => {
-      const { data, error } = await supabase
+      const { data, error } = await (supabase as any)
         .from('operation_calculation_inputs')
         .upsert(payload, { onConflict: 'operation_id,scenario_type' })
         .select()
@@ -210,7 +211,7 @@ export function useUpsertOperationCalculationInput() {
     },
     onSuccess: (data) => {
       qc.invalidateQueries({ queryKey: ['operation-calculation-inputs'] });
-      qc.invalidateQueries({ queryKey: ['operation-calculation-inputs', data.operation_id] });
+      qc.invalidateQueries({ queryKey: ['operation-calculation-inputs', data?.operation_id] });
     },
   });
 }

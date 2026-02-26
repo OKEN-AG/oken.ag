@@ -724,7 +724,7 @@ export default function OperationStepperPage() {
           due_date: selectedDueDate,
           counterparty,
           payment_method: resolvePaymentMethod(selectedPM?.method_name),
-          status: (currentStepDef.id === 'summary' ? 'pedido' : 'simulacao') as const,
+          status: currentStepDef.id === 'summary' ? 'pedido' as const : 'simulacao' as const,
         });
         opId = op.id;
 

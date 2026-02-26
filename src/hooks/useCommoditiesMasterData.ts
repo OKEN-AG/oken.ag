@@ -18,7 +18,7 @@ export function useCommoditiesMasterData() {
   return useQuery({
     queryKey: ['commodities-master-data-options'],
     queryFn: async () => {
-      const { data, error } = await supabase
+      const { data, error } = await (supabase as any)
         .from('commodities_master_data')
         .select('code, name, active')
         .eq('active', true)
