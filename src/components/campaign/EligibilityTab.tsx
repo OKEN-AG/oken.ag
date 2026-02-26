@@ -194,9 +194,9 @@ export default function EligibilityTab({
 
       {/* Channel Margins (Canal de Distribuição) */}
       <div className="space-y-3">
-        <Label className="text-base font-semibold">Segmentos de Canal (Margem do Distribuidor)</Label>
+        <Label className="text-base font-semibold">Tipo de Canal de Acesso - GTM</Label>
         <p className="text-xs text-muted-foreground">
-          Canal de distribuição define a margem aplicada sobre o preço. Cada canal (direto, distribuidor, cooperativa) pode ter uma margem diferente.
+          Campo informativo, com possibilidade de ajuste padrão em toda lista de preço, dependendo do canal escolhido.
         </p>
         <div className="flex gap-2">
           {availableChannels.length > 0 && (
@@ -221,7 +221,7 @@ export default function EligibilityTab({
               <TableHeader>
                 <TableRow>
                   <TableHead>Canal</TableHead>
-                  <TableHead className="w-44">Margem (%)</TableHead>
+                  <TableHead className="w-44">Ajuste Lista (%)</TableHead>
                   <TableHead className="w-12"></TableHead>
                 </TableRow>
               </TableHeader>
