@@ -986,7 +986,7 @@ export default function OperationStepperPage() {
                   <div className="flex items-center gap-3">
                     <span className="text-sm font-semibold text-foreground">Modo de Seleção:</span>
                     <div className="flex rounded-md border border-border overflow-hidden">
-                      <button onClick={() => setQuantityMode('dose')} className={`px-3 py-1 text-xs font-medium transition-colors ${quantityMode === 'dose' ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground hover:bg-muted/80'}`>Área × Dose/Qtd</button>
+                      <button onClick={() => setQuantityMode('dose')} className={`px-3 py-1 text-xs font-medium transition-colors ${quantityMode === 'dose' ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground hover:bg-muted/80'}`}>Área × Dose/Qtd</button>
                       <button onClick={() => setQuantityMode('livre')} className={`px-3 py-1 text-xs font-medium transition-colors ${quantityMode === 'livre' ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground hover:bg-muted/80'}`}>Qtd Livre</button>
                     </div>
                   </div>
