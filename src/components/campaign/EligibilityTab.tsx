@@ -23,10 +23,17 @@ export type ChannelMarginRow = {
   margin_percent: number;
 };
 
-const CHANNEL_SEGMENTS: { value: 'direto' | 'distribuidor' | 'cooperativa'; label: string }[] = [
-  { value: 'direto', label: 'Direto' },
-  { value: 'distribuidor', label: 'Distribuidor' },
-  { value: 'cooperativa', label: 'Cooperativa' },
+export type ChannelTypeRow = {
+  channel_type_name: string;
+  model: string; // B2B, B2C, B2B2C or custom
+  active: boolean;
+  price_adjustment_percent: number;
+};
+
+const MODEL_OPTIONS = [
+  { value: 'B2C', label: 'B2C', target: 'venda_direta_consumidor' },
+  { value: 'B2B', label: 'B2B', target: 'venda_canal_distribuicao' },
+  { value: 'B2B2C', label: 'B2B2C', target: 'venda_indireta_consumidor' },
 ];
 
 const CLIENT_TYPES = [
@@ -41,6 +48,9 @@ type Props = {
   onSegmentsChange: (segments: SegmentRow[]) => void;
   channelMargins: ChannelMarginRow[];
   onChannelMarginsChange: (margins: ChannelMarginRow[]) => void;
+  channelTypes: ChannelTypeRow[];
+  onChannelTypesChange: (types: ChannelTypeRow[]) => void;
+  campaignTarget: string;
   clientType: string[];
   onClientTypeChange: (types: string[]) => void;
   minOrderAmount: number;
@@ -52,6 +62,8 @@ export default function EligibilityTab({
   selectedCities, onSelectedCitiesChange,
   segments, onSegmentsChange,
   channelMargins, onChannelMarginsChange,
+  channelTypes, onChannelTypesChange,
+  campaignTarget,
   clientType, onClientTypeChange,
   minOrderAmount, onMinOrderAmountChange,
   currency,
@@ -60,6 +72,7 @@ export default function EligibilityTab({
   const [expandedMesos, setExpandedMesos] = useState<Set<string>>(new Set());
   const [searchTerm, setSearchTerm] = useState('');
   const [newSegment, setNewSegment] = useState('');
+  const [newChannelTypeName, setNewChannelTypeName] = useState('');
 
   const ufs = useMemo(() => getUFs(), []);
   const allMunicipios = useMemo(() => getAllMunicipios(), []);
@@ -70,17 +83,16 @@ export default function EligibilityTab({
     setter(next);
   };
 
+  // === City selection helpers ===
   const isUFFullySelected = (uf: string) => {
     const cities = allMunicipios.filter(m => m.uf === uf);
     return cities.length > 0 && cities.every(c => selectedCities.includes(c.ibge));
   };
-
   const isUFPartiallySelected = (uf: string) => {
     const cities = allMunicipios.filter(m => m.uf === uf);
     const count = cities.filter(c => selectedCities.includes(c.ibge)).length;
     return count > 0 && count < cities.length;
   };
-
   const toggleUFSelection = (uf: string) => {
     const ibges = allMunicipios.filter(m => m.uf === uf).map(c => c.ibge);
     if (isUFFullySelected(uf)) {
@@ -89,18 +101,15 @@ export default function EligibilityTab({
       onSelectedCitiesChange([...new Set([...selectedCities, ...ibges])]);
     }
   };
-
   const isMesoFullySelected = (mesoCode: string) => {
     const cities = getMunicipiosByMeso(mesoCode);
     return cities.length > 0 && cities.every(c => selectedCities.includes(c.ibge));
   };
-
   const isMesoPartiallySelected = (mesoCode: string) => {
     const cities = getMunicipiosByMeso(mesoCode);
     const count = cities.filter(c => selectedCities.includes(c.ibge)).length;
     return count > 0 && count < cities.length;
   };
-
   const toggleMesoSelection = (mesoCode: string) => {
     const ibges = getMunicipiosByMeso(mesoCode).map(c => c.ibge);
     if (isMesoFullySelected(mesoCode)) {
@@ -109,7 +118,6 @@ export default function EligibilityTab({
       onSelectedCitiesChange([...new Set([...selectedCities, ...ibges])]);
     }
   };
-
   const toggleCity = (ibge: string) => {
     if (selectedCities.includes(ibge)) {
       onSelectedCitiesChange(selectedCities.filter(c => c !== ibge));
@@ -128,12 +136,12 @@ export default function EligibilityTab({
       )
     : ufs;
 
+  // === Segment helpers ===
   const addSegment = () => {
     if (!newSegment.trim()) return;
     onSegmentsChange([...segments, { segment_name: newSegment.trim(), active: true, price_adjustment_percent: 0 }]);
     setNewSegment('');
   };
-
   const updateSegment = (idx: number, field: keyof SegmentRow, value: any) => {
     const updated = [...segments];
     updated[idx] = { ...updated[idx], [field]: value };
@@ -146,22 +154,62 @@ export default function EligibilityTab({
     );
   };
 
-  // Channel margin helpers
+  // === Channel Type helpers ===
+  const canActivateModel = (model: string) => {
+    const modelDef = MODEL_OPTIONS.find(m => m.value === model);
+    if (!modelDef) return true; // custom types can always be activated
+    return modelDef.target === campaignTarget;
+  };
+
+  const addChannelTypeFromModel = (model: string) => {
+    const modelDef = MODEL_OPTIONS.find(m => m.value === model);
+    const name = modelDef ? modelDef.label : model;
+    onChannelTypesChange([...channelTypes, {
+      channel_type_name: name,
+      model,
+      active: canActivateModel(model),
+      price_adjustment_percent: 0,
+    }]);
+  };
+
+  const addCustomChannelType = () => {
+    if (!newChannelTypeName.trim()) return;
+    onChannelTypesChange([...channelTypes, {
+      channel_type_name: newChannelTypeName.trim(),
+      model: '',
+      active: true,
+      price_adjustment_percent: 0,
+    }]);
+    setNewChannelTypeName('');
+  };
+
+  const updateChannelType = (idx: number, field: keyof ChannelTypeRow, value: any) => {
+    const updated = [...channelTypes];
+    updated[idx] = { ...updated[idx], [field]: value };
+    onChannelTypesChange(updated);
+  };
+
+  const usedModels = new Set(channelTypes.map(ct => ct.model).filter(Boolean));
+  const availableModels = MODEL_OPTIONS.filter(m => !usedModels.has(m.value));
+
+  // === Legacy channel margin helpers (kept for backward compat) ===
+  const CHANNEL_SEGMENTS: { value: 'direto' | 'distribuidor' | 'cooperativa'; label: string }[] = [
+    { value: 'direto', label: 'Direto' },
+    { value: 'distribuidor', label: 'Distribuidor' },
+    { value: 'cooperativa', label: 'Cooperativa' },
+  ];
   const addChannelMargin = (seg: 'direto' | 'distribuidor' | 'cooperativa') => {
     if (channelMargins.some(m => m.segment === seg)) return;
     onChannelMarginsChange([...channelMargins, { segment: seg, margin_percent: 0 }]);
   };
-
   const updateChannelMargin = (idx: number, value: number) => {
     const updated = [...channelMargins];
     updated[idx] = { ...updated[idx], margin_percent: value };
     onChannelMarginsChange(updated);
   };
-
   const removeChannelMargin = (idx: number) => {
     onChannelMarginsChange(channelMargins.filter((_, i) => i !== idx));
   };
-
   const availableChannels = CHANNEL_SEGMENTS.filter(cs => !channelMargins.some(m => m.segment === cs.value));
 
   return (
@@ -186,57 +234,94 @@ export default function EligibilityTab({
         </div>
       </div>
 
-      {/* Channel Margins (Tipo de Canal de Acesso - GTM) */}
+      {/* Channel Types (B2B / B2C / B2B2C + custom) */}
       <div className="space-y-3">
         <Label className="text-base font-semibold">Tipo de Canal de Acesso - GTM</Label>
         <p className="text-xs text-muted-foreground">
-          Campo informativo, com possibilidade de ajuste padrão em toda lista de preço, dependendo do canal escolhido.
+          Defina os tipos de canal. Apenas os modelos correspondentes ao Público Alvo da campanha podem ser ativados.
         </p>
-        <div className="flex gap-2">
-          {availableChannels.length > 0 && (
-            <Select onValueChange={(v) => addChannelMargin(v as any)}>
-              <SelectTrigger className="w-[200px]"><SelectValue placeholder="Adicionar canal..." /></SelectTrigger>
+        <div className="flex gap-2 flex-wrap">
+          {availableModels.length > 0 && (
+            <Select onValueChange={addChannelTypeFromModel}>
+              <SelectTrigger className="w-[200px]"><SelectValue placeholder="Adicionar modelo..." /></SelectTrigger>
               <SelectContent>
-                {availableChannels.map(cs => (
-                  <SelectItem key={cs.value} value={cs.value}>{cs.label}</SelectItem>
+                {availableModels.map(m => (
+                  <SelectItem key={m.value} value={m.value}>{m.label}</SelectItem>
                 ))}
               </SelectContent>
             </Select>
           )}
-          {availableChannels.length === 0 && channelMargins.length > 0 && (
-            <span className="text-xs text-muted-foreground self-center">Todos os canais já adicionados.</span>
-          )}
+          <div className="flex gap-1">
+            <Input
+              placeholder="Tipo livre..."
+              value={newChannelTypeName}
+              onChange={e => setNewChannelTypeName(e.target.value)}
+              className="w-[180px]"
+              onKeyDown={e => e.key === 'Enter' && (e.preventDefault(), addCustomChannelType())}
+            />
+            <Button variant="outline" size="icon" onClick={addCustomChannelType}><Plus className="w-4 h-4" /></Button>
+          </div>
         </div>
-        {channelMargins.length > 0 ? (
+        {channelTypes.length > 0 ? (
           <div className="border border-border rounded-md overflow-hidden">
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Canal</TableHead>
+                  <TableHead>Tipo de Canal</TableHead>
+                  <TableHead className="w-28">Modelo</TableHead>
+                  <TableHead className="w-20 text-center">Ativo</TableHead>
                   <TableHead className="w-44">Ajuste Lista (%)</TableHead>
                   <TableHead className="w-12"></TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {channelMargins.map((m, i) => (
-                  <TableRow key={m.segment}>
-                    <TableCell className="font-medium capitalize">{m.segment}</TableCell>
-                    <TableCell>
-                      <NumericInput value={m.margin_percent} onChange={v => updateChannelMargin(i, v)} decimals={2} min={-100} max={100} className="h-8" />
-                    </TableCell>
-                    <TableCell>
-                      <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => removeChannelMargin(i)}>
-                        <Trash2 className="w-3 h-3" />
-                      </Button>
-                    </TableCell>
-                  </TableRow>
-                ))}
+                {channelTypes.map((ct, i) => {
+                  const modelMatch = MODEL_OPTIONS.find(m => m.value === ct.model);
+                  const canActivate = canActivateModel(ct.model);
+                  return (
+                    <TableRow key={i}>
+                      <TableCell>
+                        <Input
+                          value={ct.channel_type_name}
+                          onChange={e => updateChannelType(i, 'channel_type_name', e.target.value)}
+                        />
+                      </TableCell>
+                      <TableCell>
+                        <Badge variant={modelMatch ? 'default' : 'outline'}>
+                          {ct.model || 'Livre'}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="text-center">
+                        <Switch
+                          checked={ct.active}
+                          disabled={!!ct.model && !canActivate}
+                          onCheckedChange={v => updateChannelType(i, 'active', v)}
+                        />
+                        {!!ct.model && !canActivate && (
+                          <p className="text-[10px] text-destructive mt-0.5">Público alvo incompatível</p>
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        <NumericInput
+                          value={ct.price_adjustment_percent}
+                          onChange={v => updateChannelType(i, 'price_adjustment_percent', v)}
+                          decimals={2} min={-100} max={100} className="h-8"
+                        />
+                      </TableCell>
+                      <TableCell>
+                        <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => onChannelTypesChange(channelTypes.filter((_, j) => j !== i))}>
+                          <Trash2 className="w-3 h-3" />
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
               </TableBody>
             </Table>
           </div>
         ) : (
           <p className="text-sm text-muted-foreground text-center py-4 border border-dashed border-border rounded-md">
-            Nenhum canal configurado. Adicione canais para definir ajustes de lista.
+            Nenhum tipo de canal configurado. Adicione modelos (B2B, B2C, B2B2C) ou tipos livres.
           </p>
         )}
       </div>

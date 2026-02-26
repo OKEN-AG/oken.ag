@@ -48,6 +48,7 @@ export type Database = {
           active: boolean
           campaign_id: string
           channel_segment_name: string
+          channel_type: string
           id: string
           margin_percent: number
           price_adjustment_percent: number
@@ -56,6 +57,7 @@ export type Database = {
           active?: boolean
           campaign_id: string
           channel_segment_name?: string
+          channel_type?: string
           id?: string
           margin_percent?: number
           price_adjustment_percent?: number
@@ -64,6 +66,7 @@ export type Database = {
           active?: boolean
           campaign_id?: string
           channel_segment_name?: string
+          channel_type?: string
           id?: string
           margin_percent?: number
           price_adjustment_percent?: number
@@ -71,6 +74,41 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "campaign_channel_segments_campaign_id_fkey"
+            columns: ["campaign_id"]
+            isOneToOne: false
+            referencedRelation: "campaigns"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      campaign_channel_types: {
+        Row: {
+          active: boolean
+          campaign_id: string
+          channel_type_name: string
+          id: string
+          model: string
+          price_adjustment_percent: number
+        }
+        Insert: {
+          active?: boolean
+          campaign_id: string
+          channel_type_name?: string
+          id?: string
+          model?: string
+          price_adjustment_percent?: number
+        }
+        Update: {
+          active?: boolean
+          campaign_id?: string
+          channel_type_name?: string
+          id?: string
+          model?: string
+          price_adjustment_percent?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "campaign_channel_types_campaign_id_fkey"
             columns: ["campaign_id"]
             isOneToOne: false
             referencedRelation: "campaigns"

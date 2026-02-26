@@ -20,9 +20,9 @@ import { formatCpfCnpj } from '@/lib/ptbr';
 export type ClientRow = { document: string; name: string };
 
 const TARGETS = [
-  { value: 'venda_direta_consumidor', label: 'Venda Direta ao Consumidor' },
-  { value: 'venda_canal_distribuicao', label: 'Venda ao Canal de Distribuição' },
-  { value: 'venda_indireta_consumidor', label: 'Venda Indireta ao Consumidor' },
+  { value: 'venda_direta_consumidor', label: 'Venda Direta ao Consumidor (B2C)' },
+  { value: 'venda_canal_distribuicao', label: 'Venda ao Canal de Distribuição / WholeSale (B2B)' },
+  { value: 'venda_indireta_consumidor', label: 'Venda Indireta ao Consumidor (B2B2C)' },
 ];
 
 
