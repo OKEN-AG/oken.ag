@@ -241,6 +241,7 @@ export type Database = {
           active: boolean
           campaign_id: string
           channel_segment_name: string
+          channel_type: string
           cnpj: string
           full_name: string
           id: string
@@ -250,6 +251,7 @@ export type Database = {
           active?: boolean
           campaign_id: string
           channel_segment_name?: string
+          channel_type?: string
           cnpj?: string
           full_name?: string
           id?: string
@@ -259,6 +261,7 @@ export type Database = {
           active?: boolean
           campaign_id?: string
           channel_segment_name?: string
+          channel_type?: string
           cnpj?: string
           full_name?: string
           id?: string
