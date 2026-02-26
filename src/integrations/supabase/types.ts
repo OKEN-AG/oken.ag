@@ -880,6 +880,95 @@ export type Database = {
           },
         ]
       }
+      operation_calculation_inputs: {
+        Row: {
+          calculation_version: string
+          created_at: string
+          created_by: string | null
+          data_concessao: string
+          data_entrega: string
+          data_pagamento: string
+          data_repasse: string | null
+          desconto_impostos_pct: number
+          desconto_pct: number | null
+          fee_dealer_pct: number | null
+          fee_merchant_pct: number | null
+          fee_oken_pct: number
+          id: string
+          incentivo_pct: number
+          juros_cet_aa: number
+          markup_pct: number | null
+          operation_id: string
+          preco_bruto_commodity: number
+          preco_fornecedor: number | null
+          rendimento_antecipacao_aa: number
+          scenario_type: string
+          updated_at: string
+          valor_divida_pv: number | null
+          vencimento: string
+        }
+        Insert: {
+          calculation_version?: string
+          created_at?: string
+          created_by?: string | null
+          data_concessao: string
+          data_entrega: string
+          data_pagamento: string
+          data_repasse?: string | null
+          desconto_impostos_pct?: number
+          desconto_pct?: number | null
+          fee_dealer_pct?: number | null
+          fee_merchant_pct?: number | null
+          fee_oken_pct: number
+          id?: string
+          incentivo_pct?: number
+          juros_cet_aa: number
+          markup_pct?: number | null
+          operation_id: string
+          preco_bruto_commodity: number
+          preco_fornecedor?: number | null
+          rendimento_antecipacao_aa?: number
+          scenario_type: string
+          updated_at?: string
+          valor_divida_pv?: number | null
+          vencimento: string
+        }
+        Update: {
+          calculation_version?: string
+          created_at?: string
+          created_by?: string | null
+          data_concessao?: string
+          data_entrega?: string
+          data_pagamento?: string
+          data_repasse?: string | null
+          desconto_impostos_pct?: number
+          desconto_pct?: number | null
+          fee_dealer_pct?: number | null
+          fee_merchant_pct?: number | null
+          fee_oken_pct?: number
+          id?: string
+          incentivo_pct?: number
+          juros_cet_aa?: number
+          markup_pct?: number | null
+          operation_id?: string
+          preco_bruto_commodity?: number
+          preco_fornecedor?: number | null
+          rendimento_antecipacao_aa?: number
+          scenario_type?: string
+          updated_at?: string
+          valor_divida_pv?: number | null
+          vencimento?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "operation_calculation_inputs_operation_id_fkey"
+            columns: ["operation_id"]
+            isOneToOne: false
+            referencedRelation: "operations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       operation_documents: {
         Row: {
           created_at: string

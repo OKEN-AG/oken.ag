@@ -8,6 +8,8 @@ type DbOperationInsert = Database['public']['Tables']['operations']['Insert'];
 type DbOperationUpdate = Database['public']['Tables']['operations']['Update'];
 type DbOperationItemInsert = Database['public']['Tables']['operation_items']['Insert'];
 type DbOperationLogInsert = Database['public']['Tables']['operation_logs']['Insert'];
+type DbOperationCalculationInputRow = Database['public']['Tables']['operation_calculation_inputs']['Row'];
+type DbOperationCalculationInputInsert = Database['public']['Tables']['operation_calculation_inputs']['Insert'];
 
 export function useOperations() {
   const { user } = useAuth();
@@ -173,6 +175,42 @@ export function useOperationStats() {
         activeCount,
         totalCount: (data || []).length,
       };
+    },
+  });
+}
+
+
+export function useOperationCalculationInputs(operationId?: string) {
+  return useQuery({
+    queryKey: ['operation-calculation-inputs', operationId],
+    enabled: !!operationId,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('operation_calculation_inputs')
+        .select('*')
+        .eq('operation_id', operationId!)
+        .order('created_at', { ascending: false });
+      if (error) throw error;
+      return (data || []) as DbOperationCalculationInputRow[];
+    },
+  });
+}
+
+export function useUpsertOperationCalculationInput() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (payload: DbOperationCalculationInputInsert) => {
+      const { data, error } = await supabase
+        .from('operation_calculation_inputs')
+        .upsert(payload, { onConflict: 'operation_id,scenario_type' })
+        .select()
+        .single();
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: (data) => {
+      qc.invalidateQueries({ queryKey: ['operation-calculation-inputs'] });
+      qc.invalidateQueries({ queryKey: ['operation-calculation-inputs', data.operation_id] });
     },
   });
 }

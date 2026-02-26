@@ -189,6 +189,39 @@ export interface FreightReducer {
   totalReducer: number;
 }
 
+// === CALCULATION MEMORY ENGINE ===
+export type CalculationMemoryScenario = 'insumo' | 'divida';
+
+export interface CalculationMemoryInputCommon {
+  scenarioType: CalculationMemoryScenario;
+  calculationVersion?: string;
+  jurosCetAa: number;
+  feeOkenPct: number;
+  incentivoPct: number;
+  precoBrutoCommodity: number;
+  descontoImpostosPct: number;
+  dataConcessao: string;
+  vencimento: string;
+  dataEntrega: string;
+  dataPagamento: string;
+  dataRepasse?: string;
+  rendimentoAntecipacaoAa: number;
+}
+
+export interface CalculationMemoryInputInsumo extends CalculationMemoryInputCommon {
+  scenarioType: 'insumo';
+  precoFornecedor: number;
+  markupPct: number;
+  descontoPct: number;
+  feeMerchantPct: number;
+}
+
+export interface CalculationMemoryInputDivida extends CalculationMemoryInputCommon {
+  scenarioType: 'divida';
+  valorDividaPv: number;
+  feeDealerPct: number;
+}
+
 // === PARITY ENGINE ===
 export interface ParityResult {
   totalAmountBRL: number;
