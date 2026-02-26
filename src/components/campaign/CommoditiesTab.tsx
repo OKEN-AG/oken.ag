@@ -846,7 +846,7 @@ export default function CommoditiesTab({ campaignId, campaignCommodities = [] }:
 
   if (!campaignId) return <p className="text-center py-8 text-muted-foreground">Salve a campanha primeiro para configurar commodities.</p>;
 
-  const defaultForm = { exchange: 'CBOT', contract: 'K', exchange_price: 0, exchange_rate_bolsa: 5.40, exchange_rate_option: 5.40, option_cost: 0, security_delta_market: 2, security_delta_freight: 15, stop_loss: 0, volatility: 25, risk_free_rate: 0.1175 };
+  const defaultForm = { exchange: '', contract: '', exchange_price: 0, exchange_rate_bolsa: 0, exchange_rate_option: 0, option_cost: 0, security_delta_market: 0, security_delta_freight: 0, stop_loss: 0, volatility: 0, risk_free_rate: 0 };
   const f = pricingForm || defaultForm;
   const toPtBrInputValue = (value: unknown) => {
     const num = Number(value);

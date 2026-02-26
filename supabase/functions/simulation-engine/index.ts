@@ -922,6 +922,114 @@ serve(async (req: Request) => {
         break;
       }
 
+      // ═══════════════════════════════════════════
+      // STANDALONE PARITY CALCULATION
+      // ═══════════════════════════════════════════
+      case 'calculate-parity': {
+        const {
+          campaignId, commodityCode: parCommodityCode, port: parPort,
+          freightOrigin: parFreightOrigin, deliveryLocationId: parDeliveryLocationId,
+          amount: parAmount, grossAmount: parGross,
+          hasContract: parHasContract, userOverridePrice: parUserOverridePrice,
+          showInsurance: parShowInsurance, buyerId: parBuyerId,
+          contractPriceType: parCpt, livePrice: parLivePrice, liveExchangeRate: parLiveExchangeRate,
+        } = body;
+
+        if (!campaignId) throw new Error('campaignId is required');
+        if (!parCommodityCode) throw new Error('commodityCode is required');
+
+        const [campRes, cpRes2, frRes2, dlRes2, buyersRes2, valRes2] = await Promise.all([
+          supabase.from('campaigns').select('aforo_percent, default_freight_cost_per_km').eq('id', campaignId).single(),
+          supabase.from('commodity_pricing').select('*').eq('campaign_id', campaignId).eq('commodity', parCommodityCode).single(),
+          supabase.from('freight_reducers').select('*').eq('campaign_id', campaignId),
+          supabase.from('campaign_delivery_locations').select('*').eq('campaign_id', campaignId),
+          supabase.from('campaign_buyers').select('*').eq('campaign_id', campaignId),
+          supabase.from('campaign_commodity_valorizations').select('*').eq('campaign_id', campaignId).eq('commodity', parCommodityCode).maybeSingle(),
+        ]);
+
+        const cpRow = cpRes2.data;
+        if (!cpRow) throw new Error(`No commodity_pricing for "${parCommodityCode}" in campaign`);
+        if (!cpRow.bushels_per_ton) throw new Error('commodity_pricing.bushels_per_ton not configured');
+        if (!cpRow.peso_saca_kg) throw new Error('commodity_pricing.peso_saca_kg not configured');
+
+        // Apply live overrides
+        if (parLivePrice != null) cpRow.exchange_price = parLivePrice;
+        if (parLiveExchangeRate != null) cpRow.exchange_rate_bolsa = parLiveExchangeRate;
+
+        const parFreightReducer = parFreightOrigin
+          ? (frRes2.data || []).find((fr: any) => fr.origin === parFreightOrigin)
+          : null;
+
+        const parBuyer = parBuyerId ? (buyersRes2.data || []).find((b: any) => b.id === parBuyerId) : null;
+
+        const commodityNetPriceCalc = calculateCommodityNetPrice(cpRow, parPort || '', parFreightReducer, {
+          buyerFeePercent: parBuyer?.fee || 0,
+        });
+
+        // Valorization
+        const valConfig = valRes2.data;
+        let valBonus = 0;
+        if (valConfig) {
+          if (valConfig.use_percent && valConfig.percent_value) {
+            valBonus = commodityNetPriceCalc * Number(valConfig.percent_value) / 100;
+          } else {
+            valBonus = Number(valConfig.nominal_value || 0);
+          }
+        }
+        const effectiveCommodityPriceCalc = commodityNetPriceCalc + valBonus;
+
+        const ivpCalc = calculateIVP(parCpt || 'fixo', cpRow.volatility);
+        const parityCalc = calculateParity(
+          parAmount || 0, effectiveCommodityPriceCalc,
+          parHasContract ? parUserOverridePrice : null,
+          parGross || null, ivpCalc
+        );
+
+        let insuranceCalc: any = null;
+        if (parShowInsurance) {
+          if (!cpRow.volatility) throw new Error('volatility not configured for insurance');
+          if (!cpRow.risk_free_rate) throw new Error('risk_free_rate not configured for insurance');
+          const vol = cpRow.volatility / 100;
+          const rfr = cpRow.risk_free_rate;
+          const strikePercent = (cpRow as any).strike_percent || 105;
+          const maturityDays = (cpRow as any).option_maturity_days || 180;
+          const spotPrice = cpRow.exchange_price * cpRow.exchange_rate_bolsa;
+          if (spotPrice <= 0) throw new Error('Spot price is 0');
+          const strike = spotPrice * (strikePercent / 100);
+          const timeYears = maturityDays / 365;
+          const premium = blackScholes(spotPrice, strike, timeYears, rfr, vol);
+          const additionalSacas = effectiveCommodityPriceCalc > 0 ? Math.ceil((premium / effectiveCommodityPriceCalc) * parityCalc.quantitySacas) : 0;
+          insuranceCalc = { premiumPerSaca: premium, additionalSacas, totalSacas: parityCalc.quantitySacas + additionalSacas, volatility: cpRow.volatility, strikePercent, maturityDays };
+        }
+
+        // Build ports list from basis_by_port
+        const basisByPort = typeof cpRow.basis_by_port === 'string' ? JSON.parse(cpRow.basis_by_port) : (cpRow.basis_by_port || {});
+
+        result = {
+          parity: parityCalc,
+          insurance: insuranceCalc,
+          commodityNetPrice: commodityNetPriceCalc,
+          effectiveCommodityPrice: effectiveCommodityPriceCalc,
+          valorizationBonus: valBonus,
+          ivp: ivpCalc,
+          ports: Object.keys(basisByPort),
+          freightOrigins: (frRes2.data || []).map((fr: any) => ({ origin: fr.origin, destination: fr.destination })),
+          deliveryLocations: (dlRes2.data || []).map((dl: any) => ({ id: dl.id, warehouseName: dl.warehouse_name, city: dl.city, state: dl.state, latitude: dl.latitude, longitude: dl.longitude })),
+          buyers: (buyersRes2.data || []).map((b: any) => ({ id: b.id, buyerName: b.buyer_name, fee: b.fee })),
+          commodityPricingRow: {
+            exchange: cpRow.exchange, contract: cpRow.contract,
+            exchangePrice: cpRow.exchange_price, exchangeRateBolsa: cpRow.exchange_rate_bolsa,
+            optionCost: cpRow.option_cost, securityDeltaMarket: cpRow.security_delta_market,
+            securityDeltaFreight: cpRow.security_delta_freight, stopLoss: cpRow.stop_loss,
+            bushelsPerTon: cpRow.bushels_per_ton, pesoSacaKg: cpRow.peso_saca_kg,
+            volatility: cpRow.volatility, riskFreeRate: cpRow.risk_free_rate,
+            ticker: cpRow.ticker, currencyUnit: cpRow.currency_unit,
+          },
+          timestamp: new Date().toISOString(),
+        };
+        break;
+      }
+
       default:
         return new Response(JSON.stringify({ error: 'Unknown endpoint' }), { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
