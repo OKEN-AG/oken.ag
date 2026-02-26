@@ -46,6 +46,26 @@ interface PricingResultItem {
   commercialPrice: number; quantity: number; subtotal: number;
 }
 
+interface PricingDebugRow {
+  productId: string; code: string; ref: string; productName: string; unitType: string;
+  quantity: number; boxes: number; pallets: number;
+  sourceField: 'price_cash' | 'price_term' | 'price_per_unit';
+  sourceValue: number; listCurrency: 'BRL' | 'USD';
+  exchangeRateProducts: number; priceAfterFx: number;
+  dueMonths: number; campaignMonthlyRatePercent: number; paymentMethodAnnualRatePercent: number;
+  paymentMethodMonthlyRatePercent: number; interestMultiplier: number;
+  interestPerUnit: number; priceWithInterest: number;
+  channelSegment: string; marginPercent: number; marginPerUnit: number; priceWithMargin: number;
+  segmentName: string; segmentAdjustmentPercent: number; segmentAdjPerUnit: number; priceWithSegAdj: number;
+  paymentMethodMarkupPercent: number; paymentMarkupPerUnit: number;
+  normalizedPrice: number; subtotal: number;
+  feesOkenPercent: number;
+  g2nComboDiscountAllocated: number; g2nBarterDiscountAllocated: number;
+  g2nDirectIncentiveAllocated: number; g2nNetRevenueAllocated: number;
+  parityCommodity: string | null; parityPricePerSaca: number | null;
+  fxSourceUsed: 'products' | 'barter'; pricingPlaza: string | null;
+}
+
 interface GrossToNetResult {
   grossRevenue: number; comboDiscount: number; barterDiscount: number;
   directIncentiveDiscount: number; creditLiberacao: number; creditLiquidacao: number;
@@ -199,46 +219,110 @@ function applyComboCascade(
 
 // ─── PRICING NORMALIZATION ENGINE ───
 function calculatePricing(
-  product: ProductRow, campaign: any, margins: any[], segment: string,
-  dueMonths: number, quantity: number,
-  opts: { paymentMethodMarkup: number; segmentAdjustmentPercent: number }
-): PricingResultItem {
-  let price: number;
-  const isTermPrice = product.price_type === 'prazo' && product.price_term && product.price_term > 0;
-  if (isTermPrice) {
-    price = product.price_term!;
-  } else if (product.price_type === 'vista' && product.price_cash && product.price_cash > 0) {
-    price = product.price_cash;
-  } else {
-    price = product.price_per_unit;
-  }
+  product: ProductRow, campaign: any, margins: any[], channelSegment: string,
+  segmentName: string, dueMonths: number, quantity: number,
+  opts: { paymentMethodMarkup: number; segmentAdjustmentPercent: number; paymentMethodAnnualRate: number; boxes: number; pallets: number }
+): { pricing: PricingResultItem; debug: PricingDebugRow } {
+  const priceListFormat = String(campaign.price_list_format || '').toLowerCase();
+  const forceTerm = priceListFormat.includes('prazo');
+  const forceCash = priceListFormat.includes('vista');
+  const forceIncludesMargin = priceListFormat.includes('com_margem');
+  const forcedCurrency = priceListFormat.startsWith('usd') ? 'USD' : (priceListFormat.startsWith('brl') ? 'BRL' : null);
 
-  if (product.currency === 'USD') price *= campaign.exchange_rate_products;
+  const resolvedSourceField: 'price_cash' | 'price_term' | 'price_per_unit' = forceTerm
+    ? (product.price_term && product.price_term > 0 ? 'price_term' : 'price_per_unit')
+    : (forceCash
+      ? (product.price_cash && product.price_cash > 0 ? 'price_cash' : 'price_per_unit')
+      : (product.price_type === 'prazo' && product.price_term && product.price_term > 0
+        ? 'price_term'
+        : (product.price_type === 'vista' && product.price_cash && product.price_cash > 0 ? 'price_cash' : 'price_per_unit')));
 
-  const interestMultiplier = (!isTermPrice && product.price_type === 'vista' && dueMonths > 0)
-    ? Math.pow(1 + campaign.interest_rate / 100, dueMonths) - 1 : 0;
+  const sourceValue = resolvedSourceField === 'price_term'
+    ? (product.price_term || product.price_per_unit)
+    : (resolvedSourceField === 'price_cash' ? (product.price_cash || product.price_per_unit) : product.price_per_unit);
 
-  const margin = margins.find((m: any) => m.segment === segment);
-  const marginPercent = (!product.includes_margin && margin && segment !== 'direto')
+  const listCurrency = (forcedCurrency || product.currency || 'BRL') as 'BRL' | 'USD';
+  const useBarterFx = priceListFormat.includes('indicativa') || priceListFormat.includes('barter');
+  const exchangeRateProducts = useBarterFx
+    ? Number(campaign.exchange_rate_barter || campaign.exchange_rate_products || 1)
+    : Number(campaign.exchange_rate_products || 1);
+  const priceAfterFx = listCurrency === 'USD' ? sourceValue * exchangeRateProducts : sourceValue;
+
+  const isTermPrice = resolvedSourceField === 'price_term';
+  const campaignMonthlyRate = Number(campaign.interest_rate || 0) / 100;
+  const paymentMethodAnnualRate = Number(opts.paymentMethodAnnualRate || 0) / 100;
+  const paymentMethodMonthlyRate = paymentMethodAnnualRate > 0 ? Math.pow(1 + paymentMethodAnnualRate, 1 / 12) - 1 : 0;
+  const totalMonthlyRate = campaignMonthlyRate + paymentMethodMonthlyRate;
+
+  const interestMultiplier = (!isTermPrice && dueMonths > 0)
+    ? Math.pow(1 + totalMonthlyRate, dueMonths) - 1 : 0;
+
+  const margin = margins.find((m: any) => m.segment === channelSegment);
+  const marginPercent = (!forceIncludesMargin && !product.includes_margin && margin && channelSegment !== 'direto')
     ? margin.margin_percent / 100 : 0;
 
   const segAdj = (opts.segmentAdjustmentPercent || 0) / 100;
   const pmMarkup = (opts.paymentMethodMarkup || 0) / 100;
 
-  const basePrice = price;
+  const basePrice = priceAfterFx;
   const priceWithInterest = basePrice * (1 + interestMultiplier);
   const priceWithMargin = priceWithInterest * (1 + marginPercent);
   const priceWithSegAdj = priceWithMargin * (1 + segAdj);
   const normalizedPrice = priceWithSegAdj * (1 + pmMarkup);
 
   return {
-    productId: product.id, basePrice, normalizedPrice,
-    interestComponent: basePrice * interestMultiplier,
-    marginComponent: priceWithInterest * marginPercent,
-    segmentAdjustmentComponent: priceWithMargin * segAdj,
-    paymentMethodComponent: priceWithSegAdj * pmMarkup,
-    commercialPrice: normalizedPrice, quantity,
-    subtotal: normalizedPrice * quantity,
+    pricing: {
+      productId: product.id, basePrice, normalizedPrice,
+      interestComponent: basePrice * interestMultiplier,
+      marginComponent: priceWithInterest * marginPercent,
+      segmentAdjustmentComponent: priceWithMargin * segAdj,
+      paymentMethodComponent: priceWithSegAdj * pmMarkup,
+      commercialPrice: normalizedPrice, quantity,
+      subtotal: normalizedPrice * quantity,
+    },
+    debug: {
+      productId: product.id,
+      code: product.code || '',
+      ref: product.ref || '',
+      productName: product.name,
+      unitType: product.unit_type,
+      quantity,
+      boxes: opts.boxes,
+      pallets: opts.pallets,
+      sourceField: resolvedSourceField,
+      sourceValue,
+      listCurrency,
+      exchangeRateProducts,
+      priceAfterFx,
+      dueMonths,
+      campaignMonthlyRatePercent: campaignMonthlyRate * 100,
+      paymentMethodAnnualRatePercent: paymentMethodAnnualRate * 100,
+      paymentMethodMonthlyRatePercent: paymentMethodMonthlyRate * 100,
+      interestMultiplier,
+      interestPerUnit: basePrice * interestMultiplier,
+      priceWithInterest,
+      channelSegment,
+      marginPercent: marginPercent * 100,
+      marginPerUnit: priceWithInterest * marginPercent,
+      priceWithMargin,
+      segmentName,
+      segmentAdjustmentPercent: segAdj * 100,
+      segmentAdjPerUnit: priceWithMargin * segAdj,
+      priceWithSegAdj,
+      paymentMethodMarkupPercent: pmMarkup * 100,
+      paymentMarkupPerUnit: priceWithSegAdj * pmMarkup,
+      normalizedPrice,
+      subtotal: normalizedPrice * quantity,
+      feesOkenPercent: 0,
+      g2nComboDiscountAllocated: 0,
+      g2nBarterDiscountAllocated: 0,
+      g2nDirectIncentiveAllocated: 0,
+      g2nNetRevenueAllocated: 0,
+      parityCommodity: null,
+      parityPricePerSaca: null,
+      fxSourceUsed: useBarterFx ? 'barter' : 'products',
+      pricingPlaza: null,
+    },
   };
 }
 
@@ -274,15 +358,23 @@ function calculateGrossToNet(
   }
 
   let comboDiscount = 0;
+  const maxActivatedHectares = activatedMain.reduce((max, ca) => Math.max(max, ca.activatedHectares || 0), 0);
+
   for (const pr of pricingResults) {
     const sel = selections.find(s => s.productId === pr.productId);
     if (!sel) continue;
     const ref = (sel.ref || '').toUpperCase().trim();
+
     if (mainEligibleRefs.has(ref) && mainDiscountPercent > 0) {
       comboDiscount += pr.subtotal * mainDiscountPercent / 100;
     }
+
     if (compEligibleRefs.has(ref) && compDiscountPercent > 0) {
-      comboDiscount += pr.subtotal * compDiscountPercent / 100;
+      const activatedHectares = maxActivatedHectares || 0;
+      const proportionalRatio = sel.areaHectares > 0
+        ? Math.min(1, Math.max(0, activatedHectares / sel.areaHectares))
+        : 0;
+      comboDiscount += pr.subtotal * (compDiscountPercent / 100) * proportionalRatio;
     }
   }
 
@@ -462,30 +554,32 @@ serve(async (req: Request) => {
       // ═══════════════════════════════════════════
       case 'simulate': {
         const {
-          campaignId, selections: inputSelections, segment, dueMonths,
+          campaignId, selections: inputSelections, segmentName, channelSegment, dueMonths, dueDate,
           paymentMethodId, commodityCode, port: portName,
-          freightOrigin, hasContract: hasExistingContract, userOverridePrice,
+          freightOrigin, deliveryLocationId, hasContract: hasExistingContract, userOverridePrice,
           showInsurance, clientContext, barterDiscountPercent,
           buyerId, contractPriceType: cpt, performanceIndex: pi,
         } = body;
 
         if (!campaignId) throw new Error('campaignId is required');
         if (!inputSelections?.length) throw new Error('selections are required (array of {productId, dosePerHectare, areaHectares, overrideQuantity?})');
-        if (!segment) throw new Error('segment is required');
-        if (dueMonths == null) throw new Error('dueMonths is required');
+        if (!segmentName) throw new Error('segmentName is required');
+        if (!channelSegment) throw new Error('channelSegment is required');
+        if (dueMonths == null && !dueDate) throw new Error('dueMonths or dueDate is required');
 
         // 1. Fetch campaign (authoritative)
         const { data: campaign, error: cErr } = await supabase.from('campaigns').select('*').eq('id', campaignId).single();
         if (cErr || !campaign) throw new Error('Campaign not found');
 
         // 2. Fetch related data in parallel
-        const [marginsRes, segmentsRes, pmRes, combosRes, cpRes, frRes, buyersRes, valRes, clientsRes] = await Promise.all([
+        const [marginsRes, segmentsRes, pmRes, combosRes, cpRes, frRes, dlRes, buyersRes, valRes, clientsRes] = await Promise.all([
           supabase.from('channel_margins').select('*').eq('campaign_id', campaignId),
           supabase.from('campaign_segments').select('*').eq('campaign_id', campaignId).eq('active', true),
           supabase.from('campaign_payment_methods').select('*').eq('campaign_id', campaignId).eq('active', true),
           supabase.from('combos').select('id, name, discount_percent, combo_products(product_id, min_dose_per_ha, max_dose_per_ha, products(ref))').eq('campaign_id', campaignId),
           supabase.from('commodity_pricing').select('*').eq('campaign_id', campaignId),
           supabase.from('freight_reducers').select('*').eq('campaign_id', campaignId),
+          supabase.from('campaign_delivery_locations').select('*').eq('campaign_id', campaignId),
           supabase.from('campaign_buyers').select('*').eq('campaign_id', campaignId),
           supabase.from('campaign_commodity_valorizations').select('*').eq('campaign_id', campaignId),
           supabase.from('campaign_clients').select('document').eq('campaign_id', campaignId),
@@ -526,22 +620,61 @@ serve(async (req: Request) => {
         const comboCascade = applyComboCascade(comboDefinitions, agronomicSelections);
 
         // 6. Pricing
-        const segmentMatch = segments.find((s: any) => s.segment_name.toLowerCase() === segment.toLowerCase());
+        const dueMonthsFinal = (() => {
+          if (dueDate) {
+            const due = new Date(`${dueDate}T00:00:00`);
+            if (!Number.isNaN(due.getTime())) {
+              const diffDays = Math.max(Math.round((due.getTime() - Date.now()) / 86400000), 1);
+              return Math.max(Math.round(diffDays / 30), 1);
+            }
+          }
+          return Math.max(Math.round(Number(dueMonths || 0)), 1);
+        })();
+
+        const segmentMatch = segments.find((s: any) => s.segment_name.toLowerCase() === segmentName.toLowerCase());
         const segmentAdjustmentPercent = segmentMatch?.price_adjustment_percent || 0;
         const selectedPM = paymentMethodId ? paymentMethods.find((pm: any) => pm.id === paymentMethodId) : paymentMethods[0];
         const paymentMethodMarkup = selectedPM?.markup_percent || 0;
 
-        const pricingResults: PricingResultItem[] = agronomicSelections.map(sel => {
+        const pricingDetails = agronomicSelections.map(sel => {
           const product = productMap.get(sel.productId)!;
-          return calculatePricing(product, campaign, margins, segment, dueMonths, sel.roundedQuantity, { paymentMethodMarkup, segmentAdjustmentPercent });
+          return calculatePricing(product, campaign, margins, channelSegment, segmentName, dueMonthsFinal, sel.roundedQuantity, {
+            paymentMethodMarkup,
+            segmentAdjustmentPercent,
+            paymentMethodAnnualRate: selectedPM?.annual_interest_rate || 0,
+            boxes: sel.boxes,
+            pallets: sel.pallets,
+          });
         });
+
+        const pricingResults: PricingResultItem[] = pricingDetails.map(pr => pr.pricing);
 
         // 7. Gross-to-Net
         const grossToNet = calculateGrossToNet(pricingResults, comboCascade.activations, barterDiscountPercent || 0, campaign, agronomicSelections);
 
+        const pricingDebugRows: PricingDebugRow[] = pricingDetails.map(pr => pr.debug);
+        const grossRevenueSafe = grossToNet.grossRevenue > 0 ? grossToNet.grossRevenue : 1;
+        const incentiveType = String(campaign.global_incentive_type || '');
+        const incentiveTotal = (campaign.global_incentive_1 || 0) + (campaign.global_incentive_2 || 0) + (campaign.global_incentive_3 || 0);
+        const feePercent = incentiveType === 'credito_liberacao' || incentiveType === 'credito_liquidacao' ? incentiveTotal : 0;
+
+        const pricingDebugRowsAllocated: PricingDebugRow[] = pricingDebugRows.map((row) => {
+          const share = Math.max(0, row.subtotal / grossRevenueSafe);
+          return {
+            ...row,
+            feesOkenPercent: feePercent,
+            g2nComboDiscountAllocated: grossToNet.comboDiscount * share,
+            g2nBarterDiscountAllocated: grossToNet.barterDiscount * share,
+            g2nDirectIncentiveAllocated: grossToNet.directIncentiveDiscount * share,
+            g2nNetRevenueAllocated: grossToNet.netRevenue * share,
+            parityCommodity: commodityCode || null,
+            parityPricePerSaca: null,
+          };
+        });
+
         // 8. Eligibility
         const whitelist = (clientsRes.data || []).map((c: any) => c.document);
-        const eligibility = checkEligibility(campaign, { ...clientContext, whitelist });
+        const eligibility = checkEligibility(campaign, { ...clientContext, orderAmount: grossToNet.grossRevenue, whitelist });
 
         // 9. Parity (if barter)
         let parityResult: ParityResultType | null = null;
@@ -560,8 +693,13 @@ serve(async (req: Request) => {
           if (!commodityPricingRow.peso_saca_kg) throw new Error('commodity_pricing.peso_saca_kg is not configured');
           if (!commodityPricingRow.exchange_rate_bolsa) throw new Error('commodity_pricing.exchange_rate_bolsa is not configured');
 
-          const freightReducer = freightOrigin
-            ? (frRes.data || []).find((fr: any) => fr.origin === freightOrigin)
+          const deliveryLocation = deliveryLocationId
+            ? (dlRes.data || []).find((dl: any) => dl.id === deliveryLocationId)
+            : null;
+
+          const freightOriginResolved = freightOrigin || deliveryLocation?.city || '';
+          const freightReducer = freightOriginResolved
+            ? (frRes.data || []).find((fr: any) => fr.origin === freightOriginResolved || fr.origin === deliveryLocation?.city)
             : null;
 
           const buyer = buyerId ? (buyersRes.data || []).find((b: any) => b.id === buyerId) : null;
@@ -606,6 +744,17 @@ serve(async (req: Request) => {
           }
         }
 
+        if (parityResult) {
+          const deliveryLocation = deliveryLocationId
+            ? (dlRes.data || []).find((dl: any) => dl.id === deliveryLocationId)
+            : null;
+          const plaza = deliveryLocation ? `${deliveryLocation.city}/${deliveryLocation.state}` : null;
+          for (const row of pricingDebugRowsAllocated) {
+            row.parityPricePerSaca = parityResult.commodityPricePerUnit;
+            row.pricingPlaza = plaza;
+          }
+        }
+
         // 10. Combo suggestions
         const maxDiscount = comboDefinitions.filter((c: any) => !/^COMPLEMENTAR/i.test(c.name)).reduce((max: number, c: any) => Math.max(max, c.discount_percent), 0);
         const activatedDiscount = comboCascade.activations.filter(a => a.applied && !a.isComplementary).reduce((max, a) => Math.max(max, a.discountPercent), 0);
@@ -616,6 +765,7 @@ serve(async (req: Request) => {
           comboActivations: comboCascade.activations,
           consumptionLedger: comboCascade.consumptionLedger,
           pricingResults,
+          pricingDebugRows: pricingDebugRowsAllocated,
           grossToNet,
           eligibility,
           parity: parityResult,
@@ -626,6 +776,7 @@ serve(async (req: Request) => {
           activatedDiscount,
           complementaryDiscount,
           discountProgress: maxDiscount > 0 ? (activatedDiscount / maxDiscount) * 100 : 0,
+          moneyCurrency: (campaign.currency || 'BRL').toUpperCase(),
           campaignConfig: {
             currency: campaign.currency,
             target: campaign.target,
