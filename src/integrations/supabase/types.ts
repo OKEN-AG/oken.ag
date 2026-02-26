@@ -43,6 +43,41 @@ export type Database = {
           },
         ]
       }
+      campaign_channel_segments: {
+        Row: {
+          active: boolean
+          campaign_id: string
+          channel_segment_name: string
+          id: string
+          margin_percent: number
+          price_adjustment_percent: number
+        }
+        Insert: {
+          active?: boolean
+          campaign_id: string
+          channel_segment_name?: string
+          id?: string
+          margin_percent?: number
+          price_adjustment_percent?: number
+        }
+        Update: {
+          active?: boolean
+          campaign_id?: string
+          channel_segment_name?: string
+          id?: string
+          margin_percent?: number
+          price_adjustment_percent?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "campaign_channel_segments_campaign_id_fkey"
+            columns: ["campaign_id"]
+            isOneToOne: false
+            referencedRelation: "campaigns"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       campaign_clients: {
         Row: {
           campaign_id: string
@@ -156,6 +191,44 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "campaign_delivery_locations_campaign_id_fkey"
+            columns: ["campaign_id"]
+            isOneToOne: false
+            referencedRelation: "campaigns"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      campaign_distributors: {
+        Row: {
+          active: boolean
+          campaign_id: string
+          channel_segment_name: string
+          cnpj: string
+          full_name: string
+          id: string
+          short_name: string
+        }
+        Insert: {
+          active?: boolean
+          campaign_id: string
+          channel_segment_name?: string
+          cnpj?: string
+          full_name?: string
+          id?: string
+          short_name?: string
+        }
+        Update: {
+          active?: boolean
+          campaign_id?: string
+          channel_segment_name?: string
+          cnpj?: string
+          full_name?: string
+          id?: string
+          short_name?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "campaign_distributors_campaign_id_fkey"
             columns: ["campaign_id"]
             isOneToOne: false
             referencedRelation: "campaigns"
