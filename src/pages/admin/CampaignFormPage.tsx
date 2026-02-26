@@ -396,16 +396,18 @@ export default function CampaignFormPage() {
       </div>
 
       <Tabs defaultValue="geral" className="w-full">
-        <TabsList className="bg-muted border border-border flex-wrap h-auto">
-          <TabsTrigger value="geral">Geral</TabsTrigger>
-          <TabsTrigger value="financeiro">Financeiro</TabsTrigger>
-          <TabsTrigger value="elegibilidade">Elegibilidade</TabsTrigger>
-          <TabsTrigger value="canais">Canais</TabsTrigger>
-          <TabsTrigger value="modulos">Módulos</TabsTrigger>
-          <TabsTrigger value="produtos" disabled={isNew}>Produtos</TabsTrigger>
-          <TabsTrigger value="combos" disabled={isNew}>Combos</TabsTrigger>
-          <TabsTrigger value="commodities" disabled={isNew}>Commodities</TabsTrigger>
-        </TabsList>
+        <div className="sticky top-0 z-20 bg-background pb-2">
+          <TabsList className="bg-muted border border-border flex-wrap h-auto">
+            <TabsTrigger value="geral">Geral</TabsTrigger>
+            <TabsTrigger value="financeiro">Financeiro</TabsTrigger>
+            <TabsTrigger value="elegibilidade">Elegibilidade</TabsTrigger>
+            <TabsTrigger value="canais">Canais</TabsTrigger>
+            <TabsTrigger value="modulos">Módulos</TabsTrigger>
+            <TabsTrigger value="produtos" disabled={isNew}>Produtos</TabsTrigger>
+            <TabsTrigger value="combos" disabled={isNew}>Combos</TabsTrigger>
+            <TabsTrigger value="commodities" disabled={isNew}>Commodities</TabsTrigger>
+          </TabsList>
+        </div>
 
         <TabsContent value="geral" className="mt-4">
           <GeneralTab
