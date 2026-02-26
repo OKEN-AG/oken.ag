@@ -1,21 +1,43 @@
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { Plus, Settings, ToggleLeft, ToggleRight } from 'lucide-react';
+import { Plus, Settings, ToggleLeft, ToggleRight, Copy, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { useCampaigns, useUpdateCampaign } from '@/hooks/useCampaigns';
+import { supabase } from '@/integrations/supabase/client';
+import { useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 
 export default function CampaignsListPage() {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const { data: campaigns, isLoading } = useCampaigns();
   const toggleMutation = useUpdateCampaign();
+  const [cloningId, setCloningId] = useState<string | null>(null);
 
   const handleToggle = (id: string, currentActive: boolean) => {
     toggleMutation.mutate(
       { id, active: !currentActive },
       { onSuccess: () => toast.success(`Campanha ${!currentActive ? 'ativada' : 'desativada'}`) }
     );
+  };
+
+  const handleClone = async (campaignId: string) => {
+    setCloningId(campaignId);
+    try {
+      const { data, error } = await supabase.functions.invoke('clone-campaign', {
+        body: { campaignId },
+      });
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
+      queryClient.invalidateQueries({ queryKey: ['campaigns'] });
+      toast.success(`Campanha clonada: ${data.name}`);
+    } catch (e: any) {
+      toast.error(`Erro ao clonar: ${e.message}`);
+    } finally {
+      setCloningId(null);
+    }
   };
 
   return (
@@ -60,6 +82,15 @@ export default function CampaignsListPage() {
               </Badge>
               <Button variant="ghost" size="icon" onClick={() => handleToggle(c.id, c.active)}>
                 {c.active ? <ToggleRight className="w-5 h-5 text-success" /> : <ToggleLeft className="w-5 h-5 text-muted-foreground" />}
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon"
+                title="Clonar campanha"
+                disabled={cloningId === c.id}
+                onClick={() => handleClone(c.id)}
+              >
+                {cloningId === c.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Copy className="w-4 h-4" />}
               </Button>
               <Button variant="outline" size="sm" onClick={() => navigate(`/admin/campanhas/${c.id}`)}>
                 Editar
