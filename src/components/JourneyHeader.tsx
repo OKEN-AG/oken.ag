@@ -1,14 +1,12 @@
 import { useLocation } from 'react-router-dom';
 import { NavLink } from 'react-router-dom';
-import { Settings, ShoppingCart, Wheat, FileText, BarChart3, LayoutDashboard } from 'lucide-react';
+import { Settings, ShoppingCart, BarChart3, LayoutDashboard } from 'lucide-react';
 
 const steps = [
   { path: '/', label: 'Dashboard', icon: LayoutDashboard, step: 0 },
   { path: '/campanha', label: 'Campanha', icon: Settings, step: 1 },
-  { path: '/simulacao', label: 'Simulação', icon: ShoppingCart, step: 2 },
-  { path: '/paridade', label: 'Paridade', icon: Wheat, step: 3 },
-  { path: '/documentos', label: 'Documentos', icon: FileText, step: 4 },
-  { path: '/monitoramento', label: 'Monitoramento', icon: BarChart3, step: 5 },
+  { path: '/operacao/novo', label: 'Nova Operação', icon: ShoppingCart, step: 2 },
+  { path: '/monitoramento', label: 'Monitoramento', icon: BarChart3, step: 3 },
 ];
 
 export default function JourneyHeader() {
