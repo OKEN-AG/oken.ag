@@ -18,6 +18,7 @@ import BuyerPortalPage from "@/pages/BuyerPortalPage";
 import CommoditiesMasterDataPage from "@/pages/admin/CommoditiesMasterDataPage";
 import LegacyRouteRedirectPage from "@/pages/LegacyRouteRedirectPage";
 import OrdersListPage from "@/pages/admin/OrdersListPage";
+import PricingAnalysisPage from "@/pages/PricingAnalysisPage";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -50,6 +51,7 @@ const App = () => (
                     <Route path="/monitoramento" element={<MonitoringPage />} />
                     <Route path="/operacao/novo" element={<OperationStepperPage />} />
                     <Route path="/operacao/:id" element={<OperationStepperPage />} />
+                    <Route path="/operacao/:id/analise-precos" element={<PricingAnalysisPage />} />
                     <Route path="/admin/campanhas" element={<CampaignsListPage />} />
                     <Route path="/admin/campanhas/:id" element={<CampaignFormPage />} />
                     <Route path="/admin/commodities-masterdata" element={<CommoditiesMasterDataPage />} />

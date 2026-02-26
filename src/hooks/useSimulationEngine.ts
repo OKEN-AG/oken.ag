@@ -28,6 +28,25 @@ export interface PricingResultItem {
   commercialPrice: number; quantity: number; subtotal: number;
 }
 
+export interface PricingDebugRow {
+  productId: string; code: string; ref: string; productName: string; unitType: string;
+  quantity: number; boxes: number; pallets: number;
+  sourceField: 'price_cash' | 'price_term' | 'price_per_unit';
+  sourceValue: number; listCurrency: 'BRL' | 'USD';
+  exchangeRateProducts: number; priceAfterFx: number;
+  dueMonths: number; campaignMonthlyRatePercent: number; paymentMethodAnnualRatePercent: number;
+  paymentMethodMonthlyRatePercent: number; interestMultiplier: number;
+  interestPerUnit: number; priceWithInterest: number;
+  channelSegment: string; marginPercent: number; marginPerUnit: number; priceWithMargin: number;
+  segmentName: string; segmentAdjustmentPercent: number; segmentAdjPerUnit: number; priceWithSegAdj: number;
+  paymentMethodMarkupPercent: number; paymentMarkupPerUnit: number;
+  normalizedPrice: number; subtotal: number;
+  feesOkenPercent: number;
+  g2nComboDiscountAllocated: number; g2nBarterDiscountAllocated: number;
+  g2nDirectIncentiveAllocated: number; g2nNetRevenueAllocated: number;
+  parityCommodity: string | null; parityPricePerSaca: number | null;
+}
+
 export interface GrossToNetResult {
   grossRevenue: number; comboDiscount: number; barterDiscount: number;
   directIncentiveDiscount: number; creditLiberacao: number; creditLiquidacao: number;
@@ -79,6 +98,7 @@ export interface SimulationResult {
   comboActivations: ComboActivationResult[];
   consumptionLedger: Record<string, Record<string, number>>;
   pricingResults: PricingResultItem[];
+  pricingDebugRows: PricingDebugRow[];
   grossToNet: GrossToNetResult;
   eligibility: EligibilityResult;
   parity: ParityResult | null;
@@ -89,6 +109,7 @@ export interface SimulationResult {
   activatedDiscount: number;
   complementaryDiscount: number;
   discountProgress: number;
+  moneyCurrency: 'BRL' | 'USD';
   campaignConfig: CampaignConfig;
   paymentMethods: PaymentMethodOption[];
   segmentOptions: SegmentOption[];
@@ -109,8 +130,10 @@ export interface OperationStatusResult {
 export interface SimulateInput {
   campaignId: string;
   selections: SimulationSelection[];
-  segment: string;
-  dueMonths: number;
+  segmentName: string;
+  channelSegment: 'direto' | 'distribuidor' | 'cooperativa';
+  dueMonths?: number;
+  dueDate?: string;
   paymentMethodId?: string;
   commodityCode?: string;
   port?: string;
