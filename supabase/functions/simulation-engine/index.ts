@@ -240,7 +240,7 @@ function calculatePricing(
     ? (product.price_term || product.price_per_unit)
     : (resolvedSourceField === 'price_cash' ? (product.price_cash || product.price_per_unit) : product.price_per_unit);
 
-  const listCurrency = (forcedCurrency || product.currency || 'BRL') as 'BRL' | 'USD';
+  const listCurrency = ((campaign.currency || forcedCurrency || product.currency || 'BRL') as string).toUpperCase() as 'BRL' | 'USD';
   const exchangeRateProducts = Number(campaign.exchange_rate_products || 1);
   const priceAfterFx = listCurrency === 'USD' ? sourceValue * exchangeRateProducts : sourceValue;
 
