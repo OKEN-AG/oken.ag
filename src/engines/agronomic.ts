@@ -12,7 +12,8 @@ export function calculateAgronomicSelection(
   overrideQuantity?: number
 ): AgronomicSelection {
   const dose = dosePerHectare ?? product.dosePerHectare;
-  const rawQuantity = overrideQuantity ?? (areaHectares * dose);
+  const perArea = (product.pricingBasis || 'por_hectare') === 'por_hectare';
+  const rawQuantity = overrideQuantity ?? (perArea ? (areaHectares * dose) : dose);
 
   const packageSizes = [...(product.packageSizes || [])].filter(s => s > 0);
   if (packageSizes.length === 0) packageSizes.push(1);

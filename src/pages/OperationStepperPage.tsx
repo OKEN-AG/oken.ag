@@ -85,7 +85,7 @@ function getComboRecommendations(
           recs.push({
             productName: prod.name, ref: mp.ref, productId: prod.id,
             suggestedDose, suggestedQty,
-            action: `Incluir ${prod.name} (${suggestedDose.toFixed(2)}/${prod.unitType}/ha ≈ ${suggestedQty} ${prod.unitType}) → combo "${combo.name}" (+${combo.discountPercent}%)`
+            action: `Incluir ${prod.name} (${suggestedDose.toFixed(2)}/${prod.unitType}${(prod.pricingBasis || 'por_hectare') === 'por_hectare' ? '/ha' : ''} ≈ ${suggestedQty} ${prod.unitType}) → combo "${combo.name}" (+${combo.discountPercent}%)`
           });
         }
       }
@@ -97,7 +97,7 @@ function getComboRecommendations(
         recs.push({
           productName: sel.product.name, ref: cp.ref, productId: sel.productId,
           suggestedDose: cp.minDosePerHa, suggestedQty,
-          action: `Subir dose de ${sel.product.name} para ${cp.minDosePerHa}/ha (≈ ${suggestedQty} ${sel.product.unitType}) → combo "${combo.name}"`
+          action: `Ajustar ${sel.product.name} para ${cp.minDosePerHa}${(sel.product.pricingBasis || 'por_hectare') === 'por_hectare' ? '/ha' : ''} (≈ ${suggestedQty} ${sel.product.unitType}) → combo "${combo.name}"`
         });
       }
     }
@@ -475,6 +475,8 @@ export default function OperationStepperPage() {
   }, [campaign, clientState, clientCity, clientCityCode, selectedCityName, usesIbgeCityEligibility, segment, clientDocument, clientType, clientWhitelist, rawCampaign, campaignCurrency]);
 
   // ─── Product selection ───
+
+  const isPerAreaProduct = (product: Product) => (product.pricingBasis || 'por_hectare') === 'por_hectare';
   const toggleProduct = (productId: string, suggestedDose?: number) => {
     const next = new Map(selectedProducts);
     if (next.has(productId)) {
@@ -984,7 +986,7 @@ export default function OperationStepperPage() {
                   <div className="flex items-center gap-3">
                     <span className="text-sm font-semibold text-foreground">Modo de Seleção:</span>
                     <div className="flex rounded-md border border-border overflow-hidden">
-                      <button onClick={() => setQuantityMode('dose')} className={`px-3 py-1 text-xs font-medium transition-colors ${quantityMode === 'dose' ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground hover:bg-muted/80'}`}>Área × Dose</button>
+                      <button onClick={() => setQuantityMode('dose')} className={`px-3 py-1 text-xs font-medium transition-colors ${quantityMode === 'dose' ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground hover:bg-muted/80'}`>Área × Dose/Qtd</button>
                       <button onClick={() => setQuantityMode('livre')} className={`px-3 py-1 text-xs font-medium transition-colors ${quantityMode === 'livre' ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground hover:bg-muted/80'}`}>Qtd Livre</button>
                     </div>
                   </div>
@@ -1054,7 +1056,7 @@ export default function OperationStepperPage() {
                         <div className="mt-2 pt-2 border-t border-border space-y-2">
                           {quantityMode === 'dose' ? (
                             <div className="flex items-center gap-2">
-                              <label className="text-xs text-muted-foreground w-16">Dose/ha:</label>
+                              <label className="text-xs text-muted-foreground w-24">{isPerAreaProduct(product) ? 'Dose/ha:' : 'Quantidade:'}</label>
                               <Input type="text" inputMode="decimal" value={dose} onChange={e => { e.stopPropagation(); updateDose(product.id, parsePtBrNumber(e.target.value)); }} onClick={e => e.stopPropagation()} className="h-7 bg-muted border-border font-mono text-xs text-foreground" />
                             </div>
                           ) : (

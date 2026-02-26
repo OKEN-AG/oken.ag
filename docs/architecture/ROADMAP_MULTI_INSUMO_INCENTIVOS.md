@@ -26,3 +26,10 @@ com incentivos e benefícios configuráveis que podem:
 - Operações com diferentes tipos de insumo sem regra hardcoded por dose/hectare.
 - Incentivos compostos com explicabilidade por regra aplicada.
 - Trilha completa para auditoria e aprovação comercial/crédito.
+
+
+## Implementações já iniciadas
+- Tipagem de produto com `kind` e `pricingBasis`.
+- Incentive Engine com regras, prioridade, cumulatividade e teto.
+- GrossToNet com rastreio de regras aplicadas.
+- Agronomic engine preparado para `por_hectare` e `por_unidade` (base para maquinário/serviços).
