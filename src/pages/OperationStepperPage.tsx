@@ -1127,16 +1127,33 @@ export default function OperationStepperPage() {
                 {combos.length > 0 && (
                   <>
                     <Progress value={discountProgress} className="h-2.5 bg-muted" />
-                    {/* Activated combos shown discreetly */}
-                    {comboActivations.some(ca => ca.applied) && (
-                      <div className="flex flex-wrap gap-1.5">
-                        {comboActivations.filter(ca => ca.applied).map(ca => (
-                          <span key={ca.comboId} className="text-[10px] px-2 py-0.5 rounded-full bg-success/10 text-success font-medium">
-                            {ca.comboName} ({ca.discountPercent}%) ✓
-                          </span>
-                        ))}
-                      </div>
-                    )}
+                    {/* All available combos sorted by discount */}
+                    <div className="flex flex-wrap gap-1.5 mt-1">
+                      {[...comboActivations]
+                        .sort((a, b) => b.discountPercent - a.discountPercent)
+                        .map(ca => {
+                          const missingRefs = ca.applied ? [] : (combos.find(c => c.id === ca.comboId)?.products || [])
+                            .filter((cp: any) => !selections.some(s => (s.ref || '').toUpperCase().trim() === (cp.ref || '').toUpperCase().trim()))
+                            .map((cp: any) => {
+                              const prod = products.find(p => (p.ref || '').toUpperCase().trim() === (cp.ref || '').toUpperCase().trim());
+                              return prod?.name || cp.ref;
+                            });
+                          return (
+                            <span
+                              key={ca.comboId}
+                              title={ca.applied ? 'Ativado' : `Faltam: ${missingRefs.join(', ')}`}
+                              className={`text-[10px] px-2 py-0.5 rounded-full font-medium transition-colors ${
+                                ca.applied
+                                  ? 'bg-success/15 text-success border border-success/30'
+                                  : 'bg-muted text-muted-foreground border border-border'
+                              }`}
+                            >
+                              {ca.comboName} ({ca.discountPercent}%)
+                              {ca.applied ? ' ✓' : ''}
+                            </span>
+                          );
+                        })}
+                    </div>
                     {/* Combo recommendations — clickable to add product */}
                     {comboRecommendations.length > 0 && (
                       <div className="space-y-1">
