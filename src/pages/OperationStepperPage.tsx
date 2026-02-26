@@ -8,7 +8,7 @@ import { normalizeCommodityCode } from '@/lib/commodity';
 import { useOperation, useOperationItems, useOperationDocuments, useCreateOperation, useCreateOperationItems, useCreateOperationLog, useReplaceOperationItems, useUpdateOperation } from '@/hooks/useOperations';
 import { getSuggestedDoseForRef, applyComboCascade, getMaxPossibleDiscount, getActivatedDiscount, getComplementaryDiscount } from '@/engines/combo-cascade';
 import { useSimulationEngine } from '@/hooks/useSimulationEngine';
-import { formatCpfCnpj, parsePtBrNumber } from '@/lib/ptbr';
+import { formatCpfCnpj, parsePtBrNumber, onlyDigits } from '@/lib/ptbr';
 import { buildWagonStages, canAdvance, getBlockingReason } from '@/engines/orchestrator';
 import type { ChannelSegment, Product, JourneyModule, DocumentType, ContractPriceType, AgronomicSelection } from '@/types/barter';
 import { getAllMunicipios } from '@/data/municipios';
@@ -333,12 +333,23 @@ export default function OperationStepperPage() {
     },
   });
 
-  const { data: clientWhitelist } = useQuery({
-    queryKey: ['campaign-clients-wl', selectedCampaignId],
+  const { data: clientWhitelistFull } = useQuery({
+    queryKey: ['campaign-clients-wl-full', selectedCampaignId],
     enabled: !!selectedCampaignId,
     queryFn: async () => {
-      const { data } = await supabase.from('campaign_clients').select('document').eq('campaign_id', selectedCampaignId);
-      return (data || []).map(c => c.document);
+      const { data } = await supabase.from('campaign_clients').select('name,document').eq('campaign_id', selectedCampaignId);
+      return (data || []) as { name: string; document: string }[];
+    },
+  });
+  const clientWhitelist = useMemo(() => (clientWhitelistFull || []).map(c => c.document), [clientWhitelistFull]);
+  const hasWhitelist = (clientWhitelistFull || []).length > 0;
+
+  const { data: channelTypesConfig } = useQuery({
+    queryKey: ['campaign-channel-types-preview', selectedCampaignId],
+    enabled: !!selectedCampaignId,
+    queryFn: async () => {
+      const { data } = await (supabase as any).from('campaign_channel_types').select('*').eq('campaign_id', selectedCampaignId).eq('active', true);
+      return (data || []) as any[];
     },
   });
 
@@ -464,6 +475,54 @@ export default function OperationStepperPage() {
     if (!hasDueDateConfigIssue) return;
     toast.error('Campanha sem vencimentos configurados. Ajuste a campanha para continuar.');
   }, [hasDueDateConfigIssue]);
+
+  // ─── CPF/CNPJ validation helpers ───
+  const validateCpf = (cpf: string): boolean => {
+    const digits = onlyDigits(cpf);
+    if (digits.length !== 11 || /^(\d)\1+$/.test(digits)) return false;
+    let sum = 0;
+    for (let i = 0; i < 9; i++) sum += parseInt(digits[i]) * (10 - i);
+    let rem = (sum * 10) % 11; if (rem === 10) rem = 0;
+    if (rem !== parseInt(digits[9])) return false;
+    sum = 0;
+    for (let i = 0; i < 10; i++) sum += parseInt(digits[i]) * (11 - i);
+    rem = (sum * 10) % 11; if (rem === 10) rem = 0;
+    return rem === parseInt(digits[10]);
+  };
+  const validateCnpj = (cnpj: string): boolean => {
+    const digits = onlyDigits(cnpj);
+    if (digits.length !== 14 || /^(\d)\1+$/.test(digits)) return false;
+    const weights1 = [5,4,3,2,9,8,7,6,5,4,3,2];
+    const weights2 = [6,5,4,3,2,9,8,7,6,5,4,3,2];
+    let sum = 0;
+    for (let i = 0; i < 12; i++) sum += parseInt(digits[i]) * weights1[i];
+    let rem = sum % 11; const d1 = rem < 2 ? 0 : 11 - rem;
+    if (d1 !== parseInt(digits[12])) return false;
+    sum = 0;
+    for (let i = 0; i < 13; i++) sum += parseInt(digits[i]) * weights2[i];
+    rem = sum % 11; const d2 = rem < 2 ? 0 : 11 - rem;
+    return d2 === parseInt(digits[13]);
+  };
+
+  const documentDigits = useMemo(() => onlyDigits(clientDocument), [clientDocument]);
+  const documentValid = useMemo(() => {
+    if (!documentDigits) return true; // empty is ok
+    if (documentDigits.length === 11) return validateCpf(clientDocument);
+    if (documentDigits.length === 14) return validateCnpj(clientDocument);
+    return documentDigits.length < 11; // still typing
+  }, [documentDigits, clientDocument]);
+
+  // Auto PF/PJ from CPF/CNPJ
+  useEffect(() => {
+    if (documentDigits.length === 11) setClientType('PF');
+    else if (documentDigits.length >= 14) setClientType('PJ');
+  }, [documentDigits]);
+
+  // Auto first due date when city is selected
+  useEffect(() => {
+    if (!clientCity || !dueDateOptions.length) return;
+    setDueMonths(Number(dueDateOptions[0].value));
+  }, [clientCity, clientState]);
 
   const segmentOptions = useMemo(() => {
     if (simResult?.segmentOptions?.length) return simResult.segmentOptions.map(s => ({ value: s.value, label: s.label }));
@@ -1040,11 +1099,33 @@ export default function OperationStepperPage() {
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                 <div className="glass-card p-4">
                   <label className="stat-label">Nome do Cliente</label>
-                  <Input value={clientName} onChange={e => setClientName(e.target.value)} placeholder="Produtor/Empresa" className="mt-1 bg-muted border-border text-foreground" />
+                  {hasWhitelist ? (
+                    <Select value={clientDocument} onValueChange={v => {
+                      const entry = clientWhitelistFull?.find(c => c.document === v);
+                      setClientDocument(formatCpfCnpj(v));
+                      if (entry) setClientName(entry.name);
+                    }}>
+                      <SelectTrigger className="mt-1 bg-muted border-border text-foreground"><SelectValue placeholder="Selecione o cliente..." /></SelectTrigger>
+                      <SelectContent className="max-h-[300px]">
+                        {(clientWhitelistFull || []).map(c => (
+                          <SelectItem key={c.document} value={c.document}>{c.name} ({formatCpfCnpj(c.document)})</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  ) : (
+                    <Input value={clientName} onChange={e => setClientName(e.target.value)} placeholder="Produtor/Empresa" className="mt-1 bg-muted border-border text-foreground" />
+                  )}
                 </div>
                 <div className="glass-card p-4">
                   <label className="stat-label">CPF/CNPJ</label>
-                  <Input value={clientDocument} onChange={e => setClientDocument(formatCpfCnpj(e.target.value))} placeholder="Documento" className="mt-1 bg-muted border-border text-foreground" />
+                  {hasWhitelist ? (
+                    <Input value={clientDocument} readOnly className="mt-1 bg-muted border-border text-foreground opacity-70 cursor-not-allowed" />
+                  ) : (
+                    <>
+                      <Input value={clientDocument} onChange={e => setClientDocument(formatCpfCnpj(e.target.value))} placeholder="Documento" className={`mt-1 bg-muted border-border text-foreground ${!documentValid ? 'border-destructive ring-1 ring-destructive' : ''}`} />
+                      {!documentValid && <p className="text-[11px] text-destructive mt-1">{documentDigits.length === 11 ? 'CPF inválido' : 'CNPJ inválido'}</p>}
+                    </>
+                  )}
                 </div>
                 <div className="glass-card p-4">
                   <label className="stat-label">Tipo</label>
@@ -1640,6 +1721,22 @@ export default function OperationStepperPage() {
               <div>
                 <h3 className="font-semibold text-foreground mb-2">Elegibilidade</h3>
                 <div className="space-y-2">
+                  {/* Tipo de cliente */}
+                  {(rawCampaign?.client_type as string[] || []).length > 0 && (
+                    <div><span className="text-muted-foreground text-xs">Tipo de Cliente</span><div className="flex flex-wrap gap-1 mt-1">{(rawCampaign?.client_type as string[]).map(t => <span key={t} className="engine-badge bg-primary/10 text-primary uppercase">{t}</span>)}</div></div>
+                  )}
+                  {/* Montante mínimo */}
+                  {rawCampaign?.min_order_amount && Number(rawCampaign.min_order_amount) > 0 && (
+                    <div><span className="text-muted-foreground text-xs">Montante Mínimo</span><div className="font-medium text-foreground mt-1">Configurado</div></div>
+                  )}
+                  {/* Canais ativos */}
+                  {(channelTypesConfig || []).length > 0 && (
+                    <div><span className="text-muted-foreground text-xs">Tipos de Canal (GTM)</span><div className="flex flex-wrap gap-1 mt-1">{channelTypesConfig!.map((ct: any) => <span key={ct.id} className="engine-badge bg-accent/20 text-accent-foreground">{ct.channel_type_name} ({ct.model})</span>)}</div></div>
+                  )}
+                  {/* Segmentos de canal ativos */}
+                  {(channelSegmentsConfig || []).length > 0 && (
+                    <div><span className="text-muted-foreground text-xs">Segmentos de Canal</span><div className="flex flex-wrap gap-1 mt-1">{channelSegmentsConfig!.map((cs: any) => <span key={cs.id} className="engine-badge bg-success/10 text-success">{cs.channel_segment_name}</span>)}</div></div>
+                  )}
                   {campaign.eligibility.states.length > 0 && (
                     <div><span className="text-muted-foreground text-xs">Estados</span><div className="flex flex-wrap gap-1 mt-1">{campaign.eligibility.states.map(s => <span key={s} className="engine-badge bg-primary/10 text-primary">{s}</span>)}</div></div>
                   )}
@@ -1649,8 +1746,16 @@ export default function OperationStepperPage() {
                   {campaign.eligibility.distributorSegments.length > 0 && (
                     <div><span className="text-muted-foreground text-xs">Segmentos de Distribuidor</span><div className="flex flex-wrap gap-1 mt-1">{campaign.eligibility.distributorSegments.map(s => <span key={s} className="engine-badge bg-warning/10 text-warning capitalize">{s}</span>)}</div></div>
                   )}
+                  {/* Segmentos de cliente */}
+                  {campaign.eligibility.clientSegments.length > 0 && (
+                    <div><span className="text-muted-foreground text-xs">Segmentos de Cliente</span><div className="flex flex-wrap gap-1 mt-1">{campaign.eligibility.clientSegments.map(s => <span key={s} className="engine-badge bg-muted text-foreground">{s}</span>)}</div></div>
+                  )}
                   {campaign.availableDueDates.length > 0 && (
                     <div><span className="text-muted-foreground text-xs">Vencimentos</span><div className="flex flex-wrap gap-1 mt-1">{campaign.availableDueDates.map(d => <span key={d} className="engine-badge bg-muted text-muted-foreground">{new Date(d).toLocaleDateString('pt-BR')}</span>)}</div></div>
+                  )}
+                  {/* Whitelist */}
+                  {hasWhitelist && (
+                    <div><span className="text-muted-foreground text-xs">Whitelist de Clientes</span><div className="font-medium text-foreground mt-1">{clientWhitelistFull!.length} cliente(s) autorizados</div></div>
                   )}
                   {campaign.eligibility.states.length === 0 && campaign.eligibility.mesoregions.length === 0 && (
                     <p className="text-muted-foreground text-xs">Sem restrição territorial configurada.</p>
