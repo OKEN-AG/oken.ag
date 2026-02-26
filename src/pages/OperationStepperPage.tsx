@@ -262,7 +262,7 @@ export default function OperationStepperPage() {
   const updateOperation = useUpdateOperation();
 
   // ─── Simulation Engine (server-authoritative — all calculations on backend) ───
-  const { loading: simLoading, error: simError, result: simResult, simulateDebounced } = useSimulationEngine();
+  const { loading: simLoading, error: simError, result: simResult, simulateDebounced, clearResult: clearSimResult } = useSimulationEngine();
 
   // ─── Load existing operation data ───
   useEffect(() => {
@@ -639,6 +639,7 @@ export default function OperationStepperPage() {
   const clearOrder = () => {
     setSelectedProducts(new Map());
     setFreeQuantities(new Map());
+    clearSimResult();
   };
 
   const updateDose = (productId: string, dose: number) => {
