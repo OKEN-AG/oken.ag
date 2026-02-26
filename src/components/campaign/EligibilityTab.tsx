@@ -5,6 +5,7 @@ import { Switch } from '@/components/ui/switch';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Badge } from '@/components/ui/badge';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Plus, Trash2, ChevronDown, ChevronRight } from 'lucide-react';
 import { getAllMunicipios, getUFs, getMesosByUF, getMunicipiosByMeso } from '@/data/municipios';
@@ -16,6 +17,17 @@ export type SegmentRow = {
   price_adjustment_percent: number;
 };
 
+export type ChannelMarginRow = {
+  segment: 'direto' | 'distribuidor' | 'cooperativa';
+  margin_percent: number;
+};
+
+const CHANNEL_SEGMENTS: { value: 'direto' | 'distribuidor' | 'cooperativa'; label: string }[] = [
+  { value: 'direto', label: 'Direto' },
+  { value: 'distribuidor', label: 'Distribuidor' },
+  { value: 'cooperativa', label: 'Cooperativa' },
+];
+
 const CLIENT_TYPES = [
   { value: 'pf', label: 'Pessoa Física (PF)' },
   { value: 'pj', label: 'Pessoa Jurídica (PJ)' },
@@ -26,6 +38,8 @@ type Props = {
   onSelectedCitiesChange: (cities: string[]) => void;
   segments: SegmentRow[];
   onSegmentsChange: (segments: SegmentRow[]) => void;
+  channelMargins: ChannelMarginRow[];
+  onChannelMarginsChange: (margins: ChannelMarginRow[]) => void;
   clientType: string[];
   onClientTypeChange: (types: string[]) => void;
   minOrderAmount: number;
@@ -36,6 +50,7 @@ type Props = {
 export default function EligibilityTab({
   selectedCities, onSelectedCitiesChange,
   segments, onSegmentsChange,
+  channelMargins, onChannelMarginsChange,
   clientType, onClientTypeChange,
   minOrderAmount, onMinOrderAmountChange,
   currency,
@@ -130,6 +145,24 @@ export default function EligibilityTab({
     );
   };
 
+  // Channel margin helpers
+  const addChannelMargin = (seg: 'direto' | 'distribuidor' | 'cooperativa') => {
+    if (channelMargins.some(m => m.segment === seg)) return;
+    onChannelMarginsChange([...channelMargins, { segment: seg, margin_percent: 0 }]);
+  };
+
+  const updateChannelMargin = (idx: number, value: number) => {
+    const updated = [...channelMargins];
+    updated[idx] = { ...updated[idx], margin_percent: value };
+    onChannelMarginsChange(updated);
+  };
+
+  const removeChannelMargin = (idx: number) => {
+    onChannelMarginsChange(channelMargins.filter((_, i) => i !== idx));
+  };
+
+  const availableChannels = CHANNEL_SEGMENTS.filter(cs => !channelMargins.some(m => m.segment === cs.value));
+
   return (
     <div className="space-y-6">
       {/* Client Type & Min Order */}
@@ -157,6 +190,69 @@ export default function EligibilityTab({
           />
           <p className="text-xs text-muted-foreground">Valor formatado: {formatPtBrCurrency(minOrderAmount, currency === 'USD' ? 'USD' : 'BRL')}</p>
         </div>
+      </div>
+
+      {/* Channel Margins (Canal de Distribuição) */}
+      <div className="space-y-3">
+        <Label className="text-base font-semibold">Segmentos de Canal (Margem do Distribuidor)</Label>
+        <p className="text-xs text-muted-foreground">
+          Canal de distribuição define a margem aplicada sobre o preço. Cada canal (direto, distribuidor, cooperativa) pode ter uma margem diferente.
+        </p>
+        <div className="flex gap-2">
+          {availableChannels.length > 0 && (
+            <>
+              <Select onValueChange={(v) => addChannelMargin(v as any)}>
+                <SelectTrigger className="w-[200px]"><SelectValue placeholder="Adicionar canal..." /></SelectTrigger>
+                <SelectContent>
+                  {availableChannels.map(cs => (
+                    <SelectItem key={cs.value} value={cs.value}>{cs.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </>
+          )}
+          {availableChannels.length === 0 && channelMargins.length > 0 && (
+            <span className="text-xs text-muted-foreground self-center">Todos os canais já adicionados.</span>
+          )}
+        </div>
+        {channelMargins.length > 0 ? (
+          <div className="border border-border rounded-md overflow-hidden">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Canal</TableHead>
+                  <TableHead className="w-44">Margem (%)</TableHead>
+                  <TableHead className="w-12"></TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {channelMargins.map((m, i) => (
+                  <TableRow key={m.segment}>
+                    <TableCell className="font-medium capitalize">{m.segment}</TableCell>
+                    <TableCell>
+                      <Input
+                        type="text"
+                        inputMode="decimal"
+                        value={m.margin_percent}
+                        onChange={e => updateChannelMargin(i, parsePtBrNumber(e.target.value))}
+                        className="h-8"
+                      />
+                    </TableCell>
+                    <TableCell>
+                      <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => removeChannelMargin(i)}>
+                        <Trash2 className="w-3 h-3" />
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        ) : (
+          <p className="text-sm text-muted-foreground text-center py-4 border border-dashed border-border rounded-md">
+            Nenhum canal configurado. Adicione canais para definir margens de distribuição.
+          </p>
+        )}
       </div>
 
       {/* Municipality Selection */}
@@ -230,10 +326,12 @@ export default function EligibilityTab({
         </div>
       </div>
 
-      {/* Segmentos Comerciais */}
+      {/* Client Segments (Segmentos de Cliente) */}
       <div className="space-y-3">
-        <Label className="text-base font-semibold">Segmentos Comerciais</Label>
-        <p className="text-xs text-muted-foreground">Ágio/desconto comercial, separado da margem do canal.</p>
+        <Label className="text-base font-semibold">Segmentos de Cliente (Desconto/Ágio)</Label>
+        <p className="text-xs text-muted-foreground">
+          Segmento do cliente final. Ativa desconto direto ou ágio sobre o preço normalizado. Valores positivos = ágio; negativos = desconto.
+        </p>
         <div className="flex gap-2">
           <Input placeholder="Nome do segmento" value={newSegment} onChange={e => setNewSegment(e.target.value)} onKeyDown={e => e.key === 'Enter' && (e.preventDefault(), addSegment())} />
           <Button variant="outline" onClick={addSegment}><Plus className="w-4 h-4" /></Button>
@@ -265,14 +363,13 @@ export default function EligibilityTab({
                       </Button>
                     </TableCell>
                   </TableRow>
-                        ))}
-
+                ))}
               </TableBody>
             </Table>
           </div>
         ) : (
           <p className="text-sm text-muted-foreground text-center py-4 border border-dashed border-border rounded-md">
-            Nenhum segmento criado.
+            Nenhum segmento de cliente criado.
           </p>
         )}
       </div>
