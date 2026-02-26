@@ -9,7 +9,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Plus, Trash2, ChevronDown, ChevronRight } from 'lucide-react';
 import { getAllMunicipios, getUFs, getMesosByUF, getMunicipiosByMeso } from '@/data/municipios';
-import { parsePtBrNumber, formatPtBrCurrency } from '@/lib/ptbr';
+import { NumericInput } from '@/components/NumericInput';
+import { formatPtBrCurrency } from '@/lib/ptbr';
 
 export type SegmentRow = {
   segment_name: string;
@@ -180,19 +181,12 @@ export default function EligibilityTab({
         </div>
         <div className="space-y-2">
           <Label className="text-base font-semibold">Montante Mínimo de Pedido ({currency})</Label>
-          <Input
-            type="text"
-            inputMode="decimal"
-            value={minOrderAmount}
-            onChange={e => onMinOrderAmountChange(parsePtBrNumber(e.target.value))}
-            placeholder="0,00"
-            className="max-w-xs"
-          />
+          <NumericInput value={minOrderAmount} onChange={onMinOrderAmountChange} decimals={2} min={0} className="max-w-xs" />
           <p className="text-xs text-muted-foreground">Valor formatado: {formatPtBrCurrency(minOrderAmount, currency === 'USD' ? 'USD' : 'BRL')}</p>
         </div>
       </div>
 
-      {/* Channel Margins (Canal de Distribuição) */}
+      {/* Channel Margins (Tipo de Canal de Acesso - GTM) */}
       <div className="space-y-3">
         <Label className="text-base font-semibold">Tipo de Canal de Acesso - GTM</Label>
         <p className="text-xs text-muted-foreground">
@@ -200,16 +194,14 @@ export default function EligibilityTab({
         </p>
         <div className="flex gap-2">
           {availableChannels.length > 0 && (
-            <>
-              <Select onValueChange={(v) => addChannelMargin(v as any)}>
-                <SelectTrigger className="w-[200px]"><SelectValue placeholder="Adicionar canal..." /></SelectTrigger>
-                <SelectContent>
-                  {availableChannels.map(cs => (
-                    <SelectItem key={cs.value} value={cs.value}>{cs.label}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </>
+            <Select onValueChange={(v) => addChannelMargin(v as any)}>
+              <SelectTrigger className="w-[200px]"><SelectValue placeholder="Adicionar canal..." /></SelectTrigger>
+              <SelectContent>
+                {availableChannels.map(cs => (
+                  <SelectItem key={cs.value} value={cs.value}>{cs.label}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           )}
           {availableChannels.length === 0 && channelMargins.length > 0 && (
             <span className="text-xs text-muted-foreground self-center">Todos os canais já adicionados.</span>
@@ -230,13 +222,7 @@ export default function EligibilityTab({
                   <TableRow key={m.segment}>
                     <TableCell className="font-medium capitalize">{m.segment}</TableCell>
                     <TableCell>
-                      <Input
-                        type="text"
-                        inputMode="decimal"
-                        value={m.margin_percent}
-                        onChange={e => updateChannelMargin(i, parsePtBrNumber(e.target.value))}
-                        className="h-8"
-                      />
+                      <NumericInput value={m.margin_percent} onChange={v => updateChannelMargin(i, v)} decimals={2} min={-100} max={100} className="h-8" />
                     </TableCell>
                     <TableCell>
                       <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => removeChannelMargin(i)}>
@@ -250,7 +236,7 @@ export default function EligibilityTab({
           </div>
         ) : (
           <p className="text-sm text-muted-foreground text-center py-4 border border-dashed border-border rounded-md">
-            Nenhum canal configurado. Adicione canais para definir margens de distribuição.
+            Nenhum canal configurado. Adicione canais para definir ajustes de lista.
           </p>
         )}
       </div>
@@ -353,7 +339,7 @@ export default function EligibilityTab({
                       <Switch checked={s.active} onCheckedChange={v => updateSegment(i, 'active', v)} />
                     </TableCell>
                     <TableCell>
-                      <Input type="text" inputMode="decimal" value={s.price_adjustment_percent} onChange={e => updateSegment(i, 'price_adjustment_percent', parsePtBrNumber(e.target.value))} className="h-8" />
+                      <NumericInput value={s.price_adjustment_percent} onChange={v => updateSegment(i, 'price_adjustment_percent', v)} decimals={2} min={-100} max={100} className="h-8" />
                     </TableCell>
                     <TableCell>
                       <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => onSegmentsChange(segments.filter((_, j) => j !== i))}>
