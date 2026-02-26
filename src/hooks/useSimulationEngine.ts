@@ -89,6 +89,7 @@ export interface SimulationResult {
   activatedDiscount: number;
   complementaryDiscount: number;
   discountProgress: number;
+  moneyCurrency: 'BRL' | 'USD';
   campaignConfig: CampaignConfig;
   paymentMethods: PaymentMethodOption[];
   segmentOptions: SegmentOption[];
@@ -110,7 +111,9 @@ export interface SimulateInput {
   campaignId: string;
   selections: SimulationSelection[];
   segment: string;
-  dueMonths: number;
+  channelSegment: 'direto' | 'distribuidor' | 'cooperativa';
+  dueMonths?: number;
+  dueDate?: string;
   paymentMethodId?: string;
   commodityCode?: string;
   port?: string;

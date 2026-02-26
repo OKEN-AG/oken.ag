@@ -465,7 +465,7 @@ export default function OperationStepperPage() {
       overrideQuantity: quantityMode === 'livre' ? (freeQuantities.get(id) || undefined) : undefined,
     }));
     simulateDebounced({
-      campaignId: selectedCampaignId, selections: inputSelections, segment: segment || channelEnum, dueMonths,
+      campaignId: selectedCampaignId, selections: inputSelections, segment: segment || channelEnum, channelSegment: channelEnum, dueMonths, dueDate: selectedDueDate || undefined,
       paymentMethodId: selectedPaymentMethod || undefined,
       commodityCode: selectedCommodity || undefined,
       port: port || undefined, freightOrigin: freightOrigin || undefined,
@@ -479,7 +479,7 @@ export default function OperationStepperPage() {
         clientType, clientDocument: clientDocument || undefined, segment,
       },
     });
-  }, [selectedCampaignId, selectedProducts, area, segment, channelEnum, dueMonths, selectedPaymentMethod,
+  }, [selectedCampaignId, selectedProducts, area, segment, channelEnum, dueMonths, selectedDueDate, selectedPaymentMethod,
       selectedCommodity, port, freightOrigin, hasContract, userPrice, showInsurance,
       selectedBuyerId, contractPriceType, performanceIndex, clientState, selectedCityName,
       clientCityCode, usesIbgeCityEligibility, clientType, clientDocument, quantityMode, freeQuantities]);
@@ -778,8 +778,9 @@ export default function OperationStepperPage() {
   const goNext = () => { if (currentStep < visibleSteps.length - 1 && canProceed(visibleSteps[currentStep].id)) setCurrentStep(currentStep + 1); };
   const goPrev = () => { if (currentStep > 0) setCurrentStep(currentStep - 1); };
 
-  // Montantes do pedido (gross/net/margem/juros) são SEMPRE em BRL pois o motor já converte USD→BRL
-  const formatCurrency = (v: number) => v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+  // Montantes do pedido usam a moeda de saída informada pelo motor (server-authoritative)
+  const moneyCurrency = simResult?.moneyCurrency || 'BRL';
+  const formatCurrency = (v: number) => v.toLocaleString('pt-BR', { style: 'currency', currency: moneyCurrency });
   const currentStepDef = visibleSteps[currentStep];
 
   if (loadingCampaigns) return <div className="p-6"><Skeleton className="h-64 w-full" /></div>;
@@ -902,7 +903,13 @@ export default function OperationStepperPage() {
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div className="glass-card p-4">
                   <label className="stat-label">Canal</label>
-                  <Select value={segment} onValueChange={v => setSegment(v)}>
+                  <Select value={segment} onValueChange={v => {
+                    setSegment(v);
+                    const normalized = v.toLowerCase();
+                    if (normalized.includes('direto')) setChannelEnum('direto');
+                    else if (normalized.includes('cooper')) setChannelEnum('cooperativa');
+                    else setChannelEnum('distribuidor');
+                  }}>
                     <SelectTrigger className="mt-1 bg-muted border-border text-foreground"><SelectValue /></SelectTrigger>
                     <SelectContent>{segmentOptions.map(o => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}</SelectContent>
                   </Select>

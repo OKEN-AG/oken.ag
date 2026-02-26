@@ -199,7 +199,7 @@ function applyComboCascade(
 
 // ─── PRICING NORMALIZATION ENGINE ───
 function calculatePricing(
-  product: ProductRow, campaign: any, margins: any[], segment: string,
+  product: ProductRow, campaign: any, margins: any[], channelSegment: string,
   dueMonths: number, quantity: number,
   opts: { paymentMethodMarkup: number; segmentAdjustmentPercent: number }
 ): PricingResultItem {
@@ -218,8 +218,8 @@ function calculatePricing(
   const interestMultiplier = (!isTermPrice && product.price_type === 'vista' && dueMonths > 0)
     ? Math.pow(1 + campaign.interest_rate / 100, dueMonths) - 1 : 0;
 
-  const margin = margins.find((m: any) => m.segment === segment);
-  const marginPercent = (!product.includes_margin && margin && segment !== 'direto')
+  const margin = margins.find((m: any) => m.segment === channelSegment);
+  const marginPercent = (!product.includes_margin && margin && channelSegment !== 'direto')
     ? margin.margin_percent / 100 : 0;
 
   const segAdj = (opts.segmentAdjustmentPercent || 0) / 100;
@@ -274,15 +274,23 @@ function calculateGrossToNet(
   }
 
   let comboDiscount = 0;
+  const maxActivatedHectares = activatedMain.reduce((max, ca) => Math.max(max, ca.activatedHectares || 0), 0);
+
   for (const pr of pricingResults) {
     const sel = selections.find(s => s.productId === pr.productId);
     if (!sel) continue;
     const ref = (sel.ref || '').toUpperCase().trim();
+
     if (mainEligibleRefs.has(ref) && mainDiscountPercent > 0) {
       comboDiscount += pr.subtotal * mainDiscountPercent / 100;
     }
+
     if (compEligibleRefs.has(ref) && compDiscountPercent > 0) {
-      comboDiscount += pr.subtotal * compDiscountPercent / 100;
+      const activatedHectares = maxActivatedHectares || 0;
+      const proportionalRatio = sel.areaHectares > 0
+        ? Math.min(1, Math.max(0, activatedHectares / sel.areaHectares))
+        : 0;
+      comboDiscount += pr.subtotal * (compDiscountPercent / 100) * proportionalRatio;
     }
   }
 
@@ -462,7 +470,7 @@ serve(async (req: Request) => {
       // ═══════════════════════════════════════════
       case 'simulate': {
         const {
-          campaignId, selections: inputSelections, segment, dueMonths,
+          campaignId, selections: inputSelections, segment, channelSegment, dueMonths, dueDate,
           paymentMethodId, commodityCode, port: portName,
           freightOrigin, hasContract: hasExistingContract, userOverridePrice,
           showInsurance, clientContext, barterDiscountPercent,
@@ -472,7 +480,8 @@ serve(async (req: Request) => {
         if (!campaignId) throw new Error('campaignId is required');
         if (!inputSelections?.length) throw new Error('selections are required (array of {productId, dosePerHectare, areaHectares, overrideQuantity?})');
         if (!segment) throw new Error('segment is required');
-        if (dueMonths == null) throw new Error('dueMonths is required');
+        if (!channelSegment) throw new Error('channelSegment is required');
+        if (dueMonths == null && !dueDate) throw new Error('dueMonths or dueDate is required');
 
         // 1. Fetch campaign (authoritative)
         const { data: campaign, error: cErr } = await supabase.from('campaigns').select('*').eq('id', campaignId).single();
@@ -526,6 +535,17 @@ serve(async (req: Request) => {
         const comboCascade = applyComboCascade(comboDefinitions, agronomicSelections);
 
         // 6. Pricing
+        const dueMonthsFinal = (() => {
+          if (dueDate) {
+            const due = new Date(`${dueDate}T00:00:00`);
+            if (!Number.isNaN(due.getTime())) {
+              const diffDays = Math.max(Math.round((due.getTime() - Date.now()) / 86400000), 1);
+              return Math.max(Math.round(diffDays / 30), 1);
+            }
+          }
+          return Math.max(Math.round(Number(dueMonths || 0)), 1);
+        })();
+
         const segmentMatch = segments.find((s: any) => s.segment_name.toLowerCase() === segment.toLowerCase());
         const segmentAdjustmentPercent = segmentMatch?.price_adjustment_percent || 0;
         const selectedPM = paymentMethodId ? paymentMethods.find((pm: any) => pm.id === paymentMethodId) : paymentMethods[0];
@@ -533,7 +553,7 @@ serve(async (req: Request) => {
 
         const pricingResults: PricingResultItem[] = agronomicSelections.map(sel => {
           const product = productMap.get(sel.productId)!;
-          return calculatePricing(product, campaign, margins, segment, dueMonths, sel.roundedQuantity, { paymentMethodMarkup, segmentAdjustmentPercent });
+          return calculatePricing(product, campaign, margins, channelSegment, dueMonthsFinal, sel.roundedQuantity, { paymentMethodMarkup, segmentAdjustmentPercent });
         });
 
         // 7. Gross-to-Net
@@ -626,6 +646,7 @@ serve(async (req: Request) => {
           activatedDiscount,
           complementaryDiscount,
           discountProgress: maxDiscount > 0 ? (activatedDiscount / maxDiscount) * 100 : 0,
+          moneyCurrency: 'BRL',
           campaignConfig: {
             currency: campaign.currency,
             target: campaign.target,
