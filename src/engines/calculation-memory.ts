@@ -53,7 +53,11 @@ export function calculateInputMemory(p: InputMemoryParams) {
   const valorPontaComFee = valorPontaSemFee * (1 + p.feeOkenPct);
 
   const precoLiquido = p.precoBrutoCommodity * (1 + p.descontoImpostosPct);
+<<<<<<< codex/generalize-codebase-to-order-first-architecture-17w753
   const periodoAteRepasseAnos = yearsBetween(p.dataEntrega, p.dataPagamento);
+=======
+  const periodoAteRepasseAnos = yearsBetween(p.dataRepasse, p.dataPagamento);
+>>>>>>> main
   const precoEntregaAjustado = pv(p.rendimentoAntecipacaoAa, periodoAteRepasseAnos, precoLiquido);
 
   const paridadeRealSacas = valorPontaComFee / precoEntregaAjustado;
@@ -103,7 +107,11 @@ export function calculateCommodityDebtMemory(p: CommodityDebtMemoryParams) {
   const valorPontaComFee = valorPontaSemFee * (1 + p.feeOkenPct);
 
   const precoLiquido = p.precoBrutoCommodity * (1 + p.descontoImpostosPct);
+<<<<<<< codex/generalize-codebase-to-order-first-architecture-17w753
   const periodoAteRepasseAnos = yearsBetween(p.dataEntrega, p.dataPagamento);
+=======
+  const periodoAteRepasseAnos = yearsBetween(p.dataRepasse, p.dataPagamento);
+>>>>>>> main
   const precoEntregaAjustado = pv(p.rendimentoAntecipacaoAa, periodoAteRepasseAnos, precoLiquido);
 
   const paridadeRealSacas = valorPontaComFee / precoEntregaAjustado;
