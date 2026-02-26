@@ -63,17 +63,6 @@ export default function ProductPriceBreakdownDialog({ open, onOpenChange, produc
   const groups: VariableGroup[] = [];
 
   // --- AND groups (always apply together) ---
-  if (campaign?.interest_rate > 0) {
-    groups.push({
-      groupLabel: 'Juros da Campanha',
-      relation: 'and',
-      variables: [{
-        label: `Juros (${campaign.interest_rate}% a.m. × 12)`,
-        impact: campaign.interest_rate * 12,
-        type: 'markup',
-      }],
-    });
-  }
 
   if (campaign?.max_discount_internal > 0) {
     groups.push({
