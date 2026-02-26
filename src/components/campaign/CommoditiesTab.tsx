@@ -847,6 +847,11 @@ export default function CommoditiesTab({ campaignId, campaignCommodities = [] }:
 
   const defaultForm = { exchange: 'CBOT', contract: 'K', exchange_price: 0, exchange_rate_bolsa: 5.40, exchange_rate_option: 5.40, option_cost: 0, security_delta_market: 2, security_delta_freight: 15, stop_loss: 0, volatility: 25, risk_free_rate: 0.1175 };
   const f = pricingForm || defaultForm;
+  const toPtBrInputValue = (value: unknown) => {
+    const num = Number(value);
+    if (!Number.isFinite(num) || num === 0) return '';
+    return String(value).replace('.', ',');
+  };
 
   return (
     <div className="space-y-6">
@@ -881,32 +886,39 @@ export default function CommoditiesTab({ campaignId, campaignCommodities = [] }:
             <Label className="font-semibold">Precificação - {commodityLabelByValue.get(selectedCommodity) || selectedCommodity}</Label>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
               {[
-                ['Bolsa', 'exchange', f.exchange, 'text'],
-                ['Contrato', 'contract', f.contract, 'text'],
-                ['Preço Bolsa (USD)', 'exchange_price', f.exchange_price, 'number'],
-                ['Câmbio Bolsa', 'exchange_rate_bolsa', f.exchange_rate_bolsa, 'number'],
-                ['Câmbio Opção', 'exchange_rate_option', f.exchange_rate_option, 'number'],
-                ['Custo Opção', 'option_cost', f.option_cost, 'number'],
-                ['Delta Mercado (%)', 'security_delta_market', f.security_delta_market, 'number'],
-                ['Delta Frete (R$/sc)', 'security_delta_freight', f.security_delta_freight, 'number'],
-                ['Stop Loss (%)', 'stop_loss', f.stop_loss, 'number'],
-                ['Volatilidade (%)', 'volatility', f.volatility, 'number'],
-                ['Taxa Livre Risco (SELIC)', 'risk_free_rate', f.risk_free_rate ?? 0.1175, 'number'],
-              ].map(([label, key, val, type]) => (
+                { label: 'Bolsa', key: 'exchange', val: f.exchange, type: 'text', placeholder: 'Ex: CBOT' },
+                { label: 'Contrato', key: 'contract', val: f.contract, type: 'text', placeholder: 'Ex: K' },
+                { label: 'Preço Chicago (USD/bu)', key: 'exchange_price', val: f.exchange_price, type: 'number', placeholder: 'Ex: 10,50' },
+                { label: 'Câmbio Bolsa (R$/USD)', key: 'exchange_rate_bolsa', val: f.exchange_rate_bolsa, type: 'number', placeholder: 'Ex: 5,40' },
+                { label: 'Câmbio Opção (R$/USD)', key: 'exchange_rate_option', val: f.exchange_rate_option, type: 'number', placeholder: 'Ex: 5,40' },
+                { label: 'Custo Opção (USD/bu)', key: 'option_cost', val: f.option_cost, type: 'number', placeholder: 'Ex: 0,35' },
+                { label: 'Delta Mercado (%)', key: 'security_delta_market', val: f.security_delta_market, type: 'number', placeholder: 'Ex: 2,0' },
+                { label: 'Delta Frete (%)', key: 'security_delta_freight', val: f.security_delta_freight, type: 'number', placeholder: 'Ex: 15,0' },
+                { label: 'Stop Loss (%)', key: 'stop_loss', val: f.stop_loss, type: 'number', placeholder: 'Ex: 3,0' },
+                { label: 'Volatilidade (%)', key: 'volatility', val: f.volatility, type: 'number', placeholder: 'Ex: 25,0' },
+                { label: 'Taxa Livre de Risco (SELIC decimal a.a.)', key: 'risk_free_rate', val: f.risk_free_rate ?? 0.1175, type: 'number', placeholder: 'Ex: 0,1175' },
+              ].map(({ label, key, val, type, placeholder }) => (
                 <div key={key as string} className="space-y-1">
                   <Label className="text-xs">{label as string}</Label>
-                  <Input type={type as string} step="0.01" value={val as any} onChange={e => onPricingField(key as string, type === 'number' ? parsePtBrNumber(e.target.value) : e.target.value)} />
+                  <Input
+                    type="text"
+                    inputMode={type === 'number' ? 'decimal' : undefined}
+                    value={type === 'number' ? toPtBrInputValue(val) : (val as any)}
+                    placeholder={placeholder as string}
+                    onChange={e => onPricingField(key as string, type === 'number' ? parsePtBrNumber(e.target.value) : e.target.value)}
+                  />
                 </div>
               ))}
             </div>
+            <p className="text-xs text-muted-foreground">Use vírgula para decimais (formato PT-BR). Campos percentuais devem ser informados em %.</p>
             <div className="space-y-2">
               <Label className="text-sm font-medium">Basis por Porto</Label>
               <div className="flex gap-2 items-end">
                 <div className="flex-1 space-y-1"><Label className="text-xs">Porto</Label><Input value={newPort} onChange={e => setNewPort(e.target.value)} placeholder="Ex: Paranaguá" /></div>
-                <div className="w-32 space-y-1"><Label className="text-xs">Basis (R$/sc)</Label><Input type="number" step="0.1" value={newBasis} onChange={e => setNewBasis(parsePtBrNumber(e.target.value))} /></div>
+                <div className="w-32 space-y-1"><Label className="text-xs">Basis (R$/sc)</Label><Input type="text" inputMode="decimal" value={toPtBrInputValue(newBasis)} placeholder="Ex: 1,20" onChange={e => setNewBasis(parsePtBrNumber(e.target.value))} /></div>
                 <Button variant="outline" size="sm" onClick={addBasisPort}><Plus className="w-3 h-3" /></Button>
               </div>
-              {basisPorts.length > 0 && <div className="flex gap-2 flex-wrap">{basisPorts.map((bp, i) => (<Badge key={i} variant="secondary" className="cursor-pointer" onClick={() => setBasisPorts(prev => prev.filter((_, j) => j !== i))}>{bp.port}: R${bp.basis}/sc ×</Badge>))}</div>}
+              {basisPorts.length > 0 && <div className="flex gap-2 flex-wrap">{basisPorts.map((bp, i) => (<Badge key={i} variant="secondary" className="cursor-pointer" onClick={() => setBasisPorts(prev => prev.filter((_, j) => j !== i))}>{bp.port}: {formatPtBrCurrency(Number(bp.basis || 0), 'BRL')}/sc ×</Badge>))}</div>}
             </div>
             <Button onClick={savePricing} disabled={upsertPricing.isPending}><Save className="w-4 h-4 mr-1" /> Salvar Precificação</Button>
           </div>
