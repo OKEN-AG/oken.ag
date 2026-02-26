@@ -348,7 +348,7 @@ export default function OperationStepperPage() {
     queryKey: ['campaign-channel-types-preview', selectedCampaignId],
     enabled: !!selectedCampaignId,
     queryFn: async () => {
-      const { data } = await (supabase as any).from('campaign_channel_types').select('*').eq('campaign_id', selectedCampaignId).eq('active', true);
+      const { data } = await (supabase as any).from('campaign_channel_types').select('*').eq('campaign_id', selectedCampaignId);
       return (data || []) as any[];
     },
   });
@@ -366,7 +366,7 @@ export default function OperationStepperPage() {
     queryKey: ['campaign-channel-segments', selectedCampaignId],
     enabled: !!selectedCampaignId,
     queryFn: async () => {
-      const { data } = await (supabase as any).from('campaign_channel_segments').select('*').eq('campaign_id', selectedCampaignId).eq('active', true);
+      const { data } = await (supabase as any).from('campaign_channel_segments').select('*').eq('campaign_id', selectedCampaignId);
       return (data || []) as any[];
     },
   });
@@ -1725,18 +1725,22 @@ export default function OperationStepperPage() {
                   {(rawCampaign?.client_type as string[] || []).length > 0 && (
                     <div><span className="text-muted-foreground text-xs">Tipo de Cliente</span><div className="flex flex-wrap gap-1 mt-1">{(rawCampaign?.client_type as string[]).map(t => <span key={t} className="engine-badge bg-primary/10 text-primary uppercase">{t}</span>)}</div></div>
                   )}
-                  {/* Montante mínimo */}
-                  {rawCampaign?.min_order_amount && Number(rawCampaign.min_order_amount) > 0 && (
-                    <div><span className="text-muted-foreground text-xs">Montante Mínimo</span><div className="font-medium text-foreground mt-1">Configurado</div></div>
-                  )}
-                  {/* Canais ativos */}
-                  {(channelTypesConfig || []).length > 0 && (
-                    <div><span className="text-muted-foreground text-xs">Tipos de Canal (GTM)</span><div className="flex flex-wrap gap-1 mt-1">{channelTypesConfig!.map((ct: any) => <span key={ct.id} className="engine-badge bg-accent/20 text-accent-foreground">{ct.channel_type_name} ({ct.model})</span>)}</div></div>
-                  )}
-                  {/* Segmentos de canal ativos */}
-                  {(channelSegmentsConfig || []).length > 0 && (
-                    <div><span className="text-muted-foreground text-xs">Segmentos de Canal</span><div className="flex flex-wrap gap-1 mt-1">{channelSegmentsConfig!.map((cs: any) => <span key={cs.id} className="engine-badge bg-success/10 text-success">{cs.channel_segment_name}</span>)}</div></div>
-                  )}
+                   {/* Montante mínimo */}
+                   {rawCampaign?.min_order_amount && Number(rawCampaign.min_order_amount) > 0 && (
+                     <div><span className="text-muted-foreground text-xs">Montante Mínimo</span><div className="font-medium text-foreground mt-1">{new Intl.NumberFormat('pt-BR', { style: 'currency', currency: (campaign.currency || 'BRL') === 'USD' ? 'USD' : 'BRL' }).format(Number(rawCampaign.min_order_amount))}</div></div>
+                   )}
+                   {/* Canais — todos, com indicação ativo/inativo */}
+                   {(channelTypesConfig || []).length > 0 && (
+                     <div><span className="text-muted-foreground text-xs">Tipos de Canal (GTM)</span><div className="flex flex-wrap gap-1 mt-1">{channelTypesConfig!.map((ct: any) => <span key={ct.id} className={`engine-badge ${ct.active ? 'bg-accent/20 text-accent-foreground' : 'bg-muted text-muted-foreground line-through opacity-60'}`}>{ct.channel_type_name}{ct.model ? ` (${ct.model})` : ''}{ct.active ? '' : ' — inativo'}</span>)}</div></div>
+                   )}
+                   {/* Segmentos de canal — todos */}
+                   {(channelSegmentsConfig || []).length > 0 && (
+                     <div><span className="text-muted-foreground text-xs">Segmentos de Canal</span><div className="flex flex-wrap gap-1 mt-1">{channelSegmentsConfig!.map((cs: any) => <span key={cs.id} className={`engine-badge ${cs.active ? 'bg-success/10 text-success' : 'bg-muted text-muted-foreground line-through opacity-60'}`}>{cs.channel_segment_name}{cs.active ? '' : ' — inativo'}</span>)}</div></div>
+                   )}
+                   {/* Segmentos comerciais — todos */}
+                   {(campaignSegments || []).length > 0 && (
+                     <div><span className="text-muted-foreground text-xs">Segmentos Comerciais</span><div className="flex flex-wrap gap-1 mt-1">{campaignSegments!.map((s: any) => <span key={s.id} className={`engine-badge ${s.active ? 'bg-info/10 text-info' : 'bg-muted text-muted-foreground line-through opacity-60'}`}>{s.segment_name}{s.active ? '' : ' — inativo'}</span>)}</div></div>
+                   )}
                   {campaign.eligibility.states.length > 0 && (
                     <div><span className="text-muted-foreground text-xs">Estados</span><div className="flex flex-wrap gap-1 mt-1">{campaign.eligibility.states.map(s => <span key={s} className="engine-badge bg-primary/10 text-primary">{s}</span>)}</div></div>
                   )}
