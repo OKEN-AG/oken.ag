@@ -103,9 +103,14 @@ export function applyComboCascadeWithLedger(
 
   // Track remaining quantity per REF (starts with total from selections)
   const remainingQty = new Map<string, number>();
+  // Track area per REF (for implied-dose checks)
+  const areaLookup = new Map<string, number>();
   for (const sel of selections) {
     const ref = getSelectionRef(sel);
-    if (ref) remainingQty.set(ref, (remainingQty.get(ref) || 0) + sel.roundedQuantity);
+    if (ref) {
+      remainingQty.set(ref, (remainingQty.get(ref) || 0) + sel.roundedQuantity);
+      if (!areaLookup.has(ref)) areaLookup.set(ref, sel.areaHectares || 0);
+    }
   }
 
   // Build dose lookup: REF -> dosePerHectare (from selections)
@@ -135,10 +140,23 @@ export function applyComboCascadeWithLedger(
       const doseMin = rule.minDosePerHa;
       const doseMax = rule.maxDosePerHa;
 
-      // Check dose is in range (use actual selection dose)
-      const selectionDose = doseLookup.get(ruleRef) || 0;
-      if (selectionDose < doseMin || selectionDose > doseMax) {
-        allPresent = false; break;
+      // Check eligibility: volume must be achievable within dose range for the area.
+      // Implied dose = volume / area. Accept if implied dose falls within [doseMin, doseMax],
+      // OR if volume >= area * doseMin (enough product to cover at minimum dose).
+      const area = areaLookup.get(ruleRef) || 0;
+      if (area > 0 && doseMin > 0) {
+        const impliedDose = volume / area;
+        // Use a 1% tolerance for floating-point edge cases
+        if (impliedDose < doseMin * 0.99 || (doseMax > 0 && impliedDose > doseMax * 1.01)) {
+          // Volume is outside achievable range for this combo rule
+          allPresent = false; break;
+        }
+      } else {
+        // Fallback: check stored dose from selection
+        const selectionDose = doseLookup.get(ruleRef) || 0;
+        if (selectionDose < doseMin || selectionDose > doseMax) {
+          allPresent = false; break;
+        }
       }
 
       // J = volume / doseMin (area equivalent)
@@ -221,8 +239,14 @@ export function applyComboCascadeWithLedger(
       const volume = remainingQty.get(ruleRef) || 0;
       if (volume <= 0) continue;
 
-      const selectionDose = doseLookup.get(ruleRef) || 0;
-      if (selectionDose < rule.minDosePerHa || selectionDose > rule.maxDosePerHa) continue;
+      const area = areaLookup.get(ruleRef) || 0;
+      if (area > 0 && rule.minDosePerHa > 0) {
+        const impliedDose = volume / area;
+        if (impliedDose < rule.minDosePerHa * 0.99 || (rule.maxDosePerHa > 0 && impliedDose > rule.maxDosePerHa * 1.01)) continue;
+      } else {
+        const selectionDose = doseLookup.get(ruleRef) || 0;
+        if (selectionDose < rule.minDosePerHa || selectionDose > rule.maxDosePerHa) continue;
+      }
 
       matchedRefs.push(ruleRef);
       compDetails.push({
