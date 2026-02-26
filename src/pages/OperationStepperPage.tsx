@@ -6,7 +6,7 @@ import { useActiveCampaigns, useCampaignData } from '@/hooks/useActiveCampaign';
 import { useCommodityOptions } from '@/hooks/useCommoditiesMasterData';
 import { normalizeCommodityCode } from '@/lib/commodity';
 import { useOperation, useOperationItems, useOperationDocuments, useCreateOperation, useCreateOperationItems, useCreateOperationLog, useReplaceOperationItems, useUpdateOperation } from '@/hooks/useOperations';
-import { getSuggestedDoseForRef } from '@/engines/combo-cascade';
+import { getSuggestedDoseForRef, applyComboCascade, getMaxPossibleDiscount, getActivatedDiscount, getComplementaryDiscount } from '@/engines/combo-cascade';
 import { useSimulationEngine } from '@/hooks/useSimulationEngine';
 import { formatCpfCnpj, parsePtBrNumber } from '@/lib/ptbr';
 import { buildWagonStages, canAdvance, getBlockingReason } from '@/engines/orchestrator';
@@ -666,11 +666,32 @@ export default function OperationStepperPage() {
     }));
   }, [simResult?.selections, products]);
 
-  const comboActivations = simResult?.comboActivations ?? [];
-  const maxDiscount = simResult?.maxDiscount ?? 0;
-  const activatedDiscount = simResult?.activatedDiscount ?? 0;
-  const complementaryDiscount = simResult?.complementaryDiscount ?? 0;
-  const discountProgress = simResult?.discountProgress ?? 0;
+  // Local combo cascade for instant feedback
+  const localComboResult = useMemo(() => {
+    if (combos.length === 0 || selectedProducts.size === 0) return null;
+    const localSels: AgronomicSelection[] = Array.from(selectedProducts.entries()).map(([id, dose]) => {
+      const prod = products.find(p => p.id === id);
+      if (!prod) return null;
+      const qty = quantityMode === 'livre' ? (freeQuantities.get(id) || Math.ceil(area * dose)) : Math.ceil(area * dose);
+      return {
+        productId: id, ref: prod.ref || '', product: prod,
+        dosePerHectare: dose, areaHectares: area,
+        rawQuantity: qty, roundedQuantity: qty, boxes: 0, pallets: 0,
+      };
+    }).filter(Boolean) as AgronomicSelection[];
+    const acts = applyComboCascade(combos, localSels);
+    const maxD = getMaxPossibleDiscount(combos);
+    const actD = getActivatedDiscount(acts);
+    const compD = getComplementaryDiscount(acts);
+    return { activations: acts, maxDiscount: maxD, activatedDiscount: actD, complementaryDiscount: compD, progress: maxD > 0 ? (actD / maxD) * 100 : 0 };
+  }, [combos, selectedProducts, products, area, quantityMode, freeQuantities]);
+
+  // Prefer local instant values, fallback to backend
+  const comboActivations = localComboResult?.activations ?? simResult?.comboActivations ?? [];
+  const maxDiscount = localComboResult?.maxDiscount ?? simResult?.maxDiscount ?? 0;
+  const activatedDiscount = localComboResult?.activatedDiscount ?? simResult?.activatedDiscount ?? 0;
+  const complementaryDiscount = localComboResult?.complementaryDiscount ?? simResult?.complementaryDiscount ?? 0;
+  const discountProgress = localComboResult?.progress ?? simResult?.discountProgress ?? 0;
 
   // Combo recommendations — use local selectedProducts for instant feedback, fall back to backend selections
   const localSelections = useMemo(() => {
