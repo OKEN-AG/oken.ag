@@ -32,6 +32,8 @@ export interface EligibilityInput {
   blockIneligible?: boolean;
   /** Campaign allowed client types (from campaigns.client_type) */
   campaignClientTypes?: string[];
+  /** Campaign/order currency for user-facing messages */
+  currency?: 'BRL' | 'USD';
 }
 
 export interface EligibilityResult {
@@ -61,26 +63,43 @@ function checkGeoEligibility(
   eligibility: Campaign['eligibility']
 ): { geo_ok: boolean; state_ok: boolean; mesoregion_ok: boolean; city_ok: boolean; warnings: string[] } {
   const warnings: string[] = [];
+  const normalize = (value?: string) => String(value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .trim()
+    .toLowerCase();
+
+  const normalizedState = String(input.state || '').trim().toUpperCase();
+  const normalizedMesoregion = normalize(input.mesoregion);
+  const normalizedCity = normalize(input.city);
   
   // State check
   const hasStateFilter = eligibility.states.length > 0;
-  const state_ok = !hasStateFilter || !input.state || eligibility.states.includes(input.state);
-  if (!state_ok) warnings.push(`Estado "${input.state}" não elegível`);
+  const state_ok = !hasStateFilter || !input.state || eligibility.states.some(uf => String(uf || '').trim().toUpperCase() === normalizedState);
 
   // Mesoregion check
   const hasMesoFilter = eligibility.mesoregions.length > 0;
   const mesoregion_ok = !hasMesoFilter || !input.mesoregion || 
-    eligibility.mesoregions.some(m => m.toLowerCase() === input.mesoregion!.toLowerCase());
-  if (!mesoregion_ok) warnings.push(`Mesorregião "${input.mesoregion}" não elegível`);
+    eligibility.mesoregions.some(m => normalize(m) === normalizedMesoregion);
 
   // City check
   const hasCityFilter = eligibility.cities.length > 0;
   const city_ok = !hasCityFilter || !input.city || 
-    eligibility.cities.some(c => c.toLowerCase() === input.city!.toLowerCase());
-  if (!city_ok) warnings.push(`Cidade "${input.city}" não elegível`);
+    eligibility.cities.some(c => normalize(c) === normalizedCity);
 
-  // Geo is OK if all configured levels pass
-  const geo_ok = state_ok && mesoregion_ok && city_ok;
+  // Precedence: city > mesoregion > state.
+  // If a more specific level is configured, it becomes the decisive constraint.
+  let geo_ok = true;
+  if (hasCityFilter) {
+    geo_ok = city_ok;
+    if (!city_ok) warnings.push(`Cidade "${input.city}" não elegível`);
+  } else if (hasMesoFilter) {
+    geo_ok = mesoregion_ok;
+    if (!mesoregion_ok) warnings.push(`Mesorregião "${input.mesoregion}" não elegível`);
+  } else if (hasStateFilter) {
+    geo_ok = state_ok;
+    if (!state_ok) warnings.push(`Estado "${input.state}" não elegível`);
+  }
 
   return { geo_ok, state_ok, mesoregion_ok, city_ok, warnings };
 }
@@ -117,7 +136,11 @@ export function checkEligibility(
   // 4. Minimum order amount
   const minAmount = input.minOrderAmount ?? 0;
   const min_ok = minAmount <= 0 || !input.orderAmount || input.orderAmount >= minAmount;
-  if (!min_ok) warnings.push(`Pedido mínimo: R$ ${minAmount.toLocaleString('pt-BR')}. Atual: R$ ${(input.orderAmount || 0).toLocaleString('pt-BR')}`);
+  if (!min_ok) {
+    const currency = input.currency === 'USD' ? 'USD' : 'BRL';
+    const formatter = new Intl.NumberFormat('pt-BR', { style: 'currency', currency });
+    warnings.push(`Pedido mínimo: ${formatter.format(minAmount)}. Atual: ${formatter.format(input.orderAmount || 0)}`);
+  }
 
   // 5. Whitelist (always last — AND filter)
   const hasWhitelist = (input.whitelist || []).length > 0;
