@@ -1132,25 +1132,54 @@ export default function OperationStepperPage() {
                       {[...comboActivations]
                         .sort((a, b) => b.discountPercent - a.discountPercent)
                         .map(ca => {
-                          const missingRefs = ca.applied ? [] : (combos.find(c => c.id === ca.comboId)?.products || [])
+                          const comboDef = combos.find(c => c.id === ca.comboId);
+                          const comboProducts = comboDef?.products || [];
+                          const missingRefs = ca.applied ? [] : comboProducts
                             .filter((cp: any) => !selections.some(s => (s.ref || '').toUpperCase().trim() === (cp.ref || '').toUpperCase().trim()))
                             .map((cp: any) => {
                               const prod = products.find(p => (p.ref || '').toUpperCase().trim() === (cp.ref || '').toUpperCase().trim());
                               return prod?.name || cp.ref;
                             });
+                          const handleComboClick = () => {
+                            if (ca.applied) return;
+                            // Add all combo products at their min dose
+                            for (const cp of comboProducts) {
+                              const ref = (cp.ref || '').toUpperCase().trim();
+                              const prod = products.find(p => (p.ref || '').toUpperCase().trim() === ref);
+                              if (!prod) continue;
+                              const minDose = cp.minDosePerHa || prod.minDose || prod.dosePerHectare;
+                              if (!selectedProducts.has(prod.id)) {
+                                toggleProduct(prod.id, minDose);
+                                if (quantityMode === 'livre') {
+                                  const qty = Math.ceil(area * minDose);
+                                  updateFreeQuantity(prod.id, qty);
+                                }
+                              } else {
+                                // Already selected — ensure dose meets minimum
+                                const currentDose = selectedProducts.get(prod.id) ?? 0;
+                                if (currentDose < minDose) {
+                                  updateDose(prod.id, minDose);
+                                  if (quantityMode === 'livre') {
+                                    updateFreeQuantity(prod.id, Math.ceil(area * minDose));
+                                  }
+                                }
+                              }
+                            }
+                          };
                           return (
-                            <span
+                            <button
                               key={ca.comboId}
-                              title={ca.applied ? 'Ativado' : `Faltam: ${missingRefs.join(', ')}`}
+                              onClick={handleComboClick}
+                              title={ca.applied ? 'Ativado' : `Clique para adicionar: ${missingRefs.join(', ')}`}
                               className={`text-[10px] px-2 py-0.5 rounded-full font-medium transition-colors ${
                                 ca.applied
-                                  ? 'bg-success/15 text-success border border-success/30'
-                                  : 'bg-muted text-muted-foreground border border-border'
+                                  ? 'bg-success/15 text-success border border-success/30 cursor-default'
+                                  : 'bg-muted text-muted-foreground border border-border hover:bg-primary/10 hover:text-primary hover:border-primary/30 cursor-pointer'
                               }`}
                             >
                               {ca.comboName} ({ca.discountPercent}%)
-                              {ca.applied ? ' ✓' : ''}
-                            </span>
+                              {ca.applied ? ' ✓' : ' +'}
+                            </button>
                           );
                         })}
                     </div>
