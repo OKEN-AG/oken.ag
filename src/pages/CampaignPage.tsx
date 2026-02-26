@@ -63,6 +63,7 @@ export default function CampaignPage() {
 
           <TabsContent value="parametros" className="mt-4">
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              <ParamCard icon={<DollarSign className="w-4 h-4" />} label="Moeda" value={campaign.currency || 'BRL'} />
               <ParamCard icon={<Settings className="w-4 h-4" />} label="Formato Lista de Preços" value={formatPriceList(campaign.priceListFormat)} />
               <ParamCard icon={<DollarSign className="w-4 h-4" />} label="Câmbio Produtos" value={`R$ ${campaign.exchangeRateProducts.toFixed(2)}`} />
               <ParamCard icon={<DollarSign className="w-4 h-4" />} label="Câmbio Barter" value={`R$ ${campaign.exchangeRateBarter.toFixed(2)}`} />
