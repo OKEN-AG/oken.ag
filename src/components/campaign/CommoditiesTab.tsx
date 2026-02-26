@@ -21,6 +21,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { parsePtBrNumber, formatPtBrCurrency, formatPtBrNumber } from '@/lib/ptbr';
+import { NumericInput } from '@/components/NumericInput';
 
 const PRICE_TYPES = [
   { value: 'pre_existente', label: 'Pré-Existente' },
@@ -900,13 +901,21 @@ export default function CommoditiesTab({ campaignId, campaignCommodities = [] }:
               ].map(({ label, key, val, type, placeholder }) => (
                 <div key={key as string} className="space-y-1">
                   <Label className="text-xs">{label as string}</Label>
-                  <Input
-                    type="text"
-                    inputMode={type === 'number' ? 'decimal' : undefined}
-                    value={type === 'number' ? toPtBrInputValue(val) : (val as any)}
-                    placeholder={placeholder as string}
-                    onChange={e => onPricingField(key as string, type === 'number' ? parsePtBrNumber(e.target.value) : e.target.value)}
-                  />
+                  {type === 'number' ? (
+                    <NumericInput
+                      value={Number(val) || 0}
+                      onChange={v => onPricingField(key as string, v)}
+                      decimals={4}
+                      placeholder={placeholder as string}
+                    />
+                  ) : (
+                    <Input
+                      type="text"
+                      value={val as any}
+                      placeholder={placeholder as string}
+                      onChange={e => onPricingField(key as string, e.target.value)}
+                    />
+                  )}
                 </div>
               ))}
             </div>
@@ -915,7 +924,7 @@ export default function CommoditiesTab({ campaignId, campaignCommodities = [] }:
               <Label className="text-sm font-medium">Basis por Porto</Label>
               <div className="flex gap-2 items-end">
                 <div className="flex-1 space-y-1"><Label className="text-xs">Porto</Label><Input value={newPort} onChange={e => setNewPort(e.target.value)} placeholder="Ex: Paranaguá" /></div>
-                <div className="w-32 space-y-1"><Label className="text-xs">Basis (R$/sc)</Label><Input type="text" inputMode="decimal" value={toPtBrInputValue(newBasis)} placeholder="Ex: 1,20" onChange={e => setNewBasis(parsePtBrNumber(e.target.value))} /></div>
+                <div className="w-32 space-y-1"><Label className="text-xs">Basis (R$/sc)</Label><NumericInput value={newBasis} onChange={setNewBasis} decimals={2} placeholder="Ex: 1,20" /></div>
                 <Button variant="outline" size="sm" onClick={addBasisPort}><Plus className="w-3 h-3" /></Button>
               </div>
               {basisPorts.length > 0 && <div className="flex gap-2 flex-wrap">{basisPorts.map((bp, i) => (<Badge key={i} variant="secondary" className="cursor-pointer" onClick={() => setBasisPorts(prev => prev.filter((_, j) => j !== i))}>{bp.port}: {formatPtBrCurrency(Number(bp.basis || 0), 'BRL')}/sc ×</Badge>))}</div>}
@@ -976,8 +985,8 @@ export default function CommoditiesTab({ campaignId, campaignCommodities = [] }:
                   <span className="font-medium text-sm w-24">{option.label}</span>
                   {val ? (
                     <>
-                      <div className="space-y-1"><Label className="text-xs">Nominal</Label><Input type="number" step="0.01" value={val.nominal_value} onChange={e => updateValorization(val.id!, 'nominal_value', parsePtBrNumber(e.target.value))} className="w-28 h-8" disabled={val.use_percent} /></div>
-                      <div className="space-y-1"><Label className="text-xs">%</Label><Input type="number" step="0.1" value={val.percent_value} onChange={e => updateValorization(val.id!, 'percent_value', parsePtBrNumber(e.target.value))} className="w-24 h-8" disabled={!val.use_percent} /></div>
+                      <div className="space-y-1"><Label className="text-xs">Nominal</Label><NumericInput value={val.nominal_value ?? 0} onChange={v => updateValorization(val.id!, 'nominal_value', v)} decimals={2} className="w-28 h-8" disabled={val.use_percent} /></div>
+                      <div className="space-y-1"><Label className="text-xs">%</Label><NumericInput value={val.percent_value ?? 0} onChange={v => updateValorization(val.id!, 'percent_value', v)} decimals={2} className="w-24 h-8" disabled={!val.use_percent} /></div>
                       <label className="flex items-center gap-1 text-xs"><Switch checked={val.use_percent} onCheckedChange={v => updateValorization(val.id!, 'use_percent', v)} />Usar %</label>
                       <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => deleteValorization(val.id!)}><Trash2 className="w-3 h-3" /></Button>
                     </>
@@ -1002,9 +1011,9 @@ export default function CommoditiesTab({ campaignId, campaignCommodities = [] }:
               </Select>
             </div>
             <div className="grid grid-cols-3 gap-4">
-              <div className="space-y-1"><Label className="text-xs">Incentivo 1 (%)</Label><Input type="number" step="0.1" value={incentive1} onChange={e => setIncentive1(parsePtBrNumber(e.target.value))} /></div>
-              <div className="space-y-1"><Label className="text-xs">Incentivo 2 (%)</Label><Input type="number" step="0.1" value={incentive2} onChange={e => setIncentive2(parsePtBrNumber(e.target.value))} /></div>
-              <div className="space-y-1"><Label className="text-xs">Incentivo 3 (%)</Label><Input type="number" step="0.1" value={incentive3} onChange={e => setIncentive3(parsePtBrNumber(e.target.value))} /></div>
+              <div className="space-y-1"><Label className="text-xs">Incentivo 1 (%)</Label><NumericInput value={incentive1} onChange={setIncentive1} decimals={2} /></div>
+              <div className="space-y-1"><Label className="text-xs">Incentivo 2 (%)</Label><NumericInput value={incentive2} onChange={setIncentive2} decimals={2} /></div>
+              <div className="space-y-1"><Label className="text-xs">Incentivo 3 (%)</Label><NumericInput value={incentive3} onChange={setIncentive3} decimals={2} /></div>
             </div>
             <p className="text-xs text-muted-foreground">Esses % serão aplicados sobre o montante do pedido.</p>
             <Button onClick={saveCampaignCommoditySettings}><Save className="w-4 h-4 mr-1" /> Salvar Incentivos</Button>
@@ -1017,7 +1026,7 @@ export default function CommoditiesTab({ campaignId, campaignCommodities = [] }:
             <Label className="font-semibold">Compradores Pré-Cadastrados</Label>
             <div className="flex gap-2 items-end">
               <div className="flex-1 space-y-1"><Label className="text-xs">Nome do Comprador</Label><Input value={newBuyerName} onChange={e => setNewBuyerName(e.target.value)} /></div>
-              <div className="w-32 space-y-1"><Label className="text-xs">Fee (%)</Label><Input type="number" step="0.1" value={newBuyerFee} onChange={e => setNewBuyerFee(parsePtBrNumber(e.target.value))} /></div>
+              <div className="w-32 space-y-1"><Label className="text-xs">Fee (%)</Label><NumericInput value={newBuyerFee} onChange={setNewBuyerFee} decimals={2} /></div>
               <Button onClick={addBuyer}><Plus className="w-4 h-4" /></Button>
             </div>
             {buyers.length > 0 && (
@@ -1107,7 +1116,7 @@ export default function CommoditiesTab({ campaignId, campaignCommodities = [] }:
                   ].map(([label, key]) => (
                     <div key={key} className="space-y-1">
                       <Label className="text-xs">{label}</Label>
-                      <Input type="number" step="any" value={(newLoc as any)[key]} onChange={e => setNewLoc(prev => ({ ...prev, [key]: parsePtBrNumber(e.target.value) }))} className="h-8 text-xs" />
+                      <NumericInput value={Number((newLoc as any)[key]) || 0} onChange={v => setNewLoc(prev => ({ ...prev, [key]: v }))} decimals={4} className="h-8 text-xs" />
                     </div>
                   ))}
                 </div>
@@ -1423,9 +1432,9 @@ export default function CommoditiesTab({ campaignId, campaignCommodities = [] }:
             <div className="flex gap-2 items-end flex-wrap">
               <div className="space-y-1"><Label className="text-xs">Origem</Label><Input value={newFreight.origin} onChange={e => setNewFreight(p => ({ ...p, origin: e.target.value }))} className="w-36" /></div>
               <div className="space-y-1"><Label className="text-xs">Destino</Label><Input value={newFreight.destination} onChange={e => setNewFreight(p => ({ ...p, destination: e.target.value }))} className="w-36" /></div>
-              <div className="space-y-1"><Label className="text-xs">Dist.(km)</Label><Input type="number" value={newFreight.distance_km} onChange={e => setNewFreight(p => ({ ...p, distance_km: parsePtBrNumber(e.target.value) }))} className="w-28" /></div>
-              <div className="space-y-1"><Label className="text-xs">R$/km</Label><Input type="number" step="0.01" value={newFreight.cost_per_km} onChange={e => setNewFreight(p => ({ ...p, cost_per_km: parsePtBrNumber(e.target.value) }))} className="w-24" /></div>
-              <div className="space-y-1"><Label className="text-xs">Ajuste</Label><Input type="number" step="0.1" value={newFreight.adjustment} onChange={e => setNewFreight(p => ({ ...p, adjustment: parsePtBrNumber(e.target.value) }))} className="w-24" /></div>
+              <div className="space-y-1"><Label className="text-xs">Dist.(km)</Label><NumericInput value={newFreight.distance_km} onChange={v => setNewFreight(p => ({ ...p, distance_km: v }))} decimals={1} min={0} className="w-28" /></div>
+              <div className="space-y-1"><Label className="text-xs">R$/km</Label><NumericInput value={newFreight.cost_per_km} onChange={v => setNewFreight(p => ({ ...p, cost_per_km: v }))} decimals={4} min={0} className="w-24" /></div>
+              <div className="space-y-1"><Label className="text-xs">Ajuste</Label><NumericInput value={newFreight.adjustment} onChange={v => setNewFreight(p => ({ ...p, adjustment: v }))} decimals={2} className="w-24" /></div>
               <Button onClick={addFreightReducer} disabled={upsertFreight.isPending}><Plus className="w-4 h-4 mr-1" /> Add</Button>
             </div>
             {loadingFreight ? <p className="text-sm text-muted-foreground">Carregando...</p> : (freightList || []).length > 0 ? (
@@ -1490,11 +1499,11 @@ export default function CommoditiesTab({ campaignId, campaignCommodities = [] }:
               </div>
               <div className="space-y-1">
                 <Label className="text-xs">Bushels/Ton (fator conversão)</Label>
-                <Input type="number" step="0.001" value={apiConfig.bushels_per_ton} onChange={e => setApiConfig(prev => ({ ...prev, bushels_per_ton: parsePtBrNumber(e.target.value) }))} />
+                <NumericInput value={apiConfig.bushels_per_ton} onChange={v => setApiConfig(prev => ({ ...prev, bushels_per_ton: v }))} decimals={3} />
               </div>
               <div className="space-y-1">
                 <Label className="text-xs">Peso Saca (kg)</Label>
-                <Input type="number" value={apiConfig.peso_saca_kg} onChange={e => setApiConfig(prev => ({ ...prev, peso_saca_kg: parsePtBrNumber(e.target.value) }))} />
+                <NumericInput value={apiConfig.peso_saca_kg} onChange={v => setApiConfig(prev => ({ ...prev, peso_saca_kg: v }))} decimals={1} />
               </div>
             </div>
 

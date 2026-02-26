@@ -4,7 +4,7 @@ import { Switch } from '@/components/ui/switch';
 import { Button } from '@/components/ui/button';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Plus, Trash2 } from 'lucide-react';
-import { parsePtBrNumber } from '@/lib/ptbr';
+import { NumericInput } from '@/components/NumericInput';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
 export type ChannelSegmentRow = {
@@ -47,8 +47,12 @@ export default function ChannelConfigTab({ channelSegments, onChannelSegmentsCha
               {channelSegments.map((row, i) => (
                 <TableRow key={i}>
                   <TableCell><Input value={row.channel_segment_name} onChange={e => { const next=[...channelSegments]; next[i]={...row,channel_segment_name:e.target.value}; onChannelSegmentsChange(next); }} /></TableCell>
-                  <TableCell><Input value={row.margin_percent} onChange={e => { const next=[...channelSegments]; next[i]={...row,margin_percent:parsePtBrNumber(e.target.value)}; onChannelSegmentsChange(next); }} /></TableCell>
-                  <TableCell><Input value={row.price_adjustment_percent} onChange={e => { const next=[...channelSegments]; next[i]={...row,price_adjustment_percent:parsePtBrNumber(e.target.value)}; onChannelSegmentsChange(next); }} /></TableCell>
+                  <TableCell>
+                    <NumericInput value={row.margin_percent} onChange={v => { const next=[...channelSegments]; next[i]={...row,margin_percent:v}; onChannelSegmentsChange(next); }} decimals={2} min={-100} max={100} />
+                  </TableCell>
+                  <TableCell>
+                    <NumericInput value={row.price_adjustment_percent} onChange={v => { const next=[...channelSegments]; next[i]={...row,price_adjustment_percent:v}; onChannelSegmentsChange(next); }} decimals={2} min={-100} max={100} />
+                  </TableCell>
                   <TableCell><Switch checked={row.active} onCheckedChange={v => { const next=[...channelSegments]; next[i]={...row,active:v}; onChannelSegmentsChange(next); }} /></TableCell>
                   <TableCell><Button variant="ghost" size="icon" onClick={() => onChannelSegmentsChange(channelSegments.filter((_,j)=>j!==i))}><Trash2 className="w-4 h-4" /></Button></TableCell>
                 </TableRow>
