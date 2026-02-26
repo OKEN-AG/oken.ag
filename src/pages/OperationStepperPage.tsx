@@ -502,7 +502,7 @@ export default function OperationStepperPage() {
         city: (usesIbgeCityEligibility ? clientCityCode : selectedCityName) || undefined,
         clientType, clientDocument: clientDocument || undefined, segment,
       },
-    });
+    }, 250);
   }, [selectedCampaignId, selectedProducts, area, segment, channelEnum, dueMonths, selectedDueDate, selectedPaymentMethod,
       selectedCommodity, port, freightOrigin, hasContract, userPrice, showInsurance,
       selectedBuyerId, contractPriceType, performanceIndex, clientState, selectedCityName,
@@ -565,8 +565,16 @@ export default function OperationStepperPage() {
   const complementaryDiscount = simResult?.complementaryDiscount ?? 0;
   const discountProgress = simResult?.discountProgress ?? 0;
 
-  // Combo recommendations (UI helper — uses combo definitions from campaign data)
-  const comboRecommendations = useMemo(() => getComboRecommendations(combos, selections, products, area), [combos, selections, products, area]);
+  // Combo recommendations — use local selectedProducts for instant feedback, fall back to backend selections
+  const localSelections = useMemo(() => {
+    if (selections.length > 0) return selections;
+    // Build lightweight selections from local state for instant combo hints
+    return Array.from(selectedProducts.entries()).map(([id, dose]) => {
+      const prod = products.find(p => p.id === id);
+      return prod ? { productId: id, ref: prod.ref || '', product: prod, dosePerHectare: dose, areaHectares: area, rawQuantity: area * dose, roundedQuantity: area * dose, boxes: 0, pallets: 0 } : null;
+    }).filter(Boolean) as any[];
+  }, [selections, selectedProducts, products, area]);
+  const comboRecommendations = useMemo(() => getComboRecommendations(combos, localSelections, products, area), [combos, localSelections, products, area]);
 
   const pricingResults = simResult?.pricingResults ?? [];
   const rawGrossToNet = simResult?.grossToNet;

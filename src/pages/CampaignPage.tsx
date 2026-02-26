@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { useActiveCampaigns, useCampaignData } from '@/hooks/useActiveCampaign';
-import { Settings, MapPin, Percent, Calendar, Layers, DollarSign, Edit } from 'lucide-react';
+import { MapPin, Percent, Calendar, Layers, DollarSign, Edit } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -64,9 +64,12 @@ export default function CampaignPage() {
           <TabsContent value="parametros" className="mt-4">
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
               <ParamCard icon={<DollarSign className="w-4 h-4" />} label="Moeda" value={campaign.currency || 'BRL'} />
-              <ParamCard icon={<Settings className="w-4 h-4" />} label="Formato Lista de Preços" value={formatPriceList(campaign.priceListFormat)} />
-              <ParamCard icon={<DollarSign className="w-4 h-4" />} label="Câmbio Produtos" value={`R$ ${campaign.exchangeRateProducts.toFixed(2)}`} />
-              <ParamCard icon={<DollarSign className="w-4 h-4" />} label="Câmbio Barter" value={`R$ ${campaign.exchangeRateBarter.toFixed(2)}`} />
+              {(campaign.currency || 'BRL').toUpperCase() !== 'BRL' && (
+                <>
+                  <ParamCard icon={<DollarSign className="w-4 h-4" />} label="Câmbio Produtos" value={`R$ ${campaign.exchangeRateProducts.toFixed(2)}`} />
+                  <ParamCard icon={<DollarSign className="w-4 h-4" />} label="Câmbio Barter" value={`R$ ${campaign.exchangeRateBarter.toFixed(2)}`} />
+                </>
+              )}
               <ParamCard icon={<Percent className="w-4 h-4" />} label="Desc. Max Interno" value={`${campaign.maxDiscountInternal}%`} />
               <ParamCard icon={<Percent className="w-4 h-4" />} label="Desc. Max Revenda" value={`${campaign.maxDiscountReseller}%`} />
               <ParamCard icon={<Layers className="w-4 h-4" />} label="Direcionamento" value={campaign.target === 'produtor' ? 'Produtor Final' : campaign.target === 'distribuidor' ? 'Distribuidor' : 'Venda Direta'} />
@@ -193,11 +196,3 @@ const moduleLabels: Record<string, string> = {
   seguro: 'Seguro', pedido: 'Pedido', formalizacao: 'Formalização', documentos: 'Documentos', garantias: 'Garantias',
 };
 
-function formatPriceList(format: string): string {
-  const map: Record<string, string> = {
-    brl_vista: 'BRL à Vista', brl_prazo: 'BRL a Prazo', usd_vista: 'USD à Vista', usd_prazo: 'USD a Prazo',
-    brl_vista_com_margem: 'BRL à Vista c/ Margem', brl_prazo_com_margem: 'BRL a Prazo c/ Margem',
-    usd_vista_com_margem: 'USD à Vista c/ Margem', usd_prazo_com_margem: 'USD a Prazo c/ Margem',
-  };
-  return map[format] || format;
-}
