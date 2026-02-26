@@ -7,7 +7,7 @@ import { AuthProvider } from "@/contexts/AuthContext";
 import ProtectedRoute from "@/components/ProtectedRoute";
 import AppLayout from "@/components/AppLayout";
 import Dashboard from "@/pages/Dashboard";
-import CampaignPage from "@/pages/CampaignPage";
+
 import MonitoringPage from "@/pages/MonitoringPage";
 import AuthPage from "@/pages/AuthPage";
 import NotFound from "./pages/NotFound";
@@ -44,7 +44,7 @@ const App = () => (
                 <AppLayout>
                   <Routes>
                     <Route path="/" element={<Dashboard />} />
-                    <Route path="/campanha" element={<CampaignPage />} />
+                    
                     <Route path="/simulacao" element={<LegacyRouteRedirectPage source="simulacao" />} />
                     <Route path="/paridade" element={<LegacyRouteRedirectPage source="paridade" />} />
                     <Route path="/documentos" element={<LegacyRouteRedirectPage source="documentos" />} />
