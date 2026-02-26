@@ -11,10 +11,11 @@ import { Plus, Trash2, ChevronDown, ChevronRight, Upload, ClipboardPaste } from 
 import { useCombos, useCreateCombo, useDeleteCombo, useAddComboProduct, useRemoveComboProduct } from '@/hooks/useCombos';
 import { useCampaignProducts } from '@/hooks/useProducts';
 import { supabase } from '@/integrations/supabase/client';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { handleDatabaseError } from '@/lib/error-handler';
 import * as XLSX from 'xlsx';
+import { normalizeRef, normalizeText, parseLocaleNumber, splitFlexibleLine } from '@/lib/import-utils';
 
 type Props = { campaignId?: string };
 
@@ -25,7 +26,6 @@ export default function CombosTab({ campaignId }: Props) {
   const deleteCombo = useDeleteCombo();
   const addProduct = useAddComboProduct();
   const removeProduct = useRemoveComboProduct();
-  const qc = useQueryClient();
   const fileRef = useRef<HTMLInputElement>(null);
 
   const [newName, setNewName] = useState('');
@@ -68,54 +68,75 @@ export default function CombosTab({ campaignId }: Props) {
     const groups: { name: string; discount: number; items: { ref: string; minDose: number; maxDose: number }[] }[] = [];
     let current: typeof groups[0] | null = null;
 
+    const pushCurrent = () => {
+      if (current && current.items.length > 0) groups.push(current);
+    };
+
     for (const line of lines) {
-      const upper = line.toUpperCase();
-      // Detect group headers
-      if (upper.startsWith('OFERTA') || upper.startsWith('COMPLEMENTAR')) {
-        if (current && current.items.length > 0) groups.push(current);
-        const nameMatch = line.match(/^(OFERTA\s*\d+|COMPLEMENTAR\w*)/i);
-        current = { name: nameMatch?.[1] || line, discount: 0, items: [] };
+      const parts = splitFlexibleLine(line);
+      if (parts.length < 2) continue;
+
+      const first = normalizeText(parts[0] || '');
+      const isHeader = first === 'grupo' || first === '#';
+      if (isHeader) continue;
+
+      // Pattern A: group + item in same row: OFERTA 1 | 1 | REF | 5% | 0,4 | 0,4
+      const firstRaw = String(parts[0] || '').trim();
+      const groupInline = /^(OFERTA\s*\d+|COMPLEMENTARES?|COMPLEMENTAR\w*)$/i.test(firstRaw);
+      if (groupInline) {
+        const groupName = firstRaw.toUpperCase();
+        if (!current || normalizeText(current.name) !== normalizeText(groupName)) {
+          pushCurrent();
+          current = { name: groupName, discount: 0, items: [] };
+        }
+
+        if (parts.length >= 6) {
+          const ref = String(parts[2] || '').trim();
+          const discount = parseLocaleNumber(parts[3]);
+          const dMin = parseLocaleNumber(parts[4]);
+          const dMax = parseLocaleNumber(parts[5]);
+          if (ref) {
+            if (discount > 0 && current.discount === 0) current.discount = discount;
+            current.items.push({ ref: ref.toUpperCase(), minDose: dMin, maxDose: dMax });
+          }
+        }
         continue;
       }
 
-      // Try to parse item lines: # REF DISCOUNT DOSE_MIN DOSE_MAX
-      const parts = line.split(/\t|;|\s{2,}/).map(s => s.trim()).filter(Boolean);
-      if (parts.length < 4) continue;
+      // Pattern B: pure group title line (single cell)
+      if (/^(OFERTA\s*\d+|COMPLEMENTARES?|COMPLEMENTAR\w*)$/i.test(line)) {
+        pushCurrent();
+        current = { name: line.toUpperCase(), discount: 0, items: [] };
+        continue;
+      }
 
-      // Find the ref, discount, doses
+      // Pattern C: item line: # | REF | DESC | MIN | MAX
+      const cols = parts;
       let ref = '';
       let discount = 0;
       let dMin = 0;
       let dMax = 0;
 
-      const num = (s: string) => Number(s.replace(',', '.').replace('%', '').replace(/[^\d.-]/g, '')) || 0;
-
-      // Format: # REF DISCOUNT% DOSE_MIN DOSE_MAX
-      if (parts.length >= 5) {
-        ref = parts[1];
-        discount = num(parts[2]);
-        dMin = num(parts[3]);
-        dMax = num(parts[4]);
-      } else if (parts.length === 4) {
-        ref = parts[0];
-        discount = num(parts[1]);
-        dMin = num(parts[2]);
-        dMax = num(parts[3]);
+      if (cols.length >= 5 && /^\d+$/.test(cols[0])) {
+        ref = cols[1];
+        discount = parseLocaleNumber(cols[2]);
+        dMin = parseLocaleNumber(cols[3]);
+        dMax = parseLocaleNumber(cols[4]);
+      } else if (cols.length >= 4) {
+        ref = cols[0];
+        discount = parseLocaleNumber(cols[1]);
+        dMin = parseLocaleNumber(cols[2]);
+        dMax = parseLocaleNumber(cols[3]);
       }
 
-      if (!ref || ref === '#' || /^\d+$/.test(ref)) {
-        // ref might be in next position
-        if (parts.length >= 5) {
-          ref = parts[1];
-        } else continue;
-      }
+      if (!ref || normalizeText(ref) === 'ref') continue;
+      if (!current) continue;
 
-      if (current && ref) {
-        if (discount > 0 && current.discount === 0) current.discount = discount;
-        current.items.push({ ref: ref.toUpperCase(), minDose: dMin, maxDose: dMax });
-      }
+      if (discount > 0 && current.discount === 0) current.discount = discount;
+      current.items.push({ ref: String(ref).toUpperCase().trim(), minDose: dMin, maxDose: dMax });
     }
-    if (current && current.items.length > 0) groups.push(current);
+
+    pushCurrent();
     return groups;
   };
 
@@ -126,6 +147,7 @@ export default function CombosTab({ campaignId }: Props) {
 
     let comboCount = 0;
     let prodCount = 0;
+    const notFoundRefs = new Set<string>();
 
     for (const group of groups) {
       try {
@@ -137,10 +159,12 @@ export default function CombosTab({ campaignId }: Props) {
 
         for (const item of group.items) {
           // Find product by ref field
-          const product = products.find((p: any) =>
-            p.ref?.toUpperCase() === item.ref ||
-            p.name?.toUpperCase().includes(item.ref)
-          );
+          const itemRef = normalizeRef(item.ref);
+          const product = products.find((p: any) => {
+            const productRef = normalizeRef(p.ref || '');
+            const productName = normalizeText(p.name || '');
+            return (productRef && productRef === itemRef) || (itemRef && productName.includes(itemRef));
+          });
           if (product) {
             try {
               await addProduct.mutateAsync({
@@ -151,13 +175,16 @@ export default function CombosTab({ campaignId }: Props) {
               });
               prodCount++;
             } catch (e) { console.error(e); }
+          } else {
+            notFoundRefs.add(item.ref);
           }
         }
         comboCount++;
       } catch (e: any) { console.error(e); }
     }
 
-    toast.success(`${comboCount} combos criados com ${prodCount} produtos vinculados`);
+    const notFoundMsg = notFoundRefs.size > 0 ? ` | REF não encontradas: ${Array.from(notFoundRefs).join(', ')}` : '';
+    toast.success(`${comboCount} combos criados com ${prodCount} produtos vinculados${notFoundMsg}`);
     setImportOpen(false);
     setImportText('');
   };

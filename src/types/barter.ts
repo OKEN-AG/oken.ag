@@ -23,6 +23,7 @@ export interface Campaign {
   maxDiscountInternal: number; // %
   maxDiscountReseller: number; // %
   priceListFormat: PriceListFormat;
+  currency?: 'BRL' | 'USD';
   activeModules: JourneyModule[];
   availableDueDates: string[]; // ISO dates
   createdAt: string;
@@ -49,13 +50,18 @@ export interface ChannelMargin {
 export type JourneyModule = 'adesao' | 'simulacao' | 'pagamento' | 'barter' | 'seguro' | 'pedido' | 'formalizacao' | 'documentos' | 'garantias';
 
 // === PRODUCT ENGINE ===
+export type ProductKind = 'insumo' | 'semente' | 'fertilizante' | 'maquinario' | 'servico';
+export type PricingBasis = 'por_hectare' | 'por_unidade' | 'por_hora' | 'por_pacote';
+
 export interface Product {
   id: string;
   name: string;
   ref: string;
   category: string;
   activeIngredient: string;
-  unitType: 'kg' | 'l';
+  unitType: 'kg' | 'l' | 'un' | 'hora' | 'pacote';
+  kind?: ProductKind;
+  pricingBasis?: PricingBasis;
   packageSizes: number[];
   unitsPerBox: number;
   boxesPerPallet: number;
@@ -126,6 +132,13 @@ export interface PricingResult {
   subtotal: number;
 }
 
+export interface AppliedIncentiveRule {
+  id: string;
+  name: string;
+  effectType: 'desconto_direto' | 'credito_liberacao' | 'credito_liquidacao';
+  amount: number;
+}
+
 export interface GrossToNet {
   grossRevenue: number;
   comboDiscount: number;
@@ -133,6 +146,7 @@ export interface GrossToNet {
   directIncentiveDiscount?: number; // I7
   creditLiberacao?: number; // I7
   creditLiquidacao?: number; // I7
+  appliedIncentiveRules?: AppliedIncentiveRule[];
   netRevenue: number;
   financialRevenue: number;
   distributorMargin: number;
