@@ -65,7 +65,8 @@ export default function SimulationPage() {
     simulateDebounced({
       campaignId: selectedCampaignId,
       selections: inputSelections,
-      segment: segment || 'distribuidor',
+      segmentName: segment || 'distribuidor',
+      channelSegment: 'distribuidor',
       dueMonths,
       paymentMethodId: selectedPaymentMethod || undefined,
       commodityCode: selectedCommodity,
