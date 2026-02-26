@@ -203,6 +203,14 @@ export function useSimulationEngine() {
     }, delayMs);
   }, [simulate]);
 
+  /** Clear result and cancel any pending debounced simulation */
+  const clearResult = useCallback(() => {
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    setResult(null);
+    setError(null);
+    setLoading(false);
+  }, []);
+
   const checkEligibility = useCallback(async (campaignId: string, clientContext: Record<string, unknown>): Promise<EligibilityResult> => {
     return invoke<EligibilityResult>('check-eligibility', { campaignId, clientContext });
   }, [invoke]);
@@ -217,6 +225,7 @@ export function useSimulationEngine() {
     result,
     simulate,
     simulateDebounced,
+    clearResult,
     checkEligibility,
     getOperationStatus,
   };
