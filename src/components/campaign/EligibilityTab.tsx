@@ -4,7 +4,7 @@ import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
-import { Badge } from '@/components/ui/badge';
+import { Badge } from '@/components/ui/badge'; // used for city count
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Plus, Trash2, ChevronDown, ChevronRight } from 'lucide-react';
@@ -161,17 +161,6 @@ export default function EligibilityTab({
     return modelDef.target === campaignTarget;
   };
 
-  const addChannelTypeFromModel = (model: string) => {
-    const modelDef = MODEL_OPTIONS.find(m => m.value === model);
-    const name = modelDef ? modelDef.label : model;
-    onChannelTypesChange([...channelTypes, {
-      channel_type_name: name,
-      model,
-      active: canActivateModel(model),
-      price_adjustment_percent: 0,
-    }]);
-  };
-
   const addCustomChannelType = () => {
     if (!newChannelTypeName.trim()) return;
     onChannelTypesChange([...channelTypes, {
@@ -186,11 +175,15 @@ export default function EligibilityTab({
   const updateChannelType = (idx: number, field: keyof ChannelTypeRow, value: any) => {
     const updated = [...channelTypes];
     updated[idx] = { ...updated[idx], [field]: value };
+    // Auto-deactivate if model doesn't match target
+    if (field === 'model' && value) {
+      const modelDef = MODEL_OPTIONS.find(m => m.value === value);
+      if (modelDef && modelDef.target !== campaignTarget) {
+        updated[idx].active = false;
+      }
+    }
     onChannelTypesChange(updated);
   };
-
-  const usedModels = new Set(channelTypes.map(ct => ct.model).filter(Boolean));
-  const availableModels = MODEL_OPTIONS.filter(m => !usedModels.has(m.value));
 
   // === Legacy channel margin helpers (kept for backward compat) ===
   const CHANNEL_SEGMENTS: { value: 'direto' | 'distribuidor' | 'cooperativa'; label: string }[] = [
@@ -238,29 +231,17 @@ export default function EligibilityTab({
       <div className="space-y-3">
         <Label className="text-base font-semibold">Tipo de Canal de Acesso - GTM</Label>
         <p className="text-xs text-muted-foreground">
-          Defina os tipos de canal. Apenas os modelos correspondentes ao Público Alvo da campanha podem ser ativados.
+          Adicione quantos tipos de canal desejar. Para cada um, selecione o modelo (B2B, B2C, B2B2C). Apenas os modelos correspondentes ao Público Alvo da campanha podem ser ativados.
         </p>
-        <div className="flex gap-2 flex-wrap">
-          {availableModels.length > 0 && (
-            <Select onValueChange={addChannelTypeFromModel}>
-              <SelectTrigger className="w-[200px]"><SelectValue placeholder="Adicionar modelo..." /></SelectTrigger>
-              <SelectContent>
-                {availableModels.map(m => (
-                  <SelectItem key={m.value} value={m.value}>{m.label}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          )}
-          <div className="flex gap-1">
-            <Input
-              placeholder="Tipo livre..."
-              value={newChannelTypeName}
-              onChange={e => setNewChannelTypeName(e.target.value)}
-              className="w-[180px]"
-              onKeyDown={e => e.key === 'Enter' && (e.preventDefault(), addCustomChannelType())}
-            />
-            <Button variant="outline" size="icon" onClick={addCustomChannelType}><Plus className="w-4 h-4" /></Button>
-          </div>
+        <div className="flex gap-2">
+          <Input
+            placeholder="Nome do tipo de canal..."
+            value={newChannelTypeName}
+            onChange={e => setNewChannelTypeName(e.target.value)}
+            className="max-w-xs"
+            onKeyDown={e => e.key === 'Enter' && (e.preventDefault(), addCustomChannelType())}
+          />
+          <Button variant="outline" onClick={addCustomChannelType}><Plus className="w-4 h-4 mr-1" /> Adicionar</Button>
         </div>
         {channelTypes.length > 0 ? (
           <div className="border border-border rounded-md overflow-hidden">
@@ -276,7 +257,6 @@ export default function EligibilityTab({
               </TableHeader>
               <TableBody>
                 {channelTypes.map((ct, i) => {
-                  const modelMatch = MODEL_OPTIONS.find(m => m.value === ct.model);
                   const canActivate = canActivateModel(ct.model);
                   return (
                     <TableRow key={i}>
@@ -287,9 +267,17 @@ export default function EligibilityTab({
                         />
                       </TableCell>
                       <TableCell>
-                        <Badge variant={modelMatch ? 'default' : 'outline'}>
-                          {ct.model || 'Livre'}
-                        </Badge>
+                        <Select value={ct.model || '__none__'} onValueChange={v => updateChannelType(i, 'model', v === '__none__' ? '' : v)}>
+                          <SelectTrigger className="w-[130px] h-8">
+                            <SelectValue placeholder="Selecionar..." />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="__none__">Nenhum</SelectItem>
+                            {MODEL_OPTIONS.map(m => (
+                              <SelectItem key={m.value} value={m.value}>{m.label}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
                       </TableCell>
                       <TableCell className="text-center">
                         <Switch
