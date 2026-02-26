@@ -499,7 +499,7 @@ export default function CampaignFormPage() {
         </TabsContent>
 
         <TabsContent value="produtos" className="mt-4">
-          <ProductsTab campaignId={isNew ? undefined : id} />
+          <ProductsTab campaignId={isNew ? undefined : id} currency={form.currency} />
         </TabsContent>
 
         <TabsContent value="combos" className="mt-4">
