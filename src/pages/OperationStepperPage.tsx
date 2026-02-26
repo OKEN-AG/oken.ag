@@ -6,17 +6,12 @@ import { useActiveCampaigns, useCampaignData } from '@/hooks/useActiveCampaign';
 import { useCommodityOptions } from '@/hooks/useCommoditiesMasterData';
 import { normalizeCommodityCode } from '@/lib/commodity';
 import { useOperation, useOperationItems, useOperationDocuments, useCreateOperation, useCreateOperationItems, useCreateOperationLog, useReplaceOperationItems, useUpdateOperation } from '@/hooks/useOperations';
-import { calculateAgronomicSelection } from '@/engines/agronomic';
-import { applyComboCascadeWithLedger, getSuggestedDoseForRef, getMaxPossibleDiscount, getActivatedDiscount, getComplementaryDiscount } from '@/engines/combo-cascade';
-import { decomposePricing, calculateGrossToNet, generatePriceAuditTrail, normalizePrice } from '@/engines/pricing';
-import { checkEligibility } from '@/engines/eligibility';
-import { buildSnapshot } from '@/engines/snapshot';
-import { calculateCommodityNetPrice, calculateParity, calculateIVP, blackScholes } from '@/engines/parity';
+import { getSuggestedDoseForRef } from '@/engines/combo-cascade';
+import { useSimulationEngine } from '@/hooks/useSimulationEngine';
 import { formatCpfCnpj, parsePtBrNumber } from '@/lib/ptbr';
-import { buildWagonStages, canAdvance, getBlockingReason, calculateGuaranteeCoverage } from '@/engines/orchestrator';
-import type { AgronomicSelection, ChannelSegment, Product, JourneyModule, DocumentType, CommodityPricing, FreightReducer, ContractPriceType, GuaranteeCoverage } from '@/types/barter';
+import { buildWagonStages, canAdvance, getBlockingReason } from '@/engines/orchestrator';
+import type { ChannelSegment, Product, JourneyModule, DocumentType, ContractPriceType } from '@/types/barter';
 import { getAllMunicipios } from '@/data/municipios';
-import type { PriceAuditStep } from '@/engines/pricing';
 import { supabase } from '@/integrations/supabase/client';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
@@ -227,6 +222,9 @@ export default function OperationStepperPage() {
   const createLog = useCreateOperationLog();
   const updateOperation = useUpdateOperation();
 
+  // ─── Simulation Engine (server-authoritative — all calculations on backend) ───
+  const { loading: simLoading, error: simError, result: simResult, simulateDebounced } = useSimulationEngine();
+
   // ─── Load existing operation data ───
   useEffect(() => {
     if (existingOp) {
@@ -377,8 +375,8 @@ export default function OperationStepperPage() {
         return { value: String(parseFloat((diffDays / 30).toFixed(4))), label: `${date.toLocaleDateString('pt-BR')} (${diffDays}d)`, date: d };
       });
     }
-    // 3. Fallback: standard month intervals
-    return [6, 9, 12, 15, 18].map(m => ({ value: String(m), label: `${m} meses`, date: '' }));
+    // 3. No fallback — campaign must configure due dates
+    return [];
   }, [filteredDueDates, dueDates, rawCampaign]);
   const selectedDueDate = useMemo(() => {
     const selected = dueDateOptions.find(o => o.value === String(dueMonths));
@@ -386,10 +384,11 @@ export default function OperationStepperPage() {
   }, [dueDateOptions, dueMonths]);
 
   const segmentOptions = useMemo(() => {
+    if (simResult?.segmentOptions?.length) return simResult.segmentOptions.map(s => ({ value: s.value, label: s.label }));
     if (campaignSegments?.length) return campaignSegments.filter(s => s.active).map(s => ({ value: s.segment_name, label: s.segment_name }));
     if (campaign?.margins?.length) return campaign.margins.map(m => ({ value: m.segment, label: m.segment }));
-    return [{ value: 'direto', label: 'Direto' }, { value: 'distribuidor', label: 'Distribuidor' }, { value: 'cooperativa', label: 'Cooperativa' }];
-  }, [campaignSegments, campaign]);
+    return [];
+  }, [campaignSegments, campaign, simResult?.segmentOptions]);
 
   useEffect(() => {
     if (!segment && segmentOptions.length > 0) {
@@ -458,21 +457,35 @@ export default function OperationStepperPage() {
     return Array.from(eligibleCitySet).some(v => /^\d{6,8}$/.test(String(v)));
   }, [eligibleCitySet, hasCityFilter]);
 
-  // ─── Eligibility (with PF/PJ) ───
-  const eligibility = useMemo(() => {
-    if (!campaign) return null;
-    return checkEligibility(campaign, {
-      state: clientState || undefined,
-      city: (usesIbgeCityEligibility ? clientCityCode : selectedCityName) || undefined,
-      segment: segment as ChannelSegment || channelEnum,
-      clientDocument: clientDocument || undefined,
-      clientType,
-      campaignClientTypes: (rawCampaign as any)?.client_type || [],
-      whitelist: clientWhitelist || [],
-      blockIneligible: !!(rawCampaign as any)?.block_ineligible,
-      currency: campaignCurrency === 'USD' ? 'USD' : 'BRL',
+  // ─── Trigger simulation on input changes (server-authoritative) ───
+  useEffect(() => {
+    if (!selectedCampaignId || selectedProducts.size === 0 || !segment || !dueMonths) return;
+    const inputSelections = Array.from(selectedProducts.entries()).map(([id, dose]) => ({
+      productId: id, dosePerHectare: dose, areaHectares: area,
+      overrideQuantity: quantityMode === 'livre' ? (freeQuantities.get(id) || undefined) : undefined,
+    }));
+    simulateDebounced({
+      campaignId: selectedCampaignId, selections: inputSelections, segment, dueMonths,
+      paymentMethodId: selectedPaymentMethod || undefined,
+      commodityCode: selectedCommodity || undefined,
+      port: port || undefined, freightOrigin: freightOrigin || undefined,
+      hasContract, userOverridePrice: hasContract ? userPrice : undefined,
+      showInsurance, barterDiscountPercent: 0,
+      buyerId: selectedBuyerId && selectedBuyerId !== '__other__' ? selectedBuyerId : undefined,
+      contractPriceType, performanceIndex: performanceIndex / 100,
+      clientContext: {
+        state: clientState || undefined,
+        city: (usesIbgeCityEligibility ? clientCityCode : selectedCityName) || undefined,
+        clientType, clientDocument: clientDocument || undefined, segment,
+      },
     });
-  }, [campaign, clientState, clientCity, clientCityCode, selectedCityName, usesIbgeCityEligibility, segment, clientDocument, clientType, clientWhitelist, rawCampaign, campaignCurrency]);
+  }, [selectedCampaignId, selectedProducts, area, segment, dueMonths, selectedPaymentMethod,
+      selectedCommodity, port, freightOrigin, hasContract, userPrice, showInsurance,
+      selectedBuyerId, contractPriceType, performanceIndex, clientState, selectedCityName,
+      clientCityCode, usesIbgeCityEligibility, clientType, clientDocument, quantityMode, freeQuantities]);
+
+  // ─── Eligibility from backend result ───
+  const eligibility = simResult?.eligibility ?? null;
 
   // ─── Product selection ───
 
@@ -509,42 +522,35 @@ export default function OperationStepperPage() {
     setFreeQuantities(next);
   };
 
-  // ─── Engine calculations ───
-  const selections = useMemo<AgronomicSelection[]>(() => {
-    return Array.from(selectedProducts.entries()).map(([id, dose]) => {
-      const product = products.find(p => p.id === id);
-      if (!product) return null;
-      if (quantityMode === 'livre') {
-        const freeQty = freeQuantities.get(id) || 0;
-        if (freeQty <= 0) return null;
-        // Build selection from free quantity directly
-        return calculateAgronomicSelection(product, area, dose, freeQty);
-      }
-      return calculateAgronomicSelection(product, area, dose);
-    }).filter(Boolean) as AgronomicSelection[];
-  }, [selectedProducts, area, products, quantityMode, freeQuantities]);
+  // ─── Engine results derived from backend simulation ───
+  const selections = useMemo(() => {
+    if (!simResult?.selections) return [] as any[];
+    return simResult.selections.map(s => ({
+      ...s,
+      productId: s.productId, ref: s.ref,
+      product: products.find(p => p.id === s.productId) || { name: s.productName, unitType: s.unitType, pricingBasis: 'por_hectare' as const } as any,
+      areaHectares: s.areaHectares, dosePerHectare: s.dosePerHectare,
+      rawQuantity: s.rawQuantity, roundedQuantity: s.roundedQuantity,
+      boxes: s.boxes, pallets: s.pallets,
+    }));
+  }, [simResult?.selections, products]);
 
-  const comboCascade = useMemo(() => applyComboCascadeWithLedger(combos, selections), [combos, selections]);
-  const comboActivations = comboCascade.activations;
-  const maxDiscount = getMaxPossibleDiscount(combos);
-  const activatedDiscount = getActivatedDiscount(comboActivations);
-  const complementaryDiscount = getComplementaryDiscount(comboActivations);
-  const discountProgress = maxDiscount > 0 ? (activatedDiscount / maxDiscount) * 100 : 0;
+  const comboActivations = simResult?.comboActivations ?? [];
+  const maxDiscount = simResult?.maxDiscount ?? 0;
+  const activatedDiscount = simResult?.activatedDiscount ?? 0;
+  const complementaryDiscount = simResult?.complementaryDiscount ?? 0;
+  const discountProgress = simResult?.discountProgress ?? 0;
 
-  // Combo recommendations
+  // Combo recommendations (UI helper — uses combo definitions from campaign data)
   const comboRecommendations = useMemo(() => getComboRecommendations(combos, selections, products, area), [combos, selections, products, area]);
 
-  const pricingResults = useMemo(() => {
-    if (!campaign) return [];
-    return selections.map(sel => decomposePricing(sel.product, campaign, (segment || channelEnum) as ChannelSegment, dueMonths, sel.roundedQuantity, { paymentMethodMarkup, segmentAdjustmentPercent }));
-  }, [selections, segment, dueMonths, campaign, paymentMethodMarkup, segmentAdjustmentPercent]);
-
-  const grossToNet = useMemo(() => calculateGrossToNet(pricingResults, comboActivations, 0, {
-    globalIncentiveType: rawCampaign?.global_incentive_type || '',
-    globalIncentive1: rawCampaign?.global_incentive_1 || 0,
-    globalIncentive2: rawCampaign?.global_incentive_2 || 0,
-    globalIncentive3: rawCampaign?.global_incentive_3 || 0,
-  }, selections), [pricingResults, comboActivations, rawCampaign, selections]);
+  const pricingResults = simResult?.pricingResults ?? [];
+  const grossToNet = simResult?.grossToNet ?? {
+    grossRevenue: 0, comboDiscount: 0, barterDiscount: 0, directIncentiveDiscount: 0,
+    creditLiberacao: 0, creditLiquidacao: 0, netRevenue: 0, financialRevenue: 0,
+    distributorMargin: 0, segmentAdjustment: 0, paymentMethodMarkup: 0,
+    barterCost: 0, netNetRevenue: 0,
+  };
 
   // ─── Parity (with valorization + buyer fee) ───
   const selectedBuyer = useMemo(() => buyers?.find((b: any) => b.id === selectedBuyerId), [buyers, selectedBuyerId]);
@@ -554,80 +560,50 @@ export default function OperationStepperPage() {
     return valorizations?.find((v: any) => v.commodity?.toLowerCase() === selectedCommodity?.toLowerCase());
   }, [valorizations, selectedCommodity]);
 
-  const selectedCommodityPricing: CommodityPricing | null = useMemo(() => {
+  // ─── Commodity display data (for UI labels only — calculations are backend) ───
+  const selectedCommodityPricing = useMemo(() => {
     if (!rawCommodityPricing?.length) return commodityPricing;
     const match = rawCommodityPricing.find((cp: any) => normalizeCommodityCode(cp.commodity) === normalizeCommodityCode(selectedCommodity));
     if (!match) return commodityPricing;
     return {
-      commodity: match.commodity as any, exchange: match.exchange, contract: match.contract,
+      commodity: match.commodity, exchange: match.exchange, contract: match.contract,
       exchangePrice: match.exchange_price, optionCost: match.option_cost || 0,
-      exchangeRateBolsa: match.exchange_rate_bolsa, exchangeRateOption: match.exchange_rate_option || match.exchange_rate_bolsa,
+      exchangeRateBolsa: match.exchange_rate_bolsa,
       basisByPort: (match.basis_by_port || {}) as Record<string, number>,
-      securityDeltaMarket: match.security_delta_market || 2, securityDeltaFreight: match.security_delta_freight || 15,
-      stopLoss: match.stop_loss || 0, bushelsPerTon: match.bushels_per_ton || 36.744, pesoSacaKg: match.peso_saca_kg || 60,
-      volatility: match.volatility || 25, riskFreeRate: (match as any).risk_free_rate || 0.1175,
-    } as CommodityPricing;
+      securityDeltaMarket: match.security_delta_market, securityDeltaFreight: match.security_delta_freight,
+      stopLoss: match.stop_loss, bushelsPerTon: match.bushels_per_ton, pesoSacaKg: match.peso_saca_kg,
+      volatility: match.volatility, riskFreeRate: match.risk_free_rate,
+    };
   }, [rawCommodityPricing, selectedCommodity, commodityPricing]);
 
-  const pricing = selectedCommodityPricing || { commodity: (selectedCommodity || 'soja'), exchange: 'CBOT', contract: 'K', exchangePrice: 0, optionCost: 0, exchangeRateBolsa: 0, exchangeRateOption: 0, basisByPort: {}, securityDeltaMarket: 0, securityDeltaFreight: 0, stopLoss: 0, bushelsPerTon: 36.744, pesoSacaKg: 60 } as CommodityPricing;
-  const ports = Object.keys(pricing.basisByPort);
+  const pricing = selectedCommodityPricing || null;
+  const ports = simResult?.ports ?? (pricing ? Object.keys(pricing.basisByPort || {}) : []);
 
   useEffect(() => { if (ports.length && !port) setPort(ports[0]); }, [ports, port]);
   useEffect(() => { if (freightReducers.length && !freightOrigin) setFreightOrigin(freightReducers[0]?.origin || ''); }, [freightReducers, freightOrigin]);
-  useEffect(() => { if (pricing.volatility) setVolatility(pricing.volatility); }, [pricing.volatility]);
+  useEffect(() => { if (pricing?.volatility) setVolatility(pricing.volatility); }, [pricing?.volatility]);
 
-  // Freight with fallback
-  const freightReducer = useMemo(() => {
-    const direct = freightReducers.find(f => f.origin === freightOrigin);
-    if (direct) return direct;
-    // Fallback: use default_freight_cost_per_km from campaign
-    const defaultCost = (rawCampaign as any)?.default_freight_cost_per_km;
-    if (defaultCost && defaultCost > 0 && freightOrigin) {
-      // Estimate: no specific route, use a nominal distance-based cost (0 distance = 0 cost)
-      return { origin: freightOrigin, destination: port || '', distanceKm: 0, costPerKm: defaultCost, adjustment: 0, totalReducer: 0 } as FreightReducer;
-    }
-    return undefined;
-  }, [freightReducers, freightOrigin, rawCampaign, port]);
+  // Freight (display only — backend uses DB values for calculations)
+  const freightReducer = useMemo(() => freightReducers.find(f => f.origin === freightOrigin), [freightReducers, freightOrigin]);
 
-  const commodityNetPrice = useMemo(() => calculateCommodityNetPrice(pricing, port, freightReducer, {
-    valorizationNominal: selectedValorization?.nominal_value || 0,
-    valorizationPercent: selectedValorization?.percent_value || 0,
-    useValorizationPercent: selectedValorization?.use_percent || false,
-    buyerFeePercent: buyerFee,
-  }), [pricing, port, freightReducer, selectedValorization, buyerFee]);
-
-  const ivp = useMemo(() => calculateIVP(contractPriceType, pricing.volatility), [contractPriceType, pricing.volatility]);
-
-  const parity = useMemo(() => calculateParity(grossToNet.netRevenue, commodityNetPrice, hasContract ? userPrice : undefined, grossToNet.grossRevenue, ivp), [grossToNet, commodityNetPrice, hasContract, userPrice, ivp]);
-
-  // Insurance with commodity config params
-  const insurancePremium = useMemo(() => {
-    if (!showInsurance) return null;
-    const spotPrice = pricing.exchangePrice * pricing.exchangeRateBolsa;
-    if (spotPrice <= 0) return null;
-    const vol = (pricing.volatility || volatility) / 100;
-    const rfr = pricing.riskFreeRate || 0.1175;
-    const strikePercent = (pricing as any).strikePercent || 105;
-    const strike = spotPrice * (strikePercent / 100);
-    const maturityDays = (pricing as any).optionMaturityDays || 180;
-    const timeYears = maturityDays / 365;
-    const premium = blackScholes(spotPrice, strike, timeYears, rfr, vol, true);
-    const premiumPerSaca = commodityNetPrice > 0 ? premium / commodityNetPrice : 0;
-    const additionalSacas = Math.ceil(premiumPerSaca * parity.quantitySacas);
-    return { premiumPerSaca: premium, additionalSacas, totalSacas: parity.quantitySacas + additionalSacas, volatility: vol * 100 };
-  }, [showInsurance, volatility, parity, commodityNetPrice, pricing]);
+  // ─── Calculation results from backend ───
+  const commodityNetPrice = simResult?.commodityNetPrice ?? 0;
+  const ivp = simResult?.ivp ?? 1;
+  const parity = simResult?.parity ?? { totalAmountBRL: 0, commodityPricePerUnit: 0, quantitySacas: 0, referencePrice: 0, valorization: 0, userOverridePrice: null, hasExistingContract: false };
+  const insurancePremium = simResult?.insurance ?? null;
 
   // ─── Formalization ───
   const wagonStages = useMemo(() => {
     if (!existingOp || !existingDocs) return [];
+    if (!activeModules.length) return []; // No modules configured — block
     const docList = (existingDocs || []).map(d => ({ doc_type: d.doc_type, status: d.status }));
-    return buildWagonStages(activeModules.length ? activeModules : ['adesao', 'simulacao', 'formalizacao', 'documentos', 'garantias'], existingOp.status as any, docList);
+    return buildWagonStages(activeModules, existingOp.status as any, docList);
   }, [existingOp, existingDocs, activeModules]);
 
   const nextStatus = useMemo(() => {
-    if (!existingOp || !existingDocs) return null;
+    if (!existingOp || !existingDocs || !activeModules.length) return null;
     const docList = (existingDocs || []).map(d => ({ doc_type: d.doc_type, status: d.status }));
-    return canAdvance(activeModules.length ? activeModules : ['adesao', 'simulacao', 'formalizacao', 'documentos', 'garantias'], existingOp.status as any, docList);
+    return canAdvance(activeModules, existingOp.status as any, docList);
   }, [existingOp, existingDocs, activeModules]);
 
   const [emitting, setEmitting] = useState<string | null>(null);
@@ -680,18 +656,18 @@ export default function OperationStepperPage() {
     toast.success(`Avançado para: ${nextStatus}`);
   };
 
-  // ─── Save operation ───
+  // ─── Save operation (uses server-authoritative simulation result) ───
   const handleSave = async (advanceToBarter = false) => {
-    if (!user || !selectedCampaignId || selections.length === 0) return;
+    if (!user || !selectedCampaignId || !simResult || simResult.selections.length === 0) return;
     if (eligibility?.blocked) { toast.error('Operação bloqueada por elegibilidade'); return; }
 
-    const counterparty = selectedBuyerId === '__other__' ? counterpartyOther : (selectedBuyer?.buyer_name || '');
+    const counterparty = selectedBuyerId === '__other__' ? counterpartyOther : (simResult.buyers?.find(b => b.id === selectedBuyerId)?.buyerName || '');
 
     try {
       let opId = operationId;
 
-      const items = pricingResults.map(pr => {
-        const sel = selections.find(s => s.productId === pr.productId)!;
+      const items = simResult.pricingResults.map(pr => {
+        const sel = simResult.selections.find(s => s.productId === pr.productId)!;
         return {
           operation_id: opId!,
           product_id: pr.productId,
@@ -764,31 +740,19 @@ export default function OperationStepperPage() {
         });
       }
 
-      // Save snapshot with valorization + guarantee data
-      const snapshot = buildSnapshot({
-        campaign: campaign!, rawCampaign, selections, pricingResults,
-        comboActivations, comboDefinitions: combos, eligibility: eligibility!,
-        grossToNet, consumptionLedger: comboCascade.consumptionLedger,
-        orderContext: { clientName, clientDocument, channel: channelEnum, state: clientState, city: clientCity, areaHectares: area, dueMonths, commodity: normalizeCommodityCode(selectedCommodity) },
-        commodityData: {
-          type: selectedCommodity, exchange: pricing.exchange, contract: pricing.contract,
-          exchangePrice: pricing.exchangePrice, exchangeRateBolsa: pricing.exchangeRateBolsa,
-          basisPort: port, basisValue: pricing.basisByPort[port],
-          freightOrigin, freightReducerPerTon: freightReducer?.totalReducer,
-          netPricePerSaca: commodityNetPrice,
-          valorizationBonus: selectedValorization?.use_percent
-            ? (selectedValorization.percent_value || 0)
-            : (selectedValorization?.nominal_value || 0),
-        },
-        parity, insurance: insurancePremium ? { premiumPerSaca: insurancePremium.premiumPerSaca, additionalSacas: insurancePremium.additionalSacas, totalSacas: insurancePremium.totalSacas, volatility: insurancePremium.volatility } : undefined,
-        performanceIndex: performanceIndex / 100,
-        priceVariationIndex: ivp,
-        aforoPercent: (rawCampaign as any)?.aforo_percent || 130,
-        contractPriceType: contractPriceType,
+      // Save snapshot — entire simulation result IS the authoritative snapshot
+      await supabase.from('order_pricing_snapshots').insert({
+        operation_id: opId!,
+        snapshot: simResult as any,
+        snapshot_type: isNewOperation ? 'simulation' : 'order',
+        created_by: user.id,
       });
 
-      await supabase.from('order_pricing_snapshots').insert({ operation_id: opId!, snapshot: snapshot as any, snapshot_type: isNewOperation ? 'simulation' : 'order', created_by: user.id });
-      await createLog.mutateAsync({ operation_id: opId!, user_id: user.id, action: isNewOperation ? (currentStepDef.id === 'summary' ? 'pedido_criado' : 'simulacao_criada') : 'operacao_atualizada', details: { area, segment, dueMonths, dueDate: selectedDueDate, productsCount: selections.length, paymentMethod: resolvePaymentMethod(selectedPM?.method_name) } });
+      await createLog.mutateAsync({
+        operation_id: opId!, user_id: user.id,
+        action: isNewOperation ? (currentStepDef.id === 'summary' ? 'pedido_criado' : 'simulacao_criada') : 'operacao_atualizada',
+        details: { area, segment, dueMonths, dueDate: selectedDueDate, productsCount: simResult.selections.length, paymentMethod: resolvePaymentMethod(selectedPM?.method_name) },
+      });
 
       toast.success(isNewOperation ? 'Operação criada!' : 'Operação atualizada!');
       if (isNewOperation) navigate(`/operacao/${opId}`, { replace: true });
@@ -1318,7 +1282,7 @@ export default function OperationStepperPage() {
                       </div>
                       <div>
                         <div className="stat-label">Aforo Exigido</div>
-                        <div className="font-mono text-foreground">{rawCampaign?.aforo_percent || 130}%</div>
+                        <div className="font-mono text-foreground">{rawCampaign?.aforo_percent ?? '—'}%</div>
                       </div>
                       <div>
                         <div className="stat-label">Montante Operação</div>
