@@ -569,11 +569,12 @@ export default function OperationStepperPage() {
   const comboRecommendations = useMemo(() => getComboRecommendations(combos, selections, products, area), [combos, selections, products, area]);
 
   const pricingResults = simResult?.pricingResults ?? [];
-  const grossToNet = simResult?.grossToNet ?? {
-    grossRevenue: 0, comboDiscount: 0, barterDiscount: 0, directIncentiveDiscount: 0,
-    creditLiberacao: 0, creditLiquidacao: 0, netRevenue: 0, financialRevenue: 0,
-    distributorMargin: 0, segmentAdjustment: 0, paymentMethodMarkup: 0,
-    barterCost: 0, netNetRevenue: 0,
+  const rawGrossToNet = simResult?.grossToNet;
+  const grossToNet = {
+    grossRevenue: rawGrossToNet?.grossRevenue ?? 0, comboDiscount: rawGrossToNet?.comboDiscount ?? 0, barterDiscount: rawGrossToNet?.barterDiscount ?? 0, directIncentiveDiscount: rawGrossToNet?.directIncentiveDiscount ?? 0,
+    creditLiberacao: rawGrossToNet?.creditLiberacao ?? 0, creditLiquidacao: rawGrossToNet?.creditLiquidacao ?? 0, netRevenue: rawGrossToNet?.netRevenue ?? 0, financialRevenue: rawGrossToNet?.financialRevenue ?? 0,
+    distributorMargin: rawGrossToNet?.distributorMargin ?? 0, segmentAdjustment: rawGrossToNet?.segmentAdjustment ?? 0, paymentMethodMarkup: rawGrossToNet?.paymentMethodMarkup ?? 0,
+    barterCost: rawGrossToNet?.barterCost ?? 0, netNetRevenue: rawGrossToNet?.netNetRevenue ?? 0,
   };
 
   // ─── Parity (with valorization + buyer fee) ───
@@ -613,7 +614,8 @@ export default function OperationStepperPage() {
   // ─── Calculation results from backend ───
   const commodityNetPrice = simResult?.commodityNetPrice ?? 0;
   const ivp = simResult?.ivp ?? 1;
-  const parity = simResult?.parity ?? { totalAmountBRL: 0, commodityPricePerUnit: 0, quantitySacas: 0, referencePrice: 0, valorization: 0, userOverridePrice: null, hasExistingContract: false };
+  const rawParity = simResult?.parity;
+  const parity = { totalAmountBRL: rawParity?.totalAmountBRL ?? 0, commodityPricePerUnit: rawParity?.commodityPricePerUnit ?? 0, quantitySacas: rawParity?.quantitySacas ?? 0, referencePrice: rawParity?.referencePrice ?? 0, valorization: rawParity?.valorization ?? 0, userOverridePrice: rawParity?.userOverridePrice ?? null, hasExistingContract: rawParity?.hasExistingContract ?? false };
   const insurancePremium = simResult?.insurance ?? null;
 
   // ─── Formalization ───
