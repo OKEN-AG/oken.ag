@@ -3,7 +3,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Plus, Trash2, Unlink, Upload, ClipboardPaste } from 'lucide-react';
+import { Plus, Trash2, Upload, ClipboardPaste } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Textarea } from '@/components/ui/textarea';
 import { useProducts, useCreateProduct, useDeleteProduct, useUpdateProduct, useCampaignProducts, useLinkProductToCampaign, useUnlinkProductFromCampaign } from '@/hooks/useProducts';
@@ -11,9 +11,9 @@ import { toast } from 'sonner';
 import * as XLSX from 'xlsx';
 import { parseLocaleNumber, splitFlexibleLine, normalizeText, normalizeRef } from '@/lib/import-utils';
 
-type Props = { campaignId?: string };
+type Props = {campaignId?: string;};
 
-type EditingCell = { rowId: string; field: string } | null;
+type EditingCell = {rowId: string;field: string;} | null;
 
 export default function ProductsTab({ campaignId }: Props) {
   const { data: allProducts } = useProducts();
@@ -41,22 +41,22 @@ export default function ProductsTab({ campaignId }: Props) {
     if (!editing) return;
     const { rowId, field } = editing;
     const product = products.find((p: any) => p.id === rowId);
-    if (!product) { setEditing(null); return; }
+    if (!product) {setEditing(null);return;}
 
     let val: any = editValue;
     if (['price_cash', 'price_term', 'price_per_unit', 'units_per_box', 'dose_per_hectare', 'min_dose', 'max_dose', 'boxes_per_pallet'].includes(field)) {
       val = Number(editValue.replace(',', '.')) || 0;
     }
-    if (val === product[field]) { setEditing(null); return; }
+    if (val === product[field]) {setEditing(null);return;}
 
     try {
       await updateMut.mutateAsync({ id: rowId, [field]: val });
-    } catch (e: any) { toast.error(e.message); }
+    } catch (e: any) {toast.error(e.message);}
     setEditing(null);
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' || e.key === 'Tab') { e.preventDefault(); commitEdit(); }
+    if (e.key === 'Enter' || e.key === 'Tab') {e.preventDefault();commitEdit();}
     if (e.key === 'Escape') setEditing(null);
   };
 
@@ -68,15 +68,15 @@ export default function ProductsTab({ campaignId }: Props) {
         price_cash: 0, price_term: 0, price_per_unit: 0, units_per_box: 12,
         unit_type: 'l', dose_per_hectare: 1, min_dose: 0.1, max_dose: 10,
         boxes_per_pallet: 40, pallets_per_truck: 20, currency: 'USD',
-        price_type: 'vista', includes_margin: false,
+        price_type: 'vista', includes_margin: false
       });
       await linkMut.mutateAsync({ campaignId, productId: created.id });
       toast.success('Linha adicionada');
-    } catch (e: any) { toast.error(e.message); }
+    } catch (e: any) {toast.error(e.message);}
   };
 
   const parseRows = (text: string) => {
-    const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
+    const lines = text.split('\n').map((l) => l.trim()).filter(Boolean);
     const rows: any[] = [];
 
     for (const line of lines) {
@@ -107,7 +107,7 @@ export default function ProductsTab({ campaignId }: Props) {
         pallets_per_truck: 20,
         currency: 'USD',
         price_type: 'vista',
-        includes_margin: false,
+        includes_margin: false
       });
     }
     return rows;
@@ -139,7 +139,7 @@ export default function ProductsTab({ campaignId }: Props) {
       try {
         const codeKey = normalizeText(row.code || '');
         const refKey = normalizeRef(row.ref || '');
-        const existing = (codeKey && productsByCode.get(codeKey)) || (refKey && productsByRef.get(refKey));
+        const existing = codeKey && productsByCode.get(codeKey) || refKey && productsByRef.get(refKey);
 
         let productId: string | null = null;
 
@@ -159,9 +159,9 @@ export default function ProductsTab({ campaignId }: Props) {
             linkedIds.add(productId);
             linkedCount++;
           } catch {
+
             // already linked or constraint issue; keep import flow
-          }
-        }
+          }}
       } catch (e) {
         console.error(e);
         skippedCount++;
@@ -169,7 +169,7 @@ export default function ProductsTab({ campaignId }: Props) {
     }
 
     toast.success(
-      `Importação concluída: ${createdCount} criados, ${updatedCount} atualizados, ${linkedCount} vinculados${skippedCount > 0 ? `, ${skippedCount} ignorados` : ''}.`,
+      `Importação concluída: ${createdCount} criados, ${updatedCount} atualizados, ${linkedCount} vinculados${skippedCount > 0 ? `, ${skippedCount} ignorados` : ''}.`
     );
   };
 
@@ -202,21 +202,21 @@ export default function ProductsTab({ campaignId }: Props) {
         <Input
           autoFocus
           value={editValue}
-          onChange={e => setEditValue(e.target.value)}
+          onChange={(e) => setEditValue(e.target.value)}
           onBlur={commitEdit}
           onKeyDown={handleKeyDown}
-          className="h-7 text-xs px-1 bg-background border-primary"
-        />
-      );
+          className="h-7 text-xs px-1 bg-background border-primary" />);
+
+
     }
     return (
       <div
         className="cursor-pointer hover:bg-accent/50 rounded px-1 py-0.5 min-h-[28px] flex items-center text-xs"
-        onClick={() => startEdit(product.id, field, product[field])}
-      >
-        {display ?? (product[field] ?? '')}
-      </div>
-    );
+        onClick={() => startEdit(product.id, field, product[field])}>
+
+        {display ?? product[field] ?? ''}
+      </div>);
+
   };
 
   if (!campaignId) return <p className="text-center py-8 text-muted-foreground">Salve a campanha primeiro para gerenciar produtos.</p>;
@@ -241,8 +241,8 @@ export default function ProductsTab({ campaignId }: Props) {
 
       <p className="text-xs text-muted-foreground">Clique em qualquer célula para editar. Enter/Tab para confirmar, Esc para cancelar.</p>
 
-      {isLoading ? <p className="text-sm text-muted-foreground">Carregando...</p> : (
-        <div className="border border-border rounded-md overflow-auto max-h-[70vh]">
+      {isLoading ? <p className="text-sm text-muted-foreground">Carregando...</p> :
+      <div className="border border-border rounded-md overflow-auto max-h-[70vh]">
           <Table>
             <TableHeader>
               <TableRow className="bg-muted/50">
@@ -259,8 +259,8 @@ export default function ProductsTab({ campaignId }: Props) {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {products.map((p: any, idx: number) => (
-                <TableRow key={p.id} className="hover:bg-accent/30">
+              {products.map((p: any, idx: number) =>
+            <TableRow key={p.id} className="hover:bg-accent/30">
                   <TableCell className="text-xs text-muted-foreground font-mono">{idx + 1}</TableCell>
                   <TableCell>{renderCell(p, 'code')}</TableCell>
                   <TableCell>{renderCell(p, 'name')}</TableCell>
@@ -273,7 +273,7 @@ export default function ProductsTab({ campaignId }: Props) {
                   <TableCell>
                     <div className="flex gap-0.5">
                       <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => unlinkMut.mutate({ campaignId: campaignId!, productId: p.id })}>
-                        <Unlink className="w-3 h-3" />
+                        
                       </Button>
                       <Button variant="ghost" size="icon" className="h-6 w-6 text-destructive" onClick={() => deleteMut.mutate(p.id)}>
                         <Trash2 className="w-3 h-3" />
@@ -281,18 +281,18 @@ export default function ProductsTab({ campaignId }: Props) {
                     </div>
                   </TableCell>
                 </TableRow>
-              ))}
-              {products.length === 0 && (
-                <TableRow>
+            )}
+              {products.length === 0 &&
+            <TableRow>
                   <TableCell colSpan={10} className="text-center py-8 text-muted-foreground">
                     Nenhum produto vinculado. Adicione uma linha ou importe dados.
                   </TableCell>
                 </TableRow>
-              )}
+            }
             </TableBody>
           </Table>
         </div>
-      )}
+      }
 
       {/* Paste dialog */}
       <Dialog open={pasteOpen} onOpenChange={setPasteOpen}>
@@ -306,17 +306,17 @@ export default function ProductsTab({ campaignId }: Props) {
           </p>
           <Textarea
             value={pasteText}
-            onChange={e => setPasteText(e.target.value)}
+            onChange={(e) => setPasteText(e.target.value)}
             rows={12}
             placeholder="Cole aqui os dados da planilha..."
-            className="font-mono text-xs"
-          />
+            className="font-mono text-xs" />
+
           <DialogFooter>
             <Button variant="outline" onClick={() => setPasteOpen(false)}>Cancelar</Button>
             <Button onClick={handlePasteImport}>Importar</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
-  );
+    </div>);
+
 }
