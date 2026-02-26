@@ -537,6 +537,7 @@ export default function OperationStepperPage() {
 
   // ─── Trigger simulation on input changes (server-authoritative) ───
   useEffect(() => {
+    if (!selectedCampaignId || selectedProducts.size === 0 || !dueMonths || hasDueDateConfigIssue || !segment) return;
     if (!selectedCampaignId || selectedProducts.size === 0 || !dueMonths || hasDueDateConfigIssue) return;
     if (lastSimulationKeyRef.current === simulationKey) return;
     lastSimulationKeyRef.current = simulationKey;
@@ -546,6 +547,7 @@ export default function OperationStepperPage() {
       overrideQuantity: quantityMode === 'livre' ? (freeQuantities.get(id) || undefined) : undefined,
     }));
     simulateDebounced({
+      campaignId: selectedCampaignId, selections: inputSelections, segmentName: segment, channelSegment: channelEnum, dueMonths, dueDate: selectedDueDate || undefined,
       campaignId: selectedCampaignId, selections: inputSelections, segmentName: segment || channelEnum, channelSegment: channelEnum, dueMonths, dueDate: selectedDueDate || undefined,
       paymentMethodId: selectedPaymentMethod || undefined,
       commodityCode: selectedCommodity || undefined,

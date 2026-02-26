@@ -62,6 +62,7 @@ interface PricingDebugRow {
   feesOkenPercent: number;
   g2nComboDiscountAllocated: number; g2nBarterDiscountAllocated: number;
   g2nDirectIncentiveAllocated: number; g2nNetRevenueAllocated: number;
+  g2nCommodityCreditAllocated: number;
   parityCommodity: string | null; parityPricePerSaca: number | null;
   fxSourceUsed: 'products' | 'barter'; pricingPlaza: string | null;
 }
@@ -72,6 +73,7 @@ interface GrossToNetResult {
   netRevenue: number; financialRevenue: number; distributorMargin: number;
   segmentAdjustment: number; paymentMethodMarkup: number; barterCost: number;
   netNetRevenue: number;
+  commodityCredit: number;
 }
 
 interface EligibilityResult {
@@ -221,6 +223,7 @@ function applyComboCascade(
 function calculatePricing(
   product: ProductRow, campaign: any, margins: any[], channelSegment: string,
   segmentName: string, dueMonths: number, quantity: number,
+  opts: { paymentMethodMarkup: number; segmentAdjustmentPercent: number; paymentMethodAnnualRate: number; boxes: number; pallets: number; useBarterFx: boolean }
   opts: { paymentMethodMarkup: number; segmentAdjustmentPercent: number; paymentMethodAnnualRate: number; boxes: number; pallets: number }
 ): { pricing: PricingResultItem; debug: PricingDebugRow } {
   const priceListFormat = String(campaign.price_list_format || '').toLowerCase();
@@ -242,6 +245,7 @@ function calculatePricing(
     : (resolvedSourceField === 'price_cash' ? (product.price_cash || product.price_per_unit) : product.price_per_unit);
 
   const listCurrency = (forcedCurrency || product.currency || 'BRL') as 'BRL' | 'USD';
+  const useBarterFx = opts.useBarterFx || priceListFormat.includes('indicativa') || priceListFormat.includes('barter');
   const useBarterFx = priceListFormat.includes('indicativa') || priceListFormat.includes('barter');
   const exchangeRateProducts = useBarterFx
     ? Number(campaign.exchange_rate_barter || campaign.exchange_rate_products || 1)
@@ -318,6 +322,7 @@ function calculatePricing(
       g2nBarterDiscountAllocated: 0,
       g2nDirectIncentiveAllocated: 0,
       g2nNetRevenueAllocated: 0,
+      g2nCommodityCreditAllocated: 0,
       parityCommodity: null,
       parityPricePerSaca: null,
       fxSourceUsed: useBarterFx ? 'barter' : 'products',
@@ -394,7 +399,7 @@ function calculateGrossToNet(
     creditLiberacao, creditLiquidacao, netRevenue,
     financialRevenue: totalInterest, distributorMargin: totalMargin,
     segmentAdjustment: totalSegAdj, paymentMethodMarkup: totalPmMarkup,
-    barterCost: barterDiscount, netNetRevenue: netRevenue - totalMargin,
+    barterCost: barterDiscount, netNetRevenue: netRevenue - totalMargin, commodityCredit: 0,
   };
 }
 
@@ -466,20 +471,11 @@ function calculateCommodityNetPrice(pricing: any, port: string, freightReducer: 
   const fobBrlPerTon = fobUsdPerTon * pricing.exchange_rate_bolsa;
   const afterMarketDelta = fobBrlPerTon * (1 - (pricing.security_delta_market ?? 0) / 100);
 
-  let afterValorization = afterMarketDelta;
-  if (opts?.useValorizationPercent && opts.valorizationPercent) {
-    afterValorization *= (1 + opts.valorizationPercent / 100);
-  }
-
   const freightCostPerTon = freightReducer?.total_reducer ?? 0;
-  const interiorPricePerTon = afterValorization - freightCostPerTon;
+  const interiorPricePerTon = afterMarketDelta - freightCostPerTon;
   const netPricePerTon = interiorPricePerTon * (1 - (pricing.security_delta_freight ?? 0) / 100);
 
   let netPricePerSaca = netPricePerTon / sacasPerTon;
-
-  if (!opts?.useValorizationPercent && opts?.valorizationNominal) {
-    netPricePerSaca += opts.valorizationNominal;
-  }
 
   if (opts?.buyerFeePercent && opts.buyerFeePercent > 0) {
     netPricePerSaca *= (1 - opts.buyerFeePercent / 100);
@@ -644,6 +640,7 @@ serve(async (req: Request) => {
             paymentMethodAnnualRate: selectedPM?.annual_interest_rate || 0,
             boxes: sel.boxes,
             pallets: sel.pallets,
+            useBarterFx: !!selectedPM?.method_name?.toLowerCase().includes('barter'),
           });
         });
 
@@ -667,6 +664,7 @@ serve(async (req: Request) => {
             g2nBarterDiscountAllocated: grossToNet.barterDiscount * share,
             g2nDirectIncentiveAllocated: grossToNet.directIncentiveDiscount * share,
             g2nNetRevenueAllocated: grossToNet.netRevenue * share,
+            g2nCommodityCreditAllocated: grossToNet.commodityCredit * share,
             parityCommodity: commodityCode || null,
             parityPricePerSaca: null,
           };
@@ -706,14 +704,26 @@ serve(async (req: Request) => {
           const valorization = (valRes.data || []).find((v: any) => v.commodity?.toLowerCase() === commodityCode.toLowerCase());
 
           commodityNetPriceValue = calculateCommodityNetPrice(commodityPricingRow, portName || '', freightReducer, {
-            valorizationNominal: valorization?.nominal_value || 0,
-            valorizationPercent: valorization?.percent_value || 0,
-            useValorizationPercent: valorization?.use_percent || false,
             buyerFeePercent: buyer?.fee || 0,
           });
 
           ivpValue = calculateIVP(cpt || 'fixo', commodityPricingRow.volatility);
           parityResult = calculateParity(grossToNet.netRevenue, commodityNetPriceValue, hasExistingContract ? userOverridePrice : null, grossToNet.grossRevenue, ivpValue);
+
+          if (valorization) {
+            const nominalCredit = Number(valorization.nominal_value || 0);
+            const percentCredit = Number(valorization.percent_value || 0);
+            const creditFromNominal = nominalCredit > 0 ? nominalCredit * parityResult.quantitySacas : 0;
+            const creditFromPercent = valorization.use_percent ? (grossToNet.grossRevenue * percentCredit / 100) : 0;
+            const commodityCreditBRL = creditFromNominal + creditFromPercent;
+            grossToNet.commodityCredit = commodityCreditBRL;
+            grossToNet.directIncentiveDiscount += commodityCreditBRL;
+            grossToNet.netRevenue = Math.max(0, grossToNet.netRevenue - commodityCreditBRL);
+            grossToNet.netNetRevenue = Math.max(0, grossToNet.netNetRevenue - commodityCreditBRL);
+            if (commodityNetPriceValue > 0) {
+              parityResult = calculateParity(grossToNet.netRevenue, commodityNetPriceValue, hasExistingContract ? userOverridePrice : null, grossToNet.grossRevenue, ivpValue);
+            }
+          }
 
           // Insurance
           if (showInsurance) {
@@ -752,6 +762,18 @@ serve(async (req: Request) => {
           for (const row of pricingDebugRowsAllocated) {
             row.parityPricePerSaca = parityResult.commodityPricePerUnit;
             row.pricingPlaza = plaza;
+          }
+        }
+
+        for (const row of pricingDebugRowsAllocated) {
+          const share = Math.max(0, row.subtotal / grossRevenueSafe);
+          row.g2nComboDiscountAllocated = grossToNet.comboDiscount * share;
+          row.g2nBarterDiscountAllocated = grossToNet.barterDiscount * share;
+          row.g2nDirectIncentiveAllocated = grossToNet.directIncentiveDiscount * share;
+          row.g2nCommodityCreditAllocated = grossToNet.commodityCredit * share;
+          row.g2nNetRevenueAllocated = grossToNet.netRevenue * share;
+        }
+
           for (const row of pricingDebugRowsAllocated) {
             row.parityPricePerSaca = parityResult.commodityPricePerUnit;
           }

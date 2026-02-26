@@ -44,6 +44,7 @@ export interface PricingDebugRow {
   feesOkenPercent: number;
   g2nComboDiscountAllocated: number; g2nBarterDiscountAllocated: number;
   g2nDirectIncentiveAllocated: number; g2nNetRevenueAllocated: number;
+  g2nCommodityCreditAllocated: number;
   parityCommodity: string | null; parityPricePerSaca: number | null;
   fxSourceUsed: 'products' | 'barter'; pricingPlaza: string | null;
 }
@@ -53,7 +54,7 @@ export interface GrossToNetResult {
   directIncentiveDiscount: number; creditLiberacao: number; creditLiquidacao: number;
   netRevenue: number; financialRevenue: number; distributorMargin: number;
   segmentAdjustment: number; paymentMethodMarkup: number; barterCost: number;
-  netNetRevenue: number;
+  netNetRevenue: number; commodityCredit: number;
 }
 
 export interface EligibilityResult {

@@ -42,6 +42,7 @@ type PricingDebugRow = {
   g2nBarterDiscountAllocated: number;
   g2nDirectIncentiveAllocated: number;
   g2nNetRevenueAllocated: number;
+  g2nCommodityCreditAllocated: number;
   parityCommodity: string | null;
   parityPricePerSaca: number | null;
   fxSourceUsed: 'products' | 'barter';
@@ -118,6 +119,7 @@ export default function PricingAnalysisPage() {
                 <th className="p-2 text-right">G2N Combo</th>
                 <th className="p-2 text-right">G2N Barter</th>
                 <th className="p-2 text-right">G2N Incentivo</th>
+                <th className="p-2 text-right">Crédito Commodity</th>
                 <th className="p-2 text-right">G2N Net</th>
                 <th className="p-2 text-right">Parity</th>
               </tr>
@@ -143,6 +145,7 @@ export default function PricingAnalysisPage() {
                   <td className="p-2 text-right">{brMoney(r.g2nComboDiscountAllocated, 'BRL')}</td>
                   <td className="p-2 text-right">{brMoney(r.g2nBarterDiscountAllocated, 'BRL')}</td>
                   <td className="p-2 text-right">{brMoney(r.g2nDirectIncentiveAllocated, 'BRL')}</td>
+                  <td className="p-2 text-right">{brMoney(r.g2nCommodityCreditAllocated, 'BRL')}</td>
                   <td className="p-2 text-right">{brMoney(r.g2nNetRevenueAllocated, 'BRL')}</td>
                   <td className="p-2 text-right">{r.parityCommodity ? `${r.parityCommodity} ${brMoney(r.parityPricePerSaca || 0, 'BRL')}/sc` : '—'}</td>
                 </tr>
