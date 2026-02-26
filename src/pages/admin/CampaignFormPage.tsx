@@ -382,21 +382,20 @@ export default function CampaignFormPage() {
 
   return (
     <div className="p-6 space-y-6 max-w-5xl">
-      <div className="flex items-center gap-4">
-        <Button variant="ghost" size="icon" onClick={() => navigate('/admin/campanhas')}>
-          <ArrowLeft className="w-4 h-4" />
-        </Button>
-        <div className="flex-1">
-          <h1 className="text-2xl font-bold text-foreground">{isNew ? 'Nova Campanha' : 'Editar Campanha'}</h1>
-          <p className="text-sm text-muted-foreground">Preencha os dados abaixo</p>
-        </div>
-        <Button onClick={handleSave} disabled={isSaving}>
-          <Save className="w-4 h-4 mr-2" /> {isSaving ? 'Salvando...' : 'Salvar'}
-        </Button>
-      </div>
-
       <Tabs defaultValue="geral" className="w-full">
-        <div className="sticky top-0 z-20 bg-background pb-2">
+        <div className="sticky top-0 z-20 bg-background pb-2 space-y-2">
+          <div className="flex items-center gap-4">
+            <Button variant="ghost" size="icon" onClick={() => navigate('/admin/campanhas')}>
+              <ArrowLeft className="w-4 h-4" />
+            </Button>
+            <div className="flex-1">
+              <h1 className="text-2xl font-bold text-foreground">{isNew ? 'Nova Campanha' : 'Editar Campanha'}</h1>
+              <p className="text-sm text-muted-foreground">Preencha os dados abaixo</p>
+            </div>
+            <Button onClick={handleSave} disabled={isSaving}>
+              <Save className="w-4 h-4 mr-2" /> {isSaving ? 'Salvando...' : 'Salvar'}
+            </Button>
+          </div>
           <TabsList className="bg-muted border border-border flex-wrap h-auto">
             <TabsTrigger value="geral">Geral</TabsTrigger>
             <TabsTrigger value="financeiro">Financeiro</TabsTrigger>
