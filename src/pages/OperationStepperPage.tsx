@@ -1693,6 +1693,26 @@ export default function OperationStepperPage() {
                   </div>
                 )}
               </div>
+
+              {/* Produtos */}
+              <div>
+                <h3 className="font-semibold text-foreground mb-2">Produtos ({products.length})</h3>
+                {products.length === 0 ? <p className="text-muted-foreground text-xs">Nenhum produto vinculado.</p> : (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                    {products.map(p => (
+                      <div key={p.id} className="bg-muted/50 rounded p-2">
+                        <div className="font-medium text-foreground text-xs">{p.name}</div>
+                        <div className="text-[11px] text-muted-foreground">{p.activeIngredient}</div>
+                        <div className="flex gap-3 mt-1 text-[11px]">
+                          <span>Categoria: <span className="text-foreground">{p.category}</span></span>
+                          <span>Dose: <span className="font-mono text-foreground">{p.dosePerHectare} {p.unitType}/ha</span></span>
+                          <span>Faixa: <span className="font-mono text-foreground">{p.minDose}–{p.maxDose}</span></span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
           )}
         </DialogContent>
