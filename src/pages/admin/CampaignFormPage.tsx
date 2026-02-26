@@ -270,18 +270,30 @@ export default function CampaignFormPage() {
       }
 
       // Save sub-tables (with explicit error checks)
+      // Delete sub-tables (distributors use upsert to avoid FK issues with operations)
       const deleteResults = await Promise.all([
         supabase.from('campaign_clients').delete().eq('campaign_id', campaignId!),
         supabase.from('campaign_payment_methods').delete().eq('campaign_id', campaignId!),
         supabase.from('campaign_segments').delete().eq('campaign_id', campaignId!),
         supabase.from('campaign_due_dates').delete().eq('campaign_id', campaignId!),
         (supabase as any).from('campaign_channel_segments').delete().eq('campaign_id', campaignId!),
-        (supabase as any).from('campaign_distributors').delete().eq('campaign_id', campaignId!),
         supabase.from('channel_margins').delete().eq('campaign_id', campaignId!),
         (supabase as any).from('campaign_channel_types').delete().eq('campaign_id', campaignId!),
       ]);
       const deleteError = (deleteResults as any[]).find(r => r?.error)?.error;
       if (deleteError) throw deleteError;
+
+      // Distributors: soft-update instead of delete+insert to avoid FK violation
+      // Get existing distributor IDs referenced by operations
+      const { data: existingDistributors } = await (supabase as any)
+        .from('campaign_distributors').select('id, cnpj').eq('campaign_id', campaignId!);
+      const existingMap = new Map((existingDistributors || []).map((d: any) => [d.cnpj, d.id]));
+      // Deactivate all existing, then upsert the current list
+      if (existingDistributors && existingDistributors.length > 0) {
+        await (supabase as any).from('campaign_distributors')
+          .update({ active: false })
+          .eq('campaign_id', campaignId!);
+      }
 
       const validClients = clients.filter(c => String(c.document || '').replace(/\D/g, '') || String(c.name || '').trim());
       const validChannelSegments = channelSegments.filter(cs => cs.channel_segment_name.trim());
@@ -303,9 +315,8 @@ export default function CampaignFormPage() {
         validChannelSegments.length > 0
           ? (supabase as any).from('campaign_channel_segments').insert(validChannelSegments.map(cs => ({ ...cs, campaign_id: campaignId! })))
           : Promise.resolve({ error: null }),
-        validDistributors.length > 0
-          ? (supabase as any).from('campaign_distributors').insert(validDistributors.map(d => ({ ...d, campaign_id: campaignId! })))
-          : Promise.resolve({ error: null }),
+        // Distributors handled via upsert below
+        Promise.resolve({ error: null }),
         channelMargins.length > 0
           ? supabase.from('channel_margins').insert(channelMargins.map(m => ({ campaign_id: campaignId!, segment: m.segment, margin_percent: m.margin_percent })))
           : Promise.resolve({ error: null }),
@@ -315,6 +326,23 @@ export default function CampaignFormPage() {
       ]);
       const insertError = (insertResults as any[]).find(r => r?.error)?.error;
       if (insertError) throw insertError;
+
+      // Upsert distributors: update existing (by cnpj match), insert new ones
+      if (validDistributors.length > 0) {
+        for (const d of validDistributors) {
+          const existingId = existingMap.get(d.cnpj);
+          if (existingId) {
+            const { error: upErr } = await (supabase as any).from('campaign_distributors')
+              .update({ ...d, active: d.active !== false ? true : false })
+              .eq('id', existingId);
+            if (upErr) throw upErr;
+          } else {
+            const { error: inErr } = await (supabase as any).from('campaign_distributors')
+              .insert({ ...d, campaign_id: campaignId! });
+            if (inErr) throw inErr;
+          }
+        }
+      }
 
       // Invalidate all operational caches for this campaign
       const cid = campaignId!;

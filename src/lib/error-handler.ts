@@ -10,7 +10,12 @@ export function handleDatabaseError(error: any): string {
 
   // Postgres error codes
   if (code === '23505') return 'Este registro já existe. Tente outro nome ou código.';
-  if (code === '23503') return 'Operação inválida. Dados relacionados não encontrados.';
+  if (code === '23503') {
+    if (message.includes('violates foreign key constraint')) {
+      return 'Não é possível remover este registro pois ele está sendo usado em operações existentes.';
+    }
+    return 'Operação inválida. Dados relacionados não encontrados.';
+  }
   if (code === '23514') return 'Dados inválidos. Verifique os valores informados.';
   if (code === '42501') return 'Sem permissão para esta operação.';
   if (code === '42P01') return 'Erro interno. Contate o suporte.';
