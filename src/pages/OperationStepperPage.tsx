@@ -1480,7 +1480,8 @@ export default function OperationStepperPage() {
                             </div>
                             {selectedVariants.map(variant => {
                               const sel = selections.find(s => s.productId === variant.id);
-                              const totalQty = sel?.roundedQuantity ?? (quantityMode === 'livre' ? (freeQuantities.get(variant.id) || 0) : Math.ceil(effectiveArea * dose));
+                              const selFresh = sel && sel.areaHectares === effectiveArea ? sel : undefined;
+                              const totalQty = selFresh?.roundedQuantity ?? (quantityMode === 'livre' ? (freeQuantities.get(variant.id) || 0) : Math.ceil(effectiveArea * dose));
                               return (
                                 <div key={variant.id} className="bg-muted/50 rounded p-2 space-y-1">
                                   <div className="flex items-center justify-between">
@@ -1496,9 +1497,9 @@ export default function OperationStepperPage() {
                                     </div>
                                   )}
                                   <div className="grid grid-cols-3 gap-1 text-[10px]">
-                                    <div className="text-center"><span className="text-muted-foreground">Vol</span><div className="font-mono text-foreground">{sel?.roundedQuantity?.toFixed(0) ?? totalQty}</div></div>
-                                    <div className="text-center"><span className="text-muted-foreground">Cx</span><div className="font-mono text-foreground">{sel?.boxes ?? 0}</div></div>
-                                    <div className="text-center"><span className="text-muted-foreground">Plt</span><div className="font-mono text-foreground">{sel?.pallets ?? 0}</div></div>
+                                    <div className="text-center"><span className="text-muted-foreground">Vol</span><div className="font-mono text-foreground">{selFresh?.roundedQuantity?.toFixed(0) ?? totalQty}</div></div>
+                                    <div className="text-center"><span className="text-muted-foreground">Cx</span><div className="font-mono text-foreground">{selFresh?.boxes ?? 0}</div></div>
+                                    <div className="text-center"><span className="text-muted-foreground">Plt</span><div className="font-mono text-foreground">{selFresh?.pallets ?? 0}</div></div>
                                   </div>
                                 </div>
                               );
