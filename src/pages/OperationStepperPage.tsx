@@ -459,13 +459,13 @@ export default function OperationStepperPage() {
 
   // ─── Trigger simulation on input changes (server-authoritative) ───
   useEffect(() => {
-    if (!selectedCampaignId || selectedProducts.size === 0 || !segment || !dueMonths) return;
+    if (!selectedCampaignId || selectedProducts.size === 0 || !dueMonths) return;
     const inputSelections = Array.from(selectedProducts.entries()).map(([id, dose]) => ({
       productId: id, dosePerHectare: dose, areaHectares: area,
       overrideQuantity: quantityMode === 'livre' ? (freeQuantities.get(id) || undefined) : undefined,
     }));
     simulateDebounced({
-      campaignId: selectedCampaignId, selections: inputSelections, segment, dueMonths,
+      campaignId: selectedCampaignId, selections: inputSelections, segment: segment || channelEnum, dueMonths,
       paymentMethodId: selectedPaymentMethod || undefined,
       commodityCode: selectedCommodity || undefined,
       port: port || undefined, freightOrigin: freightOrigin || undefined,
@@ -479,7 +479,7 @@ export default function OperationStepperPage() {
         clientType, clientDocument: clientDocument || undefined, segment,
       },
     });
-  }, [selectedCampaignId, selectedProducts, area, segment, dueMonths, selectedPaymentMethod,
+  }, [selectedCampaignId, selectedProducts, area, segment, channelEnum, dueMonths, selectedPaymentMethod,
       selectedCommodity, port, freightOrigin, hasContract, userPrice, showInsurance,
       selectedBuyerId, contractPriceType, performanceIndex, clientState, selectedCityName,
       clientCityCode, usesIbgeCityEligibility, clientType, clientDocument, quantityMode, freeQuantities]);
@@ -765,7 +765,7 @@ export default function OperationStepperPage() {
   const canProceed = (stepId: string): boolean => {
     switch (stepId) {
       case 'context': return !!selectedCampaignId && !!clientName && !eligibility?.blocked;
-      case 'order': return selections.length > 0;
+      case 'order': return selectedProducts.size > 0;
       case 'simulation': return grossToNet.grossRevenue > 0;
       case 'payment': return true;
       case 'barter': return true;
