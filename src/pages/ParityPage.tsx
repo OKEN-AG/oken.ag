@@ -62,6 +62,10 @@ export default function ParityPage() {
     if (!rawCommodityPricing || rawCommodityPricing.length === 0) return null;
     const match = rawCommodityPricing.find((cp: any) => normalizeCommodityCode(cp.commodity) === normalizeCommodityCode(selectedCommodity));
     if (match) {
+      // All values from DB — no hardcoded fallbacks
+      if (!match.bushels_per_ton || !match.peso_saca_kg) {
+        console.warn('commodity_pricing missing bushels_per_ton or peso_saca_kg — configure no admin');
+      }
       return {
         commodity: match.commodity as any,
         exchange: match.exchange,
@@ -71,14 +75,13 @@ export default function ParityPage() {
         exchangeRateBolsa: match.exchange_rate_bolsa,
         exchangeRateOption: match.exchange_rate_option || match.exchange_rate_bolsa,
         basisByPort: (match.basis_by_port || {}) as Record<string, number>,
-        securityDeltaMarket: match.security_delta_market || 2,
-        securityDeltaFreight: match.security_delta_freight || 15,
-        stopLoss: match.stop_loss || 0,
-        bushelsPerTon: match.bushels_per_ton || 36.744,
-        pesoSacaKg: match.peso_saca_kg || 60,
-        // H3: B&S params from config (risk_free_rate from DB)
-        volatility: match.volatility || 25,
-        riskFreeRate: (match as any).risk_free_rate || 0.1175,
+        securityDeltaMarket: match.security_delta_market ?? 0,
+        securityDeltaFreight: match.security_delta_freight ?? 0,
+        stopLoss: match.stop_loss ?? 0,
+        bushelsPerTon: match.bushels_per_ton ?? 0,
+        pesoSacaKg: match.peso_saca_kg ?? 0,
+        volatility: match.volatility ?? 0,
+        riskFreeRate: (match as any).risk_free_rate ?? 0,
       } as CommodityPricing;
     }
     return commodityPricingAll;
@@ -118,7 +121,7 @@ export default function ParityPage() {
     commodity: (selectedCommodity || 'soja') as CommodityType, exchange: 'CBOT', contract: 'K', exchangePrice: 0,
     optionCost: 0, exchangeRateBolsa: 0, exchangeRateOption: 0,
     basisByPort: {}, securityDeltaMarket: 0, securityDeltaFreight: 0,
-    stopLoss: 0, bushelsPerTon: 36.744, pesoSacaKg: 60,
+    stopLoss: 0, bushelsPerTon: 0, pesoSacaKg: 0,
   };
   const freights: FreightReducer[] = freightReducers;
 
@@ -199,10 +202,14 @@ export default function ParityPage() {
   // H3: Fix insurance premium - use params from config
   const insurancePremium = useMemo(() => {
     if (!showInsurance) return null;
+    if (!effectivePricing.volatility || !effectivePricing.riskFreeRate) {
+      console.warn('Insurance requires volatility and riskFreeRate configured in commodity_pricing');
+      return null;
+    }
     const spotPrice = effectivePricing.exchangePrice * effectivePricing.exchangeRateBolsa;
-    const strikePercent = effectivePricing.strikePercent || 105; // H3: from config
-    const riskFreeRate = effectivePricing.riskFreeRate || 0.1175; // H3: from config  
-    const maturityYears = (effectivePricing.optionMaturityDays || 180) / 365; // H3: from config
+    const strikePercent = effectivePricing.strikePercent || 105;
+    const riskFreeRate = effectivePricing.riskFreeRate;
+    const maturityYears = (effectivePricing.optionMaturityDays || 180) / 365;
     const premium = blackScholes(spotPrice, spotPrice * (strikePercent / 100), maturityYears, riskFreeRate, volatility / 100, true);
     const premiumPerSaca = effectiveCommodityPrice > 0 ? premium / effectiveCommodityPrice : 0;
     const additionalSacas = Math.ceil(premiumPerSaca * parity.quantitySacas);

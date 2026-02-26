@@ -1,13 +1,10 @@
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, useCallback } from 'react';
 import { motion } from 'framer-motion';
 import { useActiveCampaigns, useCampaignData } from '@/hooks/useActiveCampaign';
 import { useCreateOperation, useCreateOperationItems, useCreateOperationLog } from '@/hooks/useOperations';
 import { useAuth } from '@/contexts/AuthContext';
-import { calculateAgronomicSelection } from '@/engines/agronomic';
-import { applyComboCascade, getMaxPossibleDiscount, getActivatedDiscount, getComplementaryDiscount, getSuggestedDoseForRef } from '@/engines/combo-cascade';
-import { decomposePricing, calculateGrossToNet, generatePriceAuditTrail } from '@/engines/pricing';
-import type { AgronomicSelection, ChannelSegment, Product } from '@/types/barter';
-import type { PriceAuditStep } from '@/engines/pricing';
+import { useSimulationEngine } from '@/hooks/useSimulationEngine';
+import type { ChannelSegment, Product } from '@/types/barter';
 import { Plus, Minus, Wheat, ShoppingCart, TrendingUp, AlertCircle, Save, Loader2, FileSearch, X, MapPin } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -16,8 +13,6 @@ import { Progress } from '@/components/ui/progress';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
-import { supabase } from '@/integrations/supabase/client';
-import { useQuery } from '@tanstack/react-query';
 
 export default function SimulationPage() {
   const navigate = useNavigate();
@@ -27,7 +22,7 @@ export default function SimulationPage() {
   const { campaign, rawCampaign, products, combos, isLoading: loadingData } = useCampaignData(selectedCampaignId || undefined);
 
   const [area, setArea] = useState(500);
-  const [segment, setSegment] = useState<ChannelSegment>('distribuidor');
+  const [segment, setSegment] = useState<string>('');
   const [dueMonths, setDueMonths] = useState(12);
   const [clientName, setClientName] = useState('');
   const [clientCity, setClientCity] = useState('');
@@ -35,11 +30,12 @@ export default function SimulationPage() {
   const [selectedCommodity, setSelectedCommodity] = useState<string>('soja');
   const [selectedProducts, setSelectedProducts] = useState<Map<string, number>>(new Map());
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState<string>('');
-  const [showAuditTrail, setShowAuditTrail] = useState<string | null>(null); // productId for audit
 
   const createOperation = useCreateOperation();
   const createItems = useCreateOperationItems();
   const createLog = useCreateOperationLog();
+
+  const { loading: simLoading, result: simResult, error: simError, simulate, simulateDebounced } = useSimulationEngine();
 
   useEffect(() => {
     if (!selectedCampaignId && activeCampaigns && activeCampaigns.length > 0) {
@@ -51,126 +47,34 @@ export default function SimulationPage() {
     setSelectedProducts(new Map());
   }, [selectedCampaignId]);
 
-  // Fetch campaign_due_dates dynamically
-  const { data: campaignDueDates } = useQuery({
-    queryKey: ['campaign-due-dates-sim', selectedCampaignId],
-    enabled: !!selectedCampaignId,
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from('campaign_due_dates')
-        .select('*')
-        .eq('campaign_id', selectedCampaignId);
-      if (error) throw error;
-      return data || [];
-    },
-  });
-
-  // Fetch campaign_segments dynamically
-  const { data: campaignSegments } = useQuery({
-    queryKey: ['campaign-segments-sim', selectedCampaignId],
-    enabled: !!selectedCampaignId,
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from('campaign_segments')
-        .select('*')
-        .eq('campaign_id', selectedCampaignId);
-      if (error) throw error;
-      return data || [];
-    },
-  });
-
-  // I1: Fetch campaign_payment_methods
-  const { data: paymentMethods } = useQuery({
-    queryKey: ['campaign-payment-methods-sim', selectedCampaignId],
-    enabled: !!selectedCampaignId,
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from('campaign_payment_methods')
-        .select('*')
-        .eq('campaign_id', selectedCampaignId)
-        .eq('active', true);
-      if (error) throw error;
-      return data || [];
-    },
-  });
-
-  // I4: Eligibility validation
-  const eligibilityWarning = useMemo(() => {
-    if (!campaign || !rawCampaign) return null;
-    const warnings: string[] = [];
-
-    // Check city eligibility
-    const eligibleCities = rawCampaign.eligible_cities || [];
-    if (eligibleCities.length > 0 && clientCity && !eligibleCities.includes(clientCity)) {
-      warnings.push(`Cidade "${clientCity}" não está na lista de cidades elegíveis`);
+  // Set defaults from simResult config
+  useEffect(() => {
+    if (simResult?.segmentOptions?.length && !segment) {
+      setSegment(simResult.segmentOptions[0].value);
     }
+  }, [simResult?.segmentOptions, segment]);
 
-    // Check state eligibility
-    const eligibleStates = rawCampaign.eligible_states || [];
-    if (eligibleStates.length > 0 && clientState && !eligibleStates.includes(clientState)) {
-      warnings.push(`Estado "${clientState}" não está na lista de estados elegíveis`);
-    }
-
-    // Check distributor segment eligibility
-    const eligibleSegments = rawCampaign.eligible_distributor_segments || [];
-    if (eligibleSegments.length > 0 && !eligibleSegments.includes(segment as any)) {
-      warnings.push(`Segmento "${segment}" não é elegível para esta campanha`);
-    }
-
-    return warnings.length > 0 ? warnings : null;
-  }, [campaign, rawCampaign, clientCity, clientState, segment]);
-
-  // I2: Get segment price adjustment
-  const segmentAdjustmentPercent = useMemo(() => {
-    if (!campaignSegments?.length) return 0;
-    // Try matching by segment name
-    const match = campaignSegments.find(s => s.active && s.segment_name.toLowerCase() === segment.toLowerCase());
-    return match?.price_adjustment_percent || 0;
-  }, [campaignSegments, segment]);
-
-  // I1: Get payment method markup
-  const selectedPM = useMemo(() => {
-    if (!paymentMethods?.length) return null;
-    if (selectedPaymentMethod) return paymentMethods.find(pm => pm.id === selectedPaymentMethod) || null;
-    return paymentMethods[0] || null;
-  }, [paymentMethods, selectedPaymentMethod]);
-
-  const paymentMethodMarkup = selectedPM?.markup_percent || 0;
-
-  const dueDateOptions = useMemo(() => {
-    if (campaignDueDates && campaignDueDates.length > 0) {
-      const uniqueDates = [...new Set(campaignDueDates.map(d => d.due_date))].sort();
-      return uniqueDates.map(d => {
-        const date = new Date(d + 'T00:00:00');
-        const now = new Date();
-        // Pro-rata: use days/30 for fractional months
-        const diffDays = Math.max(Math.round((date.getTime() - now.getTime()) / (1000 * 60 * 60 * 24)), 1);
-        const diffMonths = diffDays / 30;
-        return { value: String(parseFloat(diffMonths.toFixed(4))), label: `${date.toLocaleDateString('pt-BR')} (${diffDays}d)`, date: d };
-      });
-    }
-    if (campaign?.availableDueDates && campaign.availableDueDates.length > 0) {
-      return campaign.availableDueDates.map(d => {
-        const date = new Date(d + 'T00:00:00');
-        const now = new Date();
-        const diffMonths = Math.round((date.getTime() - now.getTime()) / (1000 * 60 * 60 * 24 * 30));
-        return { value: String(Math.max(diffMonths, 1)), label: date.toLocaleDateString('pt-BR'), date: d };
-      });
-    }
-    return [];
-  }, [campaignDueDates, campaign]);
-
-  const segmentOptions = useMemo(() => {
-    if (campaignSegments && campaignSegments.length > 0) {
-      return campaignSegments
-        .filter(s => s.active)
-        .map(s => ({ value: s.segment_name, label: s.segment_name }));
-    }
-    if (campaign?.margins?.length) {
-      return campaign.margins.map(m => ({ value: m.segment, label: m.segment.charAt(0).toUpperCase() + m.segment.slice(1) }));
-    }
-    return [];
-  }, [campaignSegments, campaign]);
+  // Trigger simulation on input changes
+  useEffect(() => {
+    if (!selectedCampaignId || selectedProducts.size === 0) return;
+    const inputSelections = Array.from(selectedProducts.entries()).map(([id, dose]) => ({
+      productId: id,
+      dosePerHectare: dose,
+      areaHectares: area,
+    }));
+    simulateDebounced({
+      campaignId: selectedCampaignId,
+      selections: inputSelections,
+      segment: segment || 'distribuidor',
+      dueMonths,
+      paymentMethodId: selectedPaymentMethod || undefined,
+      commodityCode: selectedCommodity,
+      clientContext: {
+        city: clientCity || undefined,
+        state: clientState || undefined,
+      },
+    });
+  }, [selectedCampaignId, selectedProducts, area, segment, dueMonths, selectedPaymentMethod, selectedCommodity, clientCity, clientState, simulateDebounced]);
 
   const toggleProduct = (productId: string) => {
     const next = new Map(selectedProducts);
@@ -178,9 +82,7 @@ export default function SimulationPage() {
       next.delete(productId);
     } else {
       const prod = products.find(p => p.id === productId)!;
-      const suggestedDose = getSuggestedDoseForRef(combos, prod.ref || '');
-      const defaultDose = suggestedDose !== null ? suggestedDose : prod.dosePerHectare;
-      next.set(productId, defaultDose);
+      next.set(productId, prod.dosePerHectare);
     }
     setSelectedProducts(next);
   };
@@ -191,75 +93,45 @@ export default function SimulationPage() {
     setSelectedProducts(next);
   };
 
-  const selections = useMemo<AgronomicSelection[]>(() => {
-    return Array.from(selectedProducts.entries()).map(([id, dose]) => {
-      const product = products.find(p => p.id === id);
-      if (!product) return null;
-      return calculateAgronomicSelection(product, area, dose);
-    }).filter(Boolean) as AgronomicSelection[];
-  }, [selectedProducts, area, products]);
+  // Derived from simResult
+  const selections = simResult?.selections || [];
+  const comboActivations = simResult?.comboActivations || [];
+  const pricingResults = simResult?.pricingResults || [];
+  const grossToNet = simResult?.grossToNet || {
+    grossRevenue: 0, comboDiscount: 0, barterDiscount: 0, directIncentiveDiscount: 0,
+    creditLiberacao: 0, creditLiquidacao: 0, netRevenue: 0, financialRevenue: 0,
+    distributorMargin: 0, segmentAdjustment: 0, paymentMethodMarkup: 0, barterCost: 0, netNetRevenue: 0,
+  };
+  const maxDiscount = simResult?.maxDiscount || 0;
+  const activatedDiscount = simResult?.activatedDiscount || 0;
+  const complementaryDiscount = simResult?.complementaryDiscount || 0;
+  const discountProgress = simResult?.discountProgress || 0;
+  const dueDateOptions = simResult?.campaignConfig ? [] : []; // Will use campaign_due_dates below
+  const segmentOptions = simResult?.segmentOptions || [];
+  const paymentMethods = simResult?.paymentMethods || [];
+  const eligibility = simResult?.eligibility;
 
-  const comboActivations = useMemo(() => {
-    return applyComboCascade(combos, selections);
-  }, [selections, combos]);
+  const segmentAdjustmentPercent = segmentOptions.find(s => s.value === segment)?.adjustmentPercent || 0;
+  const selectedPM = paymentMethods.find(pm => pm.id === selectedPaymentMethod) || paymentMethods[0];
+  const paymentMethodMarkup = selectedPM?.markupPercent || 0;
 
-  const maxDiscount = getMaxPossibleDiscount(combos);
-  const activatedDiscount = getActivatedDiscount(comboActivations);
-  const complementaryDiscount = getComplementaryDiscount(comboActivations);
-  const discountProgress = maxDiscount > 0 ? (activatedDiscount / maxDiscount) * 100 : 0;
+  // Eligibility from backend
+  const eligibilityWarning = eligibility?.warnings?.length ? eligibility.warnings : null;
+  const isBlockedByEligibility = !!eligibility?.blocked;
 
-  // I1 + I2: Pass payment method and segment adjustments to pricing
-  const pricingOptions = useMemo(() => ({
-    paymentMethodMarkup,
-    segmentAdjustmentPercent,
-  }), [paymentMethodMarkup, segmentAdjustmentPercent]);
-
-  const pricingResults = useMemo(() => {
-    if (!campaign) return [];
-    return selections.map(sel =>
-      decomposePricing(sel.product, campaign, segment, dueMonths, sel.roundedQuantity, pricingOptions)
-    );
-  }, [selections, segment, dueMonths, campaign, pricingOptions]);
-
-  // I7: Pass global incentives to G2N + selections for line-by-line discount
-  const grossToNet = useMemo(() => {
-    return calculateGrossToNet(pricingResults, comboActivations, 0, {
-      globalIncentiveType: rawCampaign?.global_incentive_type || '',
-      globalIncentive1: rawCampaign?.global_incentive_1 || 0,
-      globalIncentive2: rawCampaign?.global_incentive_2 || 0,
-      globalIncentive3: rawCampaign?.global_incentive_3 || 0,
-    }, selections);
-  }, [pricingResults, comboActivations, rawCampaign, selections]);
-
-  // G1: Audit trail for a specific product
-  const auditTrail = useMemo<PriceAuditStep[]>(() => {
-    if (!showAuditTrail || !campaign) return [];
-    const product = products.find(p => p.id === showAuditTrail);
-    if (!product) return [];
-    return generatePriceAuditTrail(product, campaign, segment, dueMonths, {
-      paymentMethodMarkup,
-      paymentMethodName: selectedPM?.method_name,
-      segmentAdjustmentPercent,
-      segmentName: segment,
-    });
-  }, [showAuditTrail, campaign, products, segment, dueMonths, paymentMethodMarkup, selectedPM, segmentAdjustmentPercent]);
-
-  const formatCurrency = (v: number) => v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
-
-  // #5: Check block_ineligible
-  const isBlockedByEligibility = !!(rawCampaign as any)?.block_ineligible && eligibilityWarning && eligibilityWarning.length > 0;
-
-  // #7: Check min_order_amount
+  // Min order
   const minOrderAmount = (rawCampaign as any)?.min_order_amount || 0;
   const isBelowMinOrder = minOrderAmount > 0 && grossToNet.grossRevenue > 0 && grossToNet.grossRevenue < minOrderAmount;
 
-  // #8: Warning margin zero
+  // Margin zero warning
   const marginZeroWarning = useMemo(() => {
-    if (!campaign || !rawCampaign) return false;
+    if (!rawCampaign) return false;
     const target = rawCampaign.target;
     if (target === 'venda_direta' || target === 'venda_direta_consumidor') return false;
     return grossToNet.distributorMargin === 0 && selections.length > 0;
-  }, [campaign, rawCampaign, grossToNet, selections]);
+  }, [rawCampaign, grossToNet, selections]);
+
+  const formatCurrency = (v: number) => v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 
   const doSave = async () => {
     if (!user || !selectedCampaignId || selections.length === 0) return null;
@@ -268,14 +140,14 @@ export default function SimulationPage() {
       return null;
     }
     if (isBelowMinOrder) {
-      toast.error(`Pedido mínimo: ${minOrderAmount.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}. Valor atual: ${grossToNet.grossRevenue.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}`);
+      toast.error(`Pedido mínimo: ${formatCurrency(minOrderAmount)}. Valor atual: ${formatCurrency(grossToNet.grossRevenue)}`);
       return null;
     }
     const op = await createOperation.mutateAsync({
       campaign_id: selectedCampaignId,
       user_id: user.id,
       client_name: clientName || 'Sem nome',
-      channel: segment,
+      channel: (segment || 'distribuidor') as ChannelSegment,
       city: clientCity || undefined,
       state: clientState || undefined,
       due_months: dueMonths,
@@ -290,15 +162,15 @@ export default function SimulationPage() {
     });
 
     const items = pricingResults.map(pr => {
-      const sel = selections.find(s => s.productId === pr.productId)!;
+      const sel = selections.find(s => s.productId === pr.productId);
       return {
         operation_id: op.id,
         product_id: pr.productId,
-        dose_per_hectare: sel.dosePerHectare,
-        raw_quantity: sel.rawQuantity,
-        rounded_quantity: sel.roundedQuantity,
-        boxes: sel.boxes,
-        pallets: sel.pallets,
+        dose_per_hectare: sel?.dosePerHectare || 0,
+        raw_quantity: sel?.rawQuantity || 0,
+        rounded_quantity: sel?.roundedQuantity || 0,
+        boxes: sel?.boxes || 0,
+        pallets: sel?.pallets || 0,
         base_price: pr.basePrice,
         normalized_price: pr.normalizedPrice,
         interest_component: pr.interestComponent,
@@ -315,8 +187,8 @@ export default function SimulationPage() {
       details: {
         area, segment, dueMonths, productsCount: selections.length,
         paymentMethodMarkup, segmentAdjustmentPercent,
-        globalIncentiveType: rawCampaign?.global_incentive_type,
         eligibilityWarnings: eligibilityWarning,
+        source: 'server-authoritative',
       },
     });
 
@@ -366,6 +238,7 @@ export default function SimulationPage() {
           <h1 className="text-2xl font-bold text-foreground">Simulação de Pedido</h1>
           <p className="text-sm text-muted-foreground">Selecione produtos, ajuste doses e visualize a simulação completa</p>
         </div>
+        {simLoading && <Loader2 className="w-5 h-5 animate-spin text-primary" />}
       </div>
 
       {/* Campaign selector + config */}
@@ -373,9 +246,7 @@ export default function SimulationPage() {
         <div className="glass-card p-4 lg:col-span-2">
           <label className="stat-label">Campanha</label>
           <Select value={selectedCampaignId} onValueChange={setSelectedCampaignId}>
-            <SelectTrigger className="mt-2 bg-muted border-border text-foreground">
-              <SelectValue placeholder="Selecione..." />
-            </SelectTrigger>
+            <SelectTrigger className="mt-2 bg-muted border-border text-foreground"><SelectValue placeholder="Selecione..." /></SelectTrigger>
             <SelectContent>
               {activeCampaigns.map(c => (
                 <SelectItem key={c.id} value={c.id}>{c.name} ({c.season})</SelectItem>
@@ -404,8 +275,8 @@ export default function SimulationPage() {
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-4">
         <div className="glass-card p-4">
           <label className="stat-label">Canal de Venda</label>
-          <Select value={segment} onValueChange={(v) => setSegment(v as ChannelSegment)}>
-            <SelectTrigger className="mt-2 bg-muted border-border text-foreground"><SelectValue /></SelectTrigger>
+          <Select value={segment} onValueChange={setSegment}>
+            <SelectTrigger className="mt-2 bg-muted border-border text-foreground"><SelectValue placeholder="Selecione..." /></SelectTrigger>
             <SelectContent>
               {segmentOptions.map(opt => (
                 <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
@@ -421,24 +292,17 @@ export default function SimulationPage() {
           <Select value={selectedPaymentMethod || selectedPM?.id || ''} onValueChange={setSelectedPaymentMethod}>
             <SelectTrigger className="mt-2 bg-muted border-border text-foreground"><SelectValue placeholder="Selecione..." /></SelectTrigger>
             <SelectContent>
-              {paymentMethods?.map(pm => (
+              {paymentMethods.map(pm => (
                 <SelectItem key={pm.id} value={pm.id}>
-                  {pm.method_name} {pm.markup_percent !== 0 ? `(${pm.markup_percent > 0 ? '+' : ''}${pm.markup_percent}%)` : ''}
+                  {pm.methodName} {pm.markupPercent !== 0 ? `(${pm.markupPercent > 0 ? '+' : ''}${pm.markupPercent}%)` : ''}
                 </SelectItem>
               ))}
             </SelectContent>
           </Select>
         </div>
         <div className="glass-card p-4">
-          <label className="stat-label">Prazo / Vencimento</label>
-          <Select value={String(dueMonths)} onValueChange={(v) => setDueMonths(Number(v))}>
-            <SelectTrigger className="mt-2 bg-muted border-border text-foreground"><SelectValue /></SelectTrigger>
-            <SelectContent>
-              {dueDateOptions.map(opt => (
-                <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <label className="stat-label">Prazo (meses)</label>
+          <Input type="number" value={dueMonths} onChange={e => setDueMonths(Number(e.target.value))} className="mt-2 bg-muted border-border font-mono text-foreground" min={1} max={36} />
         </div>
         <div className="glass-card p-4">
           <label className="stat-label">Nome do Cliente</label>
@@ -455,30 +319,22 @@ export default function SimulationPage() {
       </div>
 
       {/* Warnings */}
-      {campaign && (
+      {simResult && (
         <div className="space-y-2">
-          {/* I4: Eligibility warnings (blocking if configured) */}
           {eligibilityWarning && eligibilityWarning.map((w, i) => (
             <div key={i} className={`flex items-center gap-2 text-xs ${isBlockedByEligibility ? 'text-destructive bg-destructive/10 border border-destructive/20' : 'text-warning bg-warning/10 border border-warning/20'} rounded-md px-3 py-2`}>
               <MapPin className="w-3.5 h-3.5 shrink-0" /> {w}
               {isBlockedByEligibility && <span className="ml-auto font-semibold">⛔ BLOQUEANTE</span>}
             </div>
           ))}
-          {/* #7: Min order amount warning */}
           {isBelowMinOrder && (
             <div className="flex items-center gap-2 text-xs text-destructive bg-destructive/10 border border-destructive/20 rounded-md px-3 py-2">
-              <AlertCircle className="w-3.5 h-3.5 shrink-0" /> Pedido mínimo: {minOrderAmount.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}. Valor atual insuficiente.
+              <AlertCircle className="w-3.5 h-3.5 shrink-0" /> Pedido mínimo: {formatCurrency(minOrderAmount)}. Valor atual insuficiente.
             </div>
           )}
-          {/* #8: Margin zero warning */}
           {marginZeroWarning && (
             <div className="flex items-center gap-2 text-xs text-warning bg-warning/10 border border-warning/20 rounded-md px-3 py-2">
               <AlertCircle className="w-3.5 h-3.5 shrink-0" /> Margem do distribuidor = 0%. Verifique as margens de canal na configuração da campanha.
-            </div>
-          )}
-          {dueDateOptions.length === 0 && (
-            <div className="flex items-center gap-2 text-xs text-warning bg-warning/10 border border-warning/20 rounded-md px-3 py-2">
-              <AlertCircle className="w-3.5 h-3.5 shrink-0" /> Nenhuma data de vencimento configurada para esta campanha.
             </div>
           )}
           {segmentOptions.length === 0 && (
@@ -486,11 +342,17 @@ export default function SimulationPage() {
               <AlertCircle className="w-3.5 h-3.5 shrink-0" /> Nenhum canal de venda/segmento configurado.
             </div>
           )}
-          {(!paymentMethods || paymentMethods.length === 0) && (
+          {paymentMethods.length === 0 && (
             <div className="flex items-center gap-2 text-xs text-warning bg-warning/10 border border-warning/20 rounded-md px-3 py-2">
               <AlertCircle className="w-3.5 h-3.5 shrink-0" /> Nenhum meio de pagamento configurado. Configure em Admin → Campanhas → Financeiro.
             </div>
           )}
+        </div>
+      )}
+
+      {simError && (
+        <div className="flex items-center gap-2 text-xs text-destructive bg-destructive/10 border border-destructive/20 rounded-md px-3 py-2">
+          <AlertCircle className="w-3.5 h-3.5 shrink-0" /> Erro no motor de simulação: {simError}
         </div>
       )}
 
@@ -501,7 +363,7 @@ export default function SimulationPage() {
       ) : (
         <>
           {/* Combo discount bar */}
-          {combos.length > 0 && (
+          {maxDiscount > 0 && (
             <div className="glass-card p-4">
               <div className="flex items-center justify-between mb-2">
                 <span className="text-sm font-semibold text-foreground flex items-center gap-2">
@@ -539,6 +401,8 @@ export default function SimulationPage() {
                   const isSelected = selectedProducts.has(product.id);
                   const dose = selectedProducts.get(product.id) ?? product.dosePerHectare;
                   const selection = selections.find(s => s.productId === product.id);
+                  const simPricing = pricingResults.find(p => p.productId === product.id);
+                  const displayPrice = simPricing?.normalizedPrice ?? product.pricePerUnit;
                   return (
                     <motion.div key={product.id} layout className={`glass-card p-4 cursor-pointer transition-all ${isSelected ? 'glow-border' : 'hover:border-muted-foreground/30'}`} onClick={() => !isSelected && toggleProduct(product.id)}>
                       <div className="flex items-center justify-between mb-2">
@@ -547,12 +411,6 @@ export default function SimulationPage() {
                           <span className="ml-2 engine-badge bg-muted text-muted-foreground">{product.category}</span>
                         </div>
                         <div className="flex gap-1">
-                          {/* G1: Audit trail button */}
-                          {isSelected && (
-                            <Button size="sm" variant="ghost" onClick={(e) => { e.stopPropagation(); setShowAuditTrail(showAuditTrail === product.id ? null : product.id); }} className="text-info hover:text-info hover:bg-info/10 h-7 w-7 p-0" title="Memória de Cálculo">
-                              <FileSearch className="w-4 h-4" />
-                            </Button>
-                          )}
                           {isSelected ? (
                             <Button size="sm" variant="ghost" onClick={(e) => { e.stopPropagation(); toggleProduct(product.id); }} className="text-destructive hover:text-destructive hover:bg-destructive/10 h-7 w-7 p-0"><Minus className="w-4 h-4" /></Button>
                           ) : (
@@ -563,38 +421,19 @@ export default function SimulationPage() {
                       <div className="text-xs text-muted-foreground mb-2">{product.activeIngredient}</div>
                       <div className="grid grid-cols-2 gap-2 text-xs">
                         <div><span className="text-muted-foreground">Dose rec.:</span><span className="ml-1 font-mono text-foreground">{product.dosePerHectare} {product.unitType}/ha</span></div>
-                        <div><span className="text-muted-foreground">Preço:</span><span className="ml-1 font-mono text-foreground">{product.currency === 'USD' ? 'US$' : 'R$'} {product.pricePerUnit.toFixed(2)}/{product.unitType}</span></div>
+                        <div><span className="text-muted-foreground">Preço:</span><span className="ml-1 font-mono text-foreground">{formatCurrency(displayPrice)}/{product.unitType}</span></div>
                       </div>
-                      {isSelected && (
+                      {isSelected && selection && (
                         <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} className="mt-3 pt-3 border-t border-border space-y-2">
                           <div className="flex items-center gap-2">
                             <label className="text-xs text-muted-foreground w-20">Dose/ha:</label>
                             <Input type="number" value={dose} step={0.05} min={product.minDose} max={product.maxDose} onChange={e => { e.stopPropagation(); updateDose(product.id, Number(e.target.value)); }} onClick={e => e.stopPropagation()} className="h-7 bg-muted border-border font-mono text-xs text-foreground" />
                           </div>
-                          {selection && (
-                            <div className="grid grid-cols-3 gap-1 text-xs">
-                              <div className="bg-muted/50 rounded p-1.5 text-center"><div className="text-muted-foreground">Volume</div><div className="font-mono font-medium text-foreground">{selection.roundedQuantity.toFixed(0)} {product.unitType}</div></div>
-                              <div className="bg-muted/50 rounded p-1.5 text-center"><div className="text-muted-foreground">Caixas</div><div className="font-mono font-medium text-foreground">{selection.boxes}</div></div>
-                              <div className="bg-muted/50 rounded p-1.5 text-center"><div className="text-muted-foreground">Pallets</div><div className="font-mono font-medium text-foreground">{selection.pallets}</div></div>
-                            </div>
-                          )}
-                          {/* G1: Inline audit trail */}
-                          {showAuditTrail === product.id && auditTrail.length > 0 && (
-                            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="mt-2 p-3 bg-muted/30 rounded-md border border-border">
-                              <div className="flex items-center justify-between mb-2">
-                                <span className="text-xs font-semibold text-info">Memória de Cálculo</span>
-                                <Button size="sm" variant="ghost" onClick={(e) => { e.stopPropagation(); setShowAuditTrail(null); }} className="h-5 w-5 p-0 text-muted-foreground"><X className="w-3 h-3" /></Button>
-                              </div>
-                              <div className="space-y-1">
-                                {auditTrail.map((step, i) => (
-                                  <div key={i} className={`flex justify-between text-[11px] py-0.5 ${step.isFinal ? 'font-bold border-t border-border pt-1 mt-1' : ''}`}>
-                                    <span className="text-muted-foreground">{step.step}</span>
-                                    <span className={`font-mono ${step.isFinal ? 'text-success' : 'text-foreground'}`}>R$ {step.value.toFixed(2)}</span>
-                                  </div>
-                                ))}
-                              </div>
-                            </motion.div>
-                          )}
+                          <div className="grid grid-cols-3 gap-1 text-xs">
+                            <div className="bg-muted/50 rounded p-1.5 text-center"><div className="text-muted-foreground">Volume</div><div className="font-mono font-medium text-foreground">{selection.roundedQuantity.toFixed(0)} {product.unitType}</div></div>
+                            <div className="bg-muted/50 rounded p-1.5 text-center"><div className="text-muted-foreground">Caixas</div><div className="font-mono font-medium text-foreground">{selection.boxes}</div></div>
+                            <div className="bg-muted/50 rounded p-1.5 text-center"><div className="text-muted-foreground">Pallets</div><div className="font-mono font-medium text-foreground">{selection.pallets}</div></div>
+                          </div>
                         </motion.div>
                       )}
                     </motion.div>
@@ -605,7 +444,7 @@ export default function SimulationPage() {
           </div>
 
           {/* Summary */}
-          {selections.length > 0 && (
+          {selections.length > 0 && grossToNet.grossRevenue > 0 && (
             <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="glass-card p-5 glow-border">
               <h2 className="text-sm font-semibold text-foreground mb-4 flex items-center gap-2">
                 <ShoppingCart className="w-4 h-4 text-primary" /> Resumo da Simulação
@@ -614,7 +453,8 @@ export default function SimulationPage() {
               {/* Product line items */}
               <div className="space-y-1 mb-4">
                 {pricingResults.map(pr => {
-                  const prod = products.find(p => p.id === pr.productId)!;
+                  const prod = products.find(p => p.id === pr.productId);
+                  if (!prod) return null;
                   return (
                     <div key={pr.productId} className="flex items-center justify-between text-sm py-1.5 border-b border-border/50">
                       <span className="text-foreground">{prod.name}</span>
@@ -628,7 +468,7 @@ export default function SimulationPage() {
                 })}
               </div>
 
-              {/* Gross-to-Net with I1, I2, I7 */}
+              {/* Gross-to-Net */}
               <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-7 gap-3 pt-4 border-t border-border">
                 <div><div className="stat-label">Receita Bruta</div><div className="font-mono font-bold text-foreground">{formatCurrency(grossToNet.grossRevenue)}</div></div>
                 <div><div className="stat-label">Desconto Combo</div><div className="font-mono font-bold text-warning">-{formatCurrency(grossToNet.comboDiscount)}</div></div>
@@ -644,7 +484,7 @@ export default function SimulationPage() {
                 <div><div className="stat-label">Total a Pagar (Prazo)</div><div className="font-mono font-bold text-xl text-success">{formatCurrency(grossToNet.netRevenue)}</div></div>
               </div>
 
-              {/* I7: Show credit incentives if applicable */}
+              {/* Credit incentives */}
               {((grossToNet.creditLiberacao || 0) > 0 || (grossToNet.creditLiquidacao || 0) > 0) && (
                 <div className="mt-3 pt-3 border-t border-border text-xs text-muted-foreground">
                   {(grossToNet.creditLiberacao || 0) > 0 && (
