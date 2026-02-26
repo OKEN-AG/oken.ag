@@ -1,0 +1,750 @@
+import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.4";
+
+// ─── CORS ───
+function getCorsHeaders(req: Request) {
+  const allowedRaw = Deno.env.get('ALLOWED_ORIGINS') || '*';
+  const origin = req.headers.get('Origin') || '';
+  let allowOrigin = '*';
+  if (allowedRaw !== '*') {
+    const allowed = allowedRaw.split(',').map(s => s.trim());
+    allowOrigin = allowed.includes(origin) ? origin : allowed[0];
+  }
+  return {
+    'Access-Control-Allow-Origin': allowOrigin,
+    'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version',
+    'Vary': 'Origin',
+  };
+}
+
+// ─── TYPES ───
+interface ProductRow {
+  id: string; name: string; ref: string; category: string; active_ingredient: string;
+  unit_type: string; package_sizes: number[] | null; units_per_box: number;
+  boxes_per_pallet: number; pallets_per_truck: number; dose_per_hectare: number;
+  min_dose: number; max_dose: number; price_per_unit: number; price_cash: number | null;
+  price_term: number | null; currency: string; price_type: string; includes_margin: boolean;
+  code: string | null;
+}
+
+interface AgronomicResult {
+  productId: string; ref: string; productName: string; areaHectares: number;
+  dosePerHectare: number; rawQuantity: number; roundedQuantity: number;
+  boxes: number; pallets: number; packageSize: number; unitType: string;
+}
+
+interface ComboActivationResult {
+  comboId: string; comboName: string; discountPercent: number;
+  matchedProducts: string[]; applied: boolean; isComplementary: boolean;
+  activatedHectares?: number; proportionalHectares?: number;
+}
+
+interface PricingResultItem {
+  productId: string; basePrice: number; normalizedPrice: number;
+  interestComponent: number; marginComponent: number;
+  segmentAdjustmentComponent: number; paymentMethodComponent: number;
+  commercialPrice: number; quantity: number; subtotal: number;
+}
+
+interface GrossToNetResult {
+  grossRevenue: number; comboDiscount: number; barterDiscount: number;
+  directIncentiveDiscount: number; creditLiberacao: number; creditLiquidacao: number;
+  netRevenue: number; financialRevenue: number; distributorMargin: number;
+  segmentAdjustment: number; paymentMethodMarkup: number; barterCost: number;
+  netNetRevenue: number;
+}
+
+interface EligibilityResult {
+  eligible: boolean; blocked: boolean;
+  flags: Record<string, boolean>; warnings: string[];
+}
+
+interface ParityResultType {
+  totalAmountBRL: number; commodityPricePerUnit: number; quantitySacas: number;
+  referencePrice: number; valorization: number;
+  userOverridePrice: number | null; hasExistingContract: boolean;
+}
+
+// ─── AGRONOMIC ENGINE ───
+function calculateAgronomic(product: ProductRow, areaHectares: number, dosePerHectare: number, overrideQuantity?: number): AgronomicResult {
+  const dose = dosePerHectare || product.dose_per_hectare;
+  const rawQuantity = overrideQuantity ?? (areaHectares * dose);
+
+  const packageSizes = [...(product.package_sizes || [])].filter(s => s > 0);
+  if (packageSizes.length === 0) packageSizes.push(1);
+
+  let best = { packageSize: 1, boxes: 0, roundedQuantity: 0, waste: Infinity, pallets: 0 };
+
+  for (const pkgSize of packageSizes) {
+    const unitsPerBox = product.units_per_box * pkgSize;
+    const boxes = Math.ceil(rawQuantity / unitsPerBox);
+    const rounded = boxes * unitsPerBox;
+    const waste = rounded - rawQuantity;
+    const pallets = Math.ceil(boxes / product.boxes_per_pallet);
+
+    if (waste < best.waste || (waste === best.waste && boxes < best.boxes)) {
+      best = { packageSize: pkgSize, boxes, roundedQuantity: rounded, waste, pallets };
+    }
+  }
+
+  return {
+    productId: product.id, ref: product.ref || '', productName: product.name,
+    areaHectares, dosePerHectare: dose, rawQuantity,
+    roundedQuantity: best.roundedQuantity, boxes: best.boxes,
+    pallets: best.pallets, packageSize: best.packageSize,
+    unitType: product.unit_type,
+  };
+}
+
+// ─── COMBO CASCADE ENGINE ───
+function applyComboCascade(
+  combos: { id: string; name: string; discount_percent: number; products: { ref: string; min_dose_per_ha: number; max_dose_per_ha: number }[] }[],
+  selections: AgronomicResult[]
+): { activations: ComboActivationResult[]; consumptionLedger: Record<string, Record<string, number>> } {
+  const isComplementary = (c: { name: string }) => /^COMPLEMENTAR/i.test(c.name);
+  const mainCombos = combos.filter(c => !isComplementary(c));
+  const complementaryCombos = combos.filter(c => isComplementary(c));
+
+  const sortedMain = [...mainCombos].sort((a, b) => {
+    if (b.discount_percent !== a.discount_percent) return b.discount_percent - a.discount_percent;
+    return b.products.length - a.products.length;
+  });
+
+  const remainingQty = new Map<string, number>();
+  for (const sel of selections) {
+    const ref = (sel.ref || '').toUpperCase().trim();
+    if (ref) remainingQty.set(ref, (remainingQty.get(ref) || 0) + sel.roundedQuantity);
+  }
+
+  const availableRefs = new Set<string>(remainingQty.keys());
+  const activations: ComboActivationResult[] = [];
+  const consumptionLedger: Record<string, Record<string, number>> = {};
+  let totalActivatedHectares = 0;
+
+  for (const combo of sortedMain) {
+    const matchedRefs: string[] = [];
+    let allMatch = true;
+
+    for (const rule of combo.products) {
+      const ruleRef = (rule.ref || '').toUpperCase().trim();
+      if (!ruleRef || !availableRefs.has(ruleRef)) { allMatch = false; break; }
+
+      const sel = selections.find(s => (s.ref || '').toUpperCase().trim() === ruleRef);
+      if (!sel) { allMatch = false; break; }
+      if (sel.dosePerHectare < rule.min_dose_per_ha || sel.dosePerHectare > rule.max_dose_per_ha) { allMatch = false; break; }
+      if ((remainingQty.get(ruleRef) || 0) <= 0) { allMatch = false; break; }
+
+      matchedRefs.push(ruleRef);
+    }
+
+    if (allMatch && matchedRefs.length > 0) {
+      const comboLedger: Record<string, number> = {};
+      for (const ref of matchedRefs) {
+        const sel = selections.find(s => (s.ref || '').toUpperCase().trim() === ref);
+        const qty = sel?.roundedQuantity || 0;
+        const remaining = remainingQty.get(ref) || 0;
+        const consumed = Math.min(qty, remaining);
+        comboLedger[ref] = consumed;
+        remainingQty.set(ref, remaining - consumed);
+        if ((remainingQty.get(ref) || 0) <= 0) availableRefs.delete(ref);
+      }
+      consumptionLedger[combo.id] = comboLedger;
+
+      const matchedAreas = matchedRefs.map(ref => {
+        const sel = selections.find(s => (s.ref || '').toUpperCase().trim() === ref);
+        return sel?.areaHectares || 0;
+      });
+      const comboHectares = Math.min(...matchedAreas);
+      totalActivatedHectares = Math.max(totalActivatedHectares, comboHectares);
+
+      activations.push({
+        comboId: combo.id, comboName: combo.name, discountPercent: combo.discount_percent,
+        matchedProducts: matchedRefs, applied: true, isComplementary: false,
+        activatedHectares: comboHectares,
+      });
+    } else {
+      activations.push({
+        comboId: combo.id, comboName: combo.name, discountPercent: combo.discount_percent,
+        matchedProducts: [], applied: false, isComplementary: false,
+      });
+    }
+  }
+
+  // Complementary combos
+  const hasActivated = activations.some(a => a.applied && !a.isComplementary);
+  for (const combo of complementaryCombos) {
+    if (!hasActivated) {
+      activations.push({ comboId: combo.id, comboName: combo.name, discountPercent: combo.discount_percent, matchedProducts: [], applied: false, isComplementary: true });
+      continue;
+    }
+    const matchedRefs: string[] = [];
+    for (const rule of combo.products) {
+      const ruleRef = (rule.ref || '').toUpperCase().trim();
+      if (!ruleRef) continue;
+      const sel = selections.find(s => (s.ref || '').toUpperCase().trim() === ruleRef);
+      if (!sel) continue;
+      if (sel.dosePerHectare >= rule.min_dose_per_ha && sel.dosePerHectare <= rule.max_dose_per_ha) {
+        matchedRefs.push(ruleRef);
+      }
+    }
+    activations.push({
+      comboId: combo.id, comboName: combo.name, discountPercent: combo.discount_percent,
+      matchedProducts: matchedRefs, applied: matchedRefs.length > 0, isComplementary: true,
+      proportionalHectares: matchedRefs.length > 0 ? totalActivatedHectares : undefined,
+    });
+  }
+
+  return { activations, consumptionLedger };
+}
+
+// ─── PRICING NORMALIZATION ENGINE ───
+function calculatePricing(
+  product: ProductRow, campaign: any, margins: any[], segment: string,
+  dueMonths: number, quantity: number,
+  opts: { paymentMethodMarkup: number; segmentAdjustmentPercent: number }
+): PricingResultItem {
+  let price: number;
+  const isTermPrice = product.price_type === 'prazo' && product.price_term && product.price_term > 0;
+  if (isTermPrice) {
+    price = product.price_term!;
+  } else if (product.price_type === 'vista' && product.price_cash && product.price_cash > 0) {
+    price = product.price_cash;
+  } else {
+    price = product.price_per_unit;
+  }
+
+  if (product.currency === 'USD') price *= campaign.exchange_rate_products;
+
+  const interestMultiplier = (!isTermPrice && product.price_type === 'vista' && dueMonths > 0)
+    ? Math.pow(1 + campaign.interest_rate / 100, dueMonths) - 1 : 0;
+
+  const margin = margins.find((m: any) => m.segment === segment);
+  const marginPercent = (!product.includes_margin && margin && segment !== 'direto')
+    ? margin.margin_percent / 100 : 0;
+
+  const segAdj = (opts.segmentAdjustmentPercent || 0) / 100;
+  const pmMarkup = (opts.paymentMethodMarkup || 0) / 100;
+
+  const basePrice = price;
+  const priceWithInterest = basePrice * (1 + interestMultiplier);
+  const priceWithMargin = priceWithInterest * (1 + marginPercent);
+  const priceWithSegAdj = priceWithMargin * (1 + segAdj);
+  const normalizedPrice = priceWithSegAdj * (1 + pmMarkup);
+
+  return {
+    productId: product.id, basePrice, normalizedPrice,
+    interestComponent: basePrice * interestMultiplier,
+    marginComponent: priceWithInterest * marginPercent,
+    segmentAdjustmentComponent: priceWithMargin * segAdj,
+    paymentMethodComponent: priceWithSegAdj * pmMarkup,
+    commercialPrice: normalizedPrice, quantity,
+    subtotal: normalizedPrice * quantity,
+  };
+}
+
+// ─── GROSS-TO-NET ───
+function calculateGrossToNet(
+  pricingResults: PricingResultItem[],
+  comboActivations: ComboActivationResult[],
+  barterDiscountPercent: number,
+  campaign: any,
+  selections: AgronomicResult[]
+): GrossToNetResult {
+  const grossRevenue = pricingResults.reduce((s, p) => s + p.subtotal, 0);
+  const totalInterest = pricingResults.reduce((s, p) => s + p.interestComponent * p.quantity, 0);
+  const totalMargin = pricingResults.reduce((s, p) => s + p.marginComponent * p.quantity, 0);
+  const totalSegAdj = pricingResults.reduce((s, p) => s + (p.segmentAdjustmentComponent || 0) * p.quantity, 0);
+  const totalPmMarkup = pricingResults.reduce((s, p) => s + (p.paymentMethodComponent || 0) * p.quantity, 0);
+
+  const activatedMain = comboActivations.filter(c => c.applied && !c.isComplementary);
+  const activatedComp = comboActivations.filter(c => c.applied && c.isComplementary);
+
+  const mainEligibleRefs = new Set<string>();
+  let mainDiscountPercent = 0;
+  for (const ca of activatedMain) {
+    for (const ref of ca.matchedProducts) mainEligibleRefs.add(ref.toUpperCase().trim());
+    mainDiscountPercent = Math.max(mainDiscountPercent, ca.discountPercent);
+  }
+
+  const compEligibleRefs = new Set<string>();
+  let compDiscountPercent = 0;
+  for (const ca of activatedComp) {
+    for (const ref of ca.matchedProducts) compEligibleRefs.add(ref.toUpperCase().trim());
+    compDiscountPercent += ca.discountPercent;
+  }
+
+  let comboDiscount = 0;
+  for (const pr of pricingResults) {
+    const sel = selections.find(s => s.productId === pr.productId);
+    if (!sel) continue;
+    const ref = (sel.ref || '').toUpperCase().trim();
+    if (mainEligibleRefs.has(ref) && mainDiscountPercent > 0) {
+      comboDiscount += pr.subtotal * mainDiscountPercent / 100;
+    }
+    if (compEligibleRefs.has(ref) && compDiscountPercent > 0) {
+      comboDiscount += pr.subtotal * compDiscountPercent / 100;
+    }
+  }
+
+  const barterDiscount = (grossRevenue - comboDiscount) * barterDiscountPercent / 100;
+
+  const incentiveBase = grossRevenue - comboDiscount;
+  const incentiveType = campaign.global_incentive_type || '';
+  const incentiveTotal = (campaign.global_incentive_1 || 0) + (campaign.global_incentive_2 || 0) + (campaign.global_incentive_3 || 0);
+  const directIncentiveDiscount = incentiveType === 'desconto_direto' ? incentiveBase * incentiveTotal / 100 : 0;
+  const creditLiberacao = incentiveType === 'credito_liberacao' ? incentiveBase * incentiveTotal / 100 : 0;
+  const creditLiquidacao = incentiveType === 'credito_liquidacao' ? incentiveBase * incentiveTotal / 100 : 0;
+
+  const netRevenue = grossRevenue - comboDiscount - barterDiscount - directIncentiveDiscount;
+
+  return {
+    grossRevenue, comboDiscount, barterDiscount, directIncentiveDiscount,
+    creditLiberacao, creditLiquidacao, netRevenue,
+    financialRevenue: totalInterest, distributorMargin: totalMargin,
+    segmentAdjustment: totalSegAdj, paymentMethodMarkup: totalPmMarkup,
+    barterCost: barterDiscount, netNetRevenue: netRevenue - totalMargin,
+  };
+}
+
+// ─── ELIGIBILITY ENGINE ───
+function checkEligibility(campaign: any, input: any): EligibilityResult {
+  const warnings: string[] = [];
+  const normalize = (v?: string) => String(v || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().toLowerCase();
+
+  // PF/PJ
+  const campaignTypes = campaign.client_type || [];
+  const hasPfPjFilter = campaignTypes.length > 0;
+  const pf_pj_ok = !hasPfPjFilter || !input.clientType || campaignTypes.some((t: string) => t.toLowerCase() === input.clientType.toLowerCase());
+  if (!pf_pj_ok) warnings.push(`Tipo "${input.clientType}" não elegível`);
+
+  // Geo
+  const eligStates = campaign.eligible_states || [];
+  const eligMeso = campaign.eligible_mesoregions || [];
+  const eligCities = campaign.eligible_cities || [];
+  const normalizedState = String(input.state || '').trim().toUpperCase();
+  const state_ok = eligStates.length === 0 || !input.state || eligStates.some((s: string) => String(s).trim().toUpperCase() === normalizedState);
+  const mesoregion_ok = eligMeso.length === 0 || !input.mesoregion || eligMeso.some((m: string) => normalize(m) === normalize(input.mesoregion));
+  const city_ok = eligCities.length === 0 || !input.city || eligCities.some((c: string) => normalize(c) === normalize(input.city));
+
+  let geo_ok = true;
+  if (eligCities.length > 0) { geo_ok = city_ok; if (!city_ok) warnings.push(`Cidade "${input.city}" não elegível`); }
+  else if (eligMeso.length > 0) { geo_ok = mesoregion_ok; if (!mesoregion_ok) warnings.push(`Mesorregião não elegível`); }
+  else if (eligStates.length > 0) { geo_ok = state_ok; if (!state_ok) warnings.push(`Estado "${input.state}" não elegível`); }
+
+  // Segment
+  const eligSegs = campaign.eligible_distributor_segments || [];
+  const segment_ok = eligSegs.length === 0 || !input.segment || eligSegs.includes(input.segment);
+  if (!segment_ok) warnings.push(`Segmento "${input.segment}" não elegível`);
+
+  // Client segment
+  const eligClientSegs = campaign.eligible_client_segments || [];
+  const client_segment_ok = eligClientSegs.length === 0 || !input.clientSegment || eligClientSegs.includes(input.clientSegment);
+
+  // Min order
+  const minAmount = campaign.min_order_amount || 0;
+  const min_ok = minAmount <= 0 || !input.orderAmount || input.orderAmount >= minAmount;
+  if (!min_ok) warnings.push(`Pedido mínimo não atingido`);
+
+  // Whitelist
+  const whitelist = input.whitelist || [];
+  const whitelist_ok = whitelist.length === 0 || !input.clientDocument || whitelist.some((w: string) => w.replace(/\D/g, '') === input.clientDocument.replace(/\D/g, ''));
+  if (!whitelist_ok) warnings.push('Cliente não está na whitelist');
+
+  const eligible = pf_pj_ok && geo_ok && segment_ok && client_segment_ok && min_ok && whitelist_ok;
+  const blocked = !!(campaign.block_ineligible && !eligible);
+
+  return {
+    eligible, blocked,
+    flags: { pf_pj_ok, geo_ok, state_ok, mesoregion_ok, city_ok, segment_ok, client_segment_ok, min_ok, whitelist_ok },
+    warnings,
+  };
+}
+
+// ─── COMMODITY / PARITY ENGINE ───
+function calculateCommodityNetPrice(pricing: any, port: string, freightReducer: any, opts: any): number {
+  const bushelsPerTon = pricing.bushels_per_ton;
+  const pesoSacaKg = pricing.peso_saca_kg;
+  if (!bushelsPerTon || !pesoSacaKg) throw new Error('commodity_pricing is missing bushels_per_ton or peso_saca_kg — configure them in the campaign');
+  const sacasPerTon = 1000 / pesoSacaKg;
+
+  const basisByPort = typeof pricing.basis_by_port === 'string' ? JSON.parse(pricing.basis_by_port) : (pricing.basis_by_port || {});
+  const basis = basisByPort[port] ?? 0;
+
+  const fobUsdPerTon = (pricing.exchange_price + basis) * bushelsPerTon;
+  const fobBrlPerTon = fobUsdPerTon * pricing.exchange_rate_bolsa;
+  const afterMarketDelta = fobBrlPerTon * (1 - (pricing.security_delta_market ?? 0) / 100);
+
+  let afterValorization = afterMarketDelta;
+  if (opts?.useValorizationPercent && opts.valorizationPercent) {
+    afterValorization *= (1 + opts.valorizationPercent / 100);
+  }
+
+  const freightCostPerTon = freightReducer?.total_reducer ?? 0;
+  const interiorPricePerTon = afterValorization - freightCostPerTon;
+  const netPricePerTon = interiorPricePerTon * (1 - (pricing.security_delta_freight ?? 0) / 100);
+
+  let netPricePerSaca = netPricePerTon / sacasPerTon;
+
+  if (!opts?.useValorizationPercent && opts?.valorizationNominal) {
+    netPricePerSaca += opts.valorizationNominal;
+  }
+
+  if (opts?.buyerFeePercent && opts.buyerFeePercent > 0) {
+    netPricePerSaca *= (1 - opts.buyerFeePercent / 100);
+  }
+
+  if (netPricePerSaca <= 0) throw new Error('Calculated commodity net price is <= 0. Check commodity_pricing configuration.');
+  return netPricePerSaca;
+}
+
+function calculateIVP(contractPriceType: string, volatility: number | null): number {
+  if (contractPriceType === 'fixo' || contractPriceType === 'pre_existente') return 1;
+  const vol = ((volatility ?? 0)) / 100;
+  return Math.max(1 - vol * 0.2, 0.8);
+}
+
+function calculateParity(totalAmountBRL: number, commodityNetPrice: number, userOverridePrice: number | null, grossAmountBRL: number | null, ivp: number): ParityResultType {
+  const effectivePrice = (userOverridePrice ?? commodityNetPrice) * ivp;
+  const quantitySacas = Math.ceil(totalAmountBRL / effectivePrice);
+  const referencePrice = grossAmountBRL ? grossAmountBRL / quantitySacas : totalAmountBRL / quantitySacas;
+  const valorization = effectivePrice > 0 ? ((referencePrice - effectivePrice) / effectivePrice) * 100 : 0;
+
+  return {
+    totalAmountBRL, commodityPricePerUnit: effectivePrice, quantitySacas,
+    referencePrice, valorization,
+    userOverridePrice, hasExistingContract: !!userOverridePrice,
+  };
+}
+
+// ─── BLACK-SCHOLES ───
+function normalCDF(x: number): number {
+  const a1 = 0.254829592, a2 = -0.284496736, a3 = 1.421413741, a4 = -1.453152027, a5 = 1.061405429, p = 0.3275911;
+  const sign = x < 0 ? -1 : 1;
+  x = Math.abs(x) / Math.sqrt(2);
+  const t = 1.0 / (1.0 + p * x);
+  const y = 1.0 - ((((a5 * t + a4) * t + a3) * t + a2) * t + a1) * t * Math.exp(-x * x);
+  return 0.5 * (1.0 + sign * y);
+}
+
+function blackScholes(spotPrice: number, strikePrice: number, timeYears: number, riskFreeRate: number, volatility: number): number {
+  if (timeYears <= 0 || spotPrice <= 0 || strikePrice <= 0) return 0;
+  const d1 = (Math.log(spotPrice / strikePrice) + (riskFreeRate + 0.5 * volatility * volatility) * timeYears) / (volatility * Math.sqrt(timeYears));
+  const d2 = d1 - volatility * Math.sqrt(timeYears);
+  return spotPrice * normalCDF(d1) - strikePrice * Math.exp(-riskFreeRate * timeYears) * normalCDF(d2);
+}
+
+// ═══════════════════════════════════════════════════════════════
+// MAIN HANDLER
+// ═══════════════════════════════════════════════════════════════
+serve(async (req: Request) => {
+  const corsHeaders = getCorsHeaders(req);
+  if (req.method === 'OPTIONS') return new Response(null, { headers: corsHeaders });
+
+  try {
+    const body = await req.json();
+    const url = new URL(req.url);
+    const urlPath = url.pathname.split('/').pop();
+    const endpoint = body.endpoint || (urlPath !== 'simulation-engine' ? urlPath : null);
+
+    // Auth
+    const authHeader = req.headers.get('Authorization');
+    if (!authHeader) return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+
+    const supabase = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_ANON_KEY')!, { global: { headers: { Authorization: authHeader } } });
+    const { data: { user }, error: authError } = await supabase.auth.getUser();
+    if (authError || !user) return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+
+    let result: Record<string, unknown>;
+
+    switch (endpoint) {
+      // ═══════════════════════════════════════════
+      // FULL SIMULATION - server-authoritative
+      // ═══════════════════════════════════════════
+      case 'simulate': {
+        const {
+          campaignId, selections: inputSelections, segment, dueMonths,
+          paymentMethodId, commodityCode, port: portName,
+          freightOrigin, hasContract: hasExistingContract, userOverridePrice,
+          showInsurance, clientContext, barterDiscountPercent,
+          buyerId, contractPriceType: cpt, performanceIndex: pi,
+        } = body;
+
+        if (!campaignId) throw new Error('campaignId is required');
+        if (!inputSelections?.length) throw new Error('selections are required (array of {productId, dosePerHectare, areaHectares, overrideQuantity?})');
+        if (!segment) throw new Error('segment is required');
+        if (dueMonths == null) throw new Error('dueMonths is required');
+
+        // 1. Fetch campaign (authoritative)
+        const { data: campaign, error: cErr } = await supabase.from('campaigns').select('*').eq('id', campaignId).single();
+        if (cErr || !campaign) throw new Error('Campaign not found');
+
+        // 2. Fetch related data in parallel
+        const [marginsRes, segmentsRes, pmRes, combosRes, cpRes, frRes, buyersRes, valRes, clientsRes] = await Promise.all([
+          supabase.from('channel_margins').select('*').eq('campaign_id', campaignId),
+          supabase.from('campaign_segments').select('*').eq('campaign_id', campaignId).eq('active', true),
+          supabase.from('campaign_payment_methods').select('*').eq('campaign_id', campaignId).eq('active', true),
+          supabase.from('combos').select('id, name, discount_percent, combo_products(product_id, min_dose_per_ha, max_dose_per_ha, products(ref))').eq('campaign_id', campaignId),
+          supabase.from('commodity_pricing').select('*').eq('campaign_id', campaignId),
+          supabase.from('freight_reducers').select('*').eq('campaign_id', campaignId),
+          supabase.from('campaign_buyers').select('*').eq('campaign_id', campaignId),
+          supabase.from('campaign_commodity_valorizations').select('*').eq('campaign_id', campaignId),
+          supabase.from('campaign_clients').select('document').eq('campaign_id', campaignId),
+        ]);
+
+        const margins = marginsRes.data || [];
+        const segments = segmentsRes.data || [];
+        const paymentMethods = pmRes.data || [];
+
+        // 3. Fetch products from DB (authoritative — no client-provided prices)
+        const productIds = inputSelections.map((s: any) => s.productId);
+        const { data: campaignProductLinks } = await supabase.from('campaign_products').select('product_id').eq('campaign_id', campaignId);
+        const validProductIds = new Set((campaignProductLinks || []).map((cp: any) => cp.product_id));
+
+        const { data: dbProducts, error: pErr } = await supabase.from('products').select('*').in('id', productIds);
+        if (pErr) throw pErr;
+        const productMap = new Map((dbProducts || []).map((p: any) => [p.id, p]));
+
+        // Validate all products belong to campaign
+        for (const pid of productIds) {
+          if (!validProductIds.has(pid)) throw new Error(`Product ${pid} is not part of campaign ${campaignId}`);
+          if (!productMap.has(pid)) throw new Error(`Product ${pid} not found in database`);
+        }
+
+        // 4. Agronomic calculations
+        const agronomicSelections: AgronomicResult[] = inputSelections.map((s: any) => {
+          const product = productMap.get(s.productId)!;
+          return calculateAgronomic(product, s.areaHectares, s.dosePerHectare, s.overrideQuantity);
+        });
+
+        // 5. Combo cascade
+        const comboDefinitions = (combosRes.data || []).map((c: any) => ({
+          id: c.id, name: c.name, discount_percent: c.discount_percent,
+          products: (c.combo_products || []).map((cp: any) => ({
+            ref: cp.products?.ref || '', min_dose_per_ha: cp.min_dose_per_ha, max_dose_per_ha: cp.max_dose_per_ha,
+          })),
+        }));
+        const comboCascade = applyComboCascade(comboDefinitions, agronomicSelections);
+
+        // 6. Pricing
+        const segmentMatch = segments.find((s: any) => s.segment_name.toLowerCase() === segment.toLowerCase());
+        const segmentAdjustmentPercent = segmentMatch?.price_adjustment_percent || 0;
+        const selectedPM = paymentMethodId ? paymentMethods.find((pm: any) => pm.id === paymentMethodId) : paymentMethods[0];
+        const paymentMethodMarkup = selectedPM?.markup_percent || 0;
+
+        const pricingResults: PricingResultItem[] = agronomicSelections.map(sel => {
+          const product = productMap.get(sel.productId)!;
+          return calculatePricing(product, campaign, margins, segment, dueMonths, sel.roundedQuantity, { paymentMethodMarkup, segmentAdjustmentPercent });
+        });
+
+        // 7. Gross-to-Net
+        const grossToNet = calculateGrossToNet(pricingResults, comboCascade.activations, barterDiscountPercent || 0, campaign, agronomicSelections);
+
+        // 8. Eligibility
+        const whitelist = (clientsRes.data || []).map((c: any) => c.document);
+        const eligibility = checkEligibility(campaign, { ...clientContext, whitelist });
+
+        // 9. Parity (if barter)
+        let parityResult: ParityResultType | null = null;
+        let commodityNetPriceValue: number | null = null;
+        let ivpValue: number | null = null;
+        let insuranceResult: any = null;
+
+        const isBarter = selectedPM?.method_name?.toLowerCase().includes('barter');
+
+        if (isBarter && commodityCode) {
+          const commodityPricingRow = (cpRes.data || []).find((cp: any) => cp.commodity === commodityCode);
+          if (!commodityPricingRow) throw new Error(`No commodity_pricing found for commodity "${commodityCode}" in campaign. Configure it first.`);
+
+          // Validate required fields
+          if (!commodityPricingRow.bushels_per_ton) throw new Error('commodity_pricing.bushels_per_ton is not configured');
+          if (!commodityPricingRow.peso_saca_kg) throw new Error('commodity_pricing.peso_saca_kg is not configured');
+          if (!commodityPricingRow.exchange_rate_bolsa) throw new Error('commodity_pricing.exchange_rate_bolsa is not configured');
+
+          const freightReducer = freightOrigin
+            ? (frRes.data || []).find((fr: any) => fr.origin === freightOrigin)
+            : null;
+
+          const buyer = buyerId ? (buyersRes.data || []).find((b: any) => b.id === buyerId) : null;
+          const valorization = (valRes.data || []).find((v: any) => v.commodity?.toLowerCase() === commodityCode.toLowerCase());
+
+          commodityNetPriceValue = calculateCommodityNetPrice(commodityPricingRow, portName || '', freightReducer, {
+            valorizationNominal: valorization?.nominal_value || 0,
+            valorizationPercent: valorization?.percent_value || 0,
+            useValorizationPercent: valorization?.use_percent || false,
+            buyerFeePercent: buyer?.fee || 0,
+          });
+
+          ivpValue = calculateIVP(cpt || 'fixo', commodityPricingRow.volatility);
+          parityResult = calculateParity(grossToNet.netRevenue, commodityNetPriceValue, hasExistingContract ? userOverridePrice : null, grossToNet.grossRevenue, ivpValue);
+
+          // Insurance
+          if (showInsurance) {
+            if (!commodityPricingRow.volatility) throw new Error('commodity_pricing.volatility is not configured — required for insurance');
+            if (!commodityPricingRow.risk_free_rate) throw new Error('commodity_pricing.risk_free_rate is not configured — required for insurance');
+
+            const vol = commodityPricingRow.volatility / 100;
+            const rfr = commodityPricingRow.risk_free_rate;
+            const strikePercent = commodityPricingRow.strike_percent || 105;
+            const maturityDays = commodityPricingRow.option_maturity_days || 180;
+
+            const spotPrice = commodityPricingRow.exchange_price * commodityPricingRow.exchange_rate_bolsa;
+            if (spotPrice <= 0) throw new Error('Spot price is 0. Check exchange_price and exchange_rate_bolsa in commodity_pricing.');
+
+            const strike = spotPrice * (strikePercent / 100);
+            const timeYears = maturityDays / 365;
+            const premium = blackScholes(spotPrice, strike, timeYears, rfr, vol);
+            const additionalSacas = commodityNetPriceValue > 0 ? Math.ceil((premium / commodityNetPriceValue) * parityResult.quantitySacas) : 0;
+
+            insuranceResult = {
+              premiumPerSaca: premium,
+              additionalSacas,
+              totalSacas: parityResult.quantitySacas + additionalSacas,
+              volatility: commodityPricingRow.volatility,
+              strikePercent,
+              maturityDays,
+            };
+          }
+        }
+
+        // 10. Combo suggestions
+        const maxDiscount = comboDefinitions.filter((c: any) => !/^COMPLEMENTAR/i.test(c.name)).reduce((max: number, c: any) => Math.max(max, c.discount_percent), 0);
+        const activatedDiscount = comboCascade.activations.filter(a => a.applied && !a.isComplementary).reduce((max, a) => Math.max(max, a.discountPercent), 0);
+        const complementaryDiscount = comboCascade.activations.filter(a => a.applied && a.isComplementary).reduce((sum, a) => sum + a.discountPercent, 0);
+
+        result = {
+          selections: agronomicSelections,
+          comboActivations: comboCascade.activations,
+          consumptionLedger: comboCascade.consumptionLedger,
+          pricingResults,
+          grossToNet,
+          eligibility,
+          parity: parityResult,
+          insurance: insuranceResult,
+          commodityNetPrice: commodityNetPriceValue,
+          ivp: ivpValue,
+          maxDiscount,
+          activatedDiscount,
+          complementaryDiscount,
+          discountProgress: maxDiscount > 0 ? (activatedDiscount / maxDiscount) * 100 : 0,
+          campaignConfig: {
+            currency: campaign.currency,
+            target: campaign.target,
+            activeModules: campaign.active_modules || [],
+            aforoPercent: campaign.aforo_percent,
+            priceListFormat: campaign.price_list_format,
+            commodities: campaign.commodities,
+            contractPriceTypes: campaign.contract_price_types || ['fixo', 'a_fixar'],
+          },
+          paymentMethods: paymentMethods.map((pm: any) => ({ id: pm.id, methodName: pm.method_name, markupPercent: pm.markup_percent })),
+          segmentOptions: segments.map((s: any) => ({ value: s.segment_name, label: s.segment_name, adjustmentPercent: s.price_adjustment_percent })),
+          buyers: (buyersRes.data || []).map((b: any) => ({ id: b.id, buyerName: b.buyer_name, fee: b.fee })),
+          ports: (() => {
+            const cp = (cpRes.data || []).find((c: any) => c.commodity === commodityCode);
+            if (!cp?.basis_by_port) return [];
+            const bp = typeof cp.basis_by_port === 'string' ? JSON.parse(cp.basis_by_port) : cp.basis_by_port;
+            return Object.keys(bp);
+          })(),
+          freightOrigins: (frRes.data || []).map((fr: any) => ({ origin: fr.origin, destination: fr.destination })),
+          comboDefinitions: comboDefinitions.map((c: any) => ({ id: c.id, name: c.name, discountPercent: c.discount_percent, productRefs: c.products.map((p: any) => p.ref) })),
+          timestamp: new Date().toISOString(),
+        };
+        break;
+      }
+
+      // ═══════════════════════════════════════════
+      // LIGHTWEIGHT ELIGIBILITY CHECK
+      // ═══════════════════════════════════════════
+      case 'check-eligibility': {
+        const { campaignId, clientContext: ctx } = body;
+        if (!campaignId) throw new Error('campaignId is required');
+
+        const { data: campaign, error: cErr } = await supabase.from('campaigns').select('*').eq('id', campaignId).single();
+        if (cErr || !campaign) throw new Error('Campaign not found');
+
+        const { data: clients } = await supabase.from('campaign_clients').select('document').eq('campaign_id', campaignId);
+        const whitelist = (clients || []).map((c: any) => c.document);
+
+        result = checkEligibility(campaign, { ...ctx, whitelist });
+        break;
+      }
+
+      // ═══════════════════════════════════════════
+      // ORCHESTRATOR STATUS
+      // ═══════════════════════════════════════════
+      case 'get-operation-status': {
+        const { operationId } = body;
+        if (!operationId) throw new Error('operationId is required');
+
+        const { data: operation, error: opErr } = await supabase.from('operations').select('*').eq('id', operationId).single();
+        if (opErr || !operation) throw new Error('Operation not found');
+
+        const { data: campaign } = await supabase.from('campaigns').select('active_modules, aforo_percent').eq('id', operation.campaign_id).single();
+        const { data: docs } = await supabase.from('operation_documents').select('doc_type, status, guarantee_category, data').eq('operation_id', operationId);
+        const { data: guarantees } = await supabase.from('operation_guarantees').select('estimated_value, ip_at_evaluation, status').eq('operation_id', operationId);
+
+        const activeModules = campaign?.active_modules || [];
+        if (activeModules.length === 0) throw new Error('Campaign has no active_modules configured');
+
+        const docList = (docs || []).map(d => ({ doc_type: d.doc_type, status: d.status, guarantee_category: d.guarantee_category, data: d.data }));
+
+        // Stage definitions
+        const STAGE_DEFS = [
+          { module: 'adesao', name: 'Termo de Adesão', requiredDocuments: ['termo_adesao'], requiredStatus: 'simulacao', nextStatus: 'pedido' },
+          { module: 'simulacao', name: 'Simulação & Pedido', requiredDocuments: ['pedido'], requiredStatus: 'pedido', nextStatus: 'formalizado' },
+          { module: 'formalizacao', name: 'Formalização Barter', requiredDocuments: ['termo_barter'], requiredStatus: 'formalizado', nextStatus: 'formalizado' },
+          { module: 'documentos', name: 'Documentação (CCV/Cessão)', requiredDocuments: ['ccv', 'cessao_credito'], requiredStatus: 'formalizado', nextStatus: 'garantido' },
+          { module: 'garantias', name: 'Garantias', requiredDocuments: ['cpr'], requiredStatus: 'garantido', nextStatus: 'faturado' },
+        ];
+        const STATUS_ORDER = ['simulacao', 'pedido', 'formalizado', 'garantido', 'faturado', 'monitorando', 'liquidado'];
+
+        const currentIdx = STATUS_ORDER.indexOf(operation.status);
+        const stages = [];
+        for (const def of STAGE_DEFS) {
+          if (!activeModules.includes(def.module)) continue;
+          const stageIdx = STATUS_ORDER.indexOf(def.requiredStatus);
+          const completedDocs = def.requiredDocuments.filter(dt => docList.some(d => d.doc_type === dt && (d.status === 'validado' || d.status === 'assinado')));
+          const allComplete = completedDocs.length >= def.requiredDocuments.length;
+          let status = 'bloqueado';
+          if (currentIdx > stageIdx) status = 'concluido';
+          else if (currentIdx === stageIdx) status = allComplete ? 'concluido' : 'em_progresso';
+          stages.push({ id: def.module, name: def.name, status, requiredDocuments: def.requiredDocuments, completedDocuments: completedDocs });
+        }
+
+        // Next status
+        const currentStages = stages.filter(s => {
+          const def = STAGE_DEFS.find(d => d.module === s.id);
+          return def && STATUS_ORDER.indexOf(def.requiredStatus) === currentIdx;
+        });
+        let nextStatus: string | null = null;
+        if (currentStages.length > 0 && currentStages.every(s => s.status === 'concluido')) {
+          const lastDef = STAGE_DEFS.find(d => d.module === currentStages[currentStages.length - 1].id);
+          nextStatus = lastDef?.nextStatus || null;
+        }
+
+        // Guarantee coverage
+        const validGuarantees = (guarantees || []).filter((g: any) => g.status === 'validado');
+        const base = validGuarantees.reduce((s: number, g: any) => s + (g.estimated_value || 0), 0);
+        const avgIP = validGuarantees.length > 0 ? validGuarantees.reduce((s: number, g: any) => s + (g.ip_at_evaluation || 1), 0) / validGuarantees.length : 1;
+        const effective = base * avgIP;
+        const required = (operation.gross_revenue || 0) * ((campaign?.aforo_percent || 130) / 100);
+
+        result = {
+          operationStatus: operation.status,
+          wagonStages: stages,
+          nextStatus,
+          guaranteeCoverage: { base, effective, required, sufficient: effective >= required },
+        };
+        break;
+      }
+
+      default:
+        return new Response(JSON.stringify({ error: 'Unknown endpoint' }), { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    }
+
+    return new Response(JSON.stringify(result), { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : 'Internal error';
+    console.error('simulation-engine error:', message);
+    return new Response(JSON.stringify({ error: message }), { status: 500, headers: { ...getCorsHeaders(req), 'Content-Type': 'application/json' } });
+  }
+});
