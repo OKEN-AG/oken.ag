@@ -1320,22 +1320,27 @@ export default function OperationStepperPage() {
               <div className="glass-card p-4 space-y-3 sticky top-0 z-10 backdrop-blur-md">
                 <div className="flex items-center justify-between flex-wrap gap-2">
                   <div className="flex items-center gap-3 flex-wrap">
-                    <span className="text-sm font-semibold text-foreground">Modo de Seleção:</span>
+                    <span className="text-sm font-semibold text-foreground">Modo:</span>
                     <div className="flex rounded-md border border-border overflow-hidden">
-                      <button onClick={() => setQuantityMode('dose')} className={`px-3 py-1 text-xs font-medium transition-colors ${quantityMode === 'dose' ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground hover:bg-muted/80'}`}>Área × Dose/Qtd</button>
+                      <button onClick={() => setQuantityMode('dose')} className={`px-3 py-1 text-xs font-medium transition-colors ${quantityMode === 'dose' ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground hover:bg-muted/80'}`}>Dose/ha</button>
                       <button onClick={() => setQuantityMode('livre')} className={`px-3 py-1 text-xs font-medium transition-colors ${quantityMode === 'livre' ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground hover:bg-muted/80'}`}>Qtd Livre</button>
                     </div>
-                    <div className="flex items-center gap-1.5 border-l border-border pl-3">
-                      <span className="text-xs text-muted-foreground whitespace-nowrap">Área:</span>
-                      <span className="text-xs font-mono font-semibold text-foreground">{area} ha</span>
-                      <span className="text-xs text-muted-foreground">×</span>
-                      <div className="flex items-center gap-0.5">
-                        <Button size="icon" variant="ghost" className="h-5 w-5" onClick={() => setComboQty(q => Math.max(1, q - 1))} disabled={comboQty <= 1}><Minus className="w-3 h-3" /></Button>
-                        <span className="text-xs font-mono font-bold text-primary w-5 text-center">{comboQty}</span>
-                        <Button size="icon" variant="ghost" className="h-5 w-5" onClick={() => setComboQty(q => q + 1)}><Plus className="w-3 h-3" /></Button>
+                    <div className="flex items-center gap-2 border-l border-border pl-3">
+                      <div className="flex items-center gap-1">
+                        <span className="text-[10px] text-muted-foreground uppercase tracking-wider">ha</span>
+                        <Button size="icon" variant="outline" className="h-6 w-6 rounded" onClick={() => setArea(a => Math.max(1, a - 50))} disabled={area <= 1}><Minus className="w-3 h-3" /></Button>
+                        <Input type="number" min={1} value={area} onChange={e => setArea(Math.max(1, Number(e.target.value) || 1))} className="h-6 w-16 text-xs font-mono text-center px-1 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none" />
+                        <Button size="icon" variant="outline" className="h-6 w-6 rounded" onClick={() => setArea(a => a + 50)}><Plus className="w-3 h-3" /></Button>
                       </div>
-                      <span className="text-xs text-muted-foreground">=</span>
-                      <span className="text-xs font-mono font-bold text-success">{effectiveArea} ha</span>
+                      <span className="text-xs text-muted-foreground font-bold">×</span>
+                      <div className="flex items-center gap-1">
+                        <span className="text-[10px] text-muted-foreground uppercase tracking-wider">Combos</span>
+                        <Button size="icon" variant="outline" className="h-6 w-6 rounded" onClick={() => setComboQty(q => Math.max(1, q - 1))} disabled={comboQty <= 1}><Minus className="w-3 h-3" /></Button>
+                        <Input type="number" min={1} value={comboQty} onChange={e => setComboQty(Math.max(1, Number(e.target.value) || 1))} className="h-6 w-12 text-xs font-mono text-center px-1 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none" />
+                        <Button size="icon" variant="outline" className="h-6 w-6 rounded" onClick={() => setComboQty(q => q + 1)}><Plus className="w-3 h-3" /></Button>
+                      </div>
+                      <span className="text-xs text-muted-foreground font-bold">=</span>
+                      <span className="text-sm font-mono font-bold text-success">{effectiveArea} ha</span>
                     </div>
                   </div>
                   <div className="flex items-center gap-3">
