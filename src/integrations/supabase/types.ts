@@ -1342,6 +1342,13 @@ export type Database = {
             referencedRelation: "campaigns"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "operations_distributor_id_fkey"
+            columns: ["distributor_id"]
+            isOneToOne: false
+            referencedRelation: "campaign_distributors"
+            referencedColumns: ["id"]
+          },
         ]
       }
       order_pricing_snapshots: {
