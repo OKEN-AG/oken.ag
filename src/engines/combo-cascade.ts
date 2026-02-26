@@ -1,14 +1,35 @@
 import type { ComboDefinition, ComboActivation, AgronomicSelection } from '@/types/barter';
 
 /**
- * COMBO CASCADE ENGINE v4
- * 
- * Key improvements:
- * - Consumption ledger: tracks how much quantity each combo "consumed" per product
- * - findSelectionByRef picks best match (highest dose, tiebreak by area)
- * - getSuggestedDoseForRef picks tightest range (smallest span), tiebreak by highest discount
- * - activatedHectares uses Math.min (intersection) instead of Math.max
+ * COMBO CASCADE ENGINE v5 — Faithful to Excel "MATRIZ DESCONTO"
+ *
+ * For each combo (OFERTA), per product rule:
+ *   VOLUME (I)     = total qty of that REF from selections
+ *   TESTE1 (J)     = VOLUME / doseMin   → area equivalent (min dose)
+ *   TESTE2 (K)     = VOLUME / doseMax   → area equivalent (max dose)
+ *   AREA_CONSOL     = MIN(all TESTE1)    → limiting area of the group
+ *   MINIMO (L)     = AREA_CONSOL * doseMin
+ *   MAXIMO (M)     = AREA_CONSOL * doseMax
+ *   VOL_ATIVADO(N) = MIN(VOLUME, MAXIMO) → capped activated volume
+ *   SALDO (O)      = VOLUME - VOL_ATIVADO
+ *   CONSOL (P)     = VOL_ATIVADO * (1 - discount)
+ *   AREA_CONSOL(Q) = if VOL_ATIVADO > 0 then AREA_CONSOL else 0
+ *
+ * Cascade: sorted by descountPercent desc, then product count desc.
+ * Remaining qty is reduced after each combo activation.
  */
+
+export interface ComboItemDetail {
+  ref: string;
+  volume: number;        // I — total volume from selections
+  teste1: number;        // J — volume / doseMin (area equiv)
+  teste2: number;        // K — volume / doseMax (area equiv)
+  minimo: number;        // L — areaConsol * doseMin
+  maximo: number;        // M — areaConsol * doseMax
+  volumeAtivado: number; // N — min(volume, maximo)
+  saldo: number;         // O — volume - volumeAtivado
+  consolidado: number;   // P — volumeAtivado * (1 - discount)
+}
 
 export interface ComboConsumptionLedger {
   /** comboId -> { REF -> quantity consumed } */
@@ -18,7 +39,9 @@ export interface ComboConsumptionLedger {
 export interface ComboCascadeResult {
   activations: ComboActivation[];
   consumptionLedger: ComboConsumptionLedger;
-  totalDiscountValue: number; // absolute BRL discount
+  totalDiscountValue: number;
+  /** Detailed per-item breakdown for each activated combo */
+  itemDetails: Record<string, ComboItemDetail[]>;
 }
 
 function getSelectionRef(sel: AgronomicSelection): string {
@@ -29,25 +52,6 @@ function getSelectionRef(sel: AgronomicSelection): string {
 
 function isComplementaryCombo(combo: ComboDefinition): boolean {
   return combo.isComplementary || /^COMPLEMENTAR/i.test(combo.name);
-}
-
-function findSelectionByRef(
-  ref: string,
-  selections: AgronomicSelection[],
-  availableRefs: Set<string>
-): AgronomicSelection | undefined {
-  const upperRef = ref.toUpperCase().trim();
-  if (!availableRefs.has(upperRef)) return undefined;
-
-  const candidates = selections.filter(s => getSelectionRef(s) === upperRef);
-  if (candidates.length === 0) return undefined;
-
-  candidates.sort((a, b) => {
-    if (b.dosePerHectare !== a.dosePerHectare) return b.dosePerHectare - a.dosePerHectare;
-    return b.areaHectares - a.areaHectares;
-  });
-
-  return candidates[0];
 }
 
 /**
@@ -82,8 +86,7 @@ export function getSuggestedDoseForRef(
 }
 
 /**
- * Apply combo cascade with consumption ledger.
- * Returns both activations and a ledger showing how much quantity each combo consumed.
+ * Apply combo cascade with Excel-faithful logic.
  */
 export function applyComboCascadeWithLedger(
   combos: ComboDefinition[],
@@ -92,92 +95,112 @@ export function applyComboCascadeWithLedger(
   const mainCombos = combos.filter(c => !isComplementaryCombo(c));
   const complementaryCombos = combos.filter(c => isComplementaryCombo(c));
 
+  // Sort: highest discount first, then most products (widest coverage)
   const sortedMain = [...mainCombos].sort((a, b) => {
     if (b.discountPercent !== a.discountPercent) return b.discountPercent - a.discountPercent;
     return b.products.length - a.products.length;
   });
 
-  // Track remaining quantity per REF
+  // Track remaining quantity per REF (starts with total from selections)
   const remainingQty = new Map<string, number>();
   for (const sel of selections) {
     const ref = getSelectionRef(sel);
     if (ref) remainingQty.set(ref, (remainingQty.get(ref) || 0) + sel.roundedQuantity);
   }
 
-  const availableRefs = new Set<string>(remainingQty.keys());
+  // Build dose lookup: REF -> dosePerHectare (from selections)
+  const doseLookup = new Map<string, number>();
+  for (const sel of selections) {
+    const ref = getSelectionRef(sel);
+    if (ref && !doseLookup.has(ref)) doseLookup.set(ref, sel.dosePerHectare);
+  }
+
   const activations: ComboActivation[] = [];
   const consumptionLedger: ComboConsumptionLedger = {};
-  let totalActivatedHectares = 0;
+  const itemDetails: Record<string, ComboItemDetail[]> = {};
 
   for (const combo of sortedMain) {
-    const matchedRefs: string[] = [];
-    let allMatch = true;
+    const details: ComboItemDetail[] = [];
+    let allPresent = true;
+    let areaConsolidada = Infinity;
 
+    // Phase 1: Check presence + calculate TESTE1 (area equiv by min dose)
     for (const rule of combo.products) {
       const ruleRef = (rule.ref || '').toUpperCase().trim();
-      if (!ruleRef) { allMatch = false; break; }
+      if (!ruleRef) { allPresent = false; break; }
 
-      const sel = findSelectionByRef(ruleRef, selections, availableRefs);
-      if (!sel) { allMatch = false; break; }
+      const volume = remainingQty.get(ruleRef) || 0;
+      if (volume <= 0) { allPresent = false; break; }
 
-      const doseInRange = sel.dosePerHectare >= rule.minDosePerHa && sel.dosePerHectare <= rule.maxDosePerHa;
-      if (!doseInRange) { allMatch = false; break; }
+      const doseMin = rule.minDosePerHa;
+      const doseMax = rule.maxDosePerHa;
 
-      // Check remaining qty
-      const remaining = remainingQty.get(ruleRef) || 0;
-      if (remaining <= 0) { allMatch = false; break; }
-
-      matchedRefs.push(ruleRef);
-    }
-
-    if (allMatch && matchedRefs.length > 0) {
-      // Consume quantities
-      const comboLedger: Record<string, number> = {};
-      for (const ref of matchedRefs) {
-        const sel = selections.find(s => getSelectionRef(s) === ref);
-        const qty = sel?.roundedQuantity || 0;
-        const remaining = remainingQty.get(ref) || 0;
-        const consumed = Math.min(qty, remaining);
-        comboLedger[ref] = consumed;
-        remainingQty.set(ref, remaining - consumed);
-        
-        // Remove from available if fully consumed
-        if ((remainingQty.get(ref) || 0) <= 0) {
-          availableRefs.delete(ref);
-        }
+      // Check dose is in range (use actual selection dose)
+      const selectionDose = doseLookup.get(ruleRef) || 0;
+      if (selectionDose < doseMin || selectionDose > doseMax) {
+        allPresent = false; break;
       }
-      consumptionLedger[combo.id] = comboLedger;
 
-      const matchedAreas = matchedRefs.map(ref => {
-        const sel = selections.find(s => getSelectionRef(s) === ref);
-        return sel?.areaHectares || 0;
-      });
-      const comboHectares = Math.min(...matchedAreas);
-      totalActivatedHectares = Math.max(totalActivatedHectares, comboHectares);
+      // J = volume / doseMin (area equivalent)
+      const teste1 = doseMin > 0 ? volume / doseMin : Infinity;
+      // K = volume / doseMax
+      const teste2 = doseMax > 0 ? volume / doseMax : 0;
 
-      activations.push({
-        comboId: combo.id,
-        comboName: combo.name,
-        discountPercent: combo.discountPercent,
-        matchedProducts: matchedRefs,
-        applied: true,
-        isComplementary: false,
-        activatedHectares: comboHectares,
-      });
-    } else {
-      activations.push({
-        comboId: combo.id,
-        comboName: combo.name,
-        discountPercent: combo.discountPercent,
-        matchedProducts: [],
-        applied: false,
-        isComplementary: false,
+      // Track min area for the group (limiting area)
+      areaConsolidada = Math.min(areaConsolidada, teste1);
+
+      details.push({
+        ref: ruleRef,
+        volume,
+        teste1,
+        teste2,
+        minimo: 0, maximo: 0, volumeAtivado: 0, saldo: 0, consolidado: 0, // filled in Phase 2
       });
     }
+
+    if (!allPresent || details.length === 0 || areaConsolidada === Infinity || areaConsolidada <= 0) {
+      activations.push({
+        comboId: combo.id, comboName: combo.name, discountPercent: combo.discountPercent,
+        matchedProducts: [], applied: false, isComplementary: false,
+      });
+      continue;
+    }
+
+    // Phase 2: Calculate MINIMO, MAXIMO, VOL_ATIVADO, SALDO, CONSOL
+    const comboLedger: Record<string, number> = {};
+    const matchedRefs: string[] = [];
+
+    for (const item of details) {
+      const rule = combo.products.find(p => (p.ref || '').toUpperCase().trim() === item.ref)!;
+      item.minimo = areaConsolidada * rule.minDosePerHa;           // L
+      item.maximo = areaConsolidada * rule.maxDosePerHa;           // M
+      item.volumeAtivado = Math.min(item.volume, item.maximo);     // N
+      item.saldo = item.volume - item.volumeAtivado;               // O
+      item.consolidado = item.volumeAtivado * (1 - combo.discountPercent / 100); // P
+
+      // Consume from remaining
+      comboLedger[item.ref] = item.volumeAtivado;
+      remainingQty.set(item.ref, item.saldo);
+      matchedRefs.push(item.ref);
+    }
+
+    consumptionLedger[combo.id] = comboLedger;
+    itemDetails[combo.id] = details;
+
+    activations.push({
+      comboId: combo.id,
+      comboName: combo.name,
+      discountPercent: combo.discountPercent,
+      matchedProducts: matchedRefs,
+      applied: true,
+      isComplementary: false,
+      activatedHectares: areaConsolidada,
+    });
   }
 
   // Complementary combos
   const hasActivatedOffers = activations.some(a => a.applied && !a.isComplementary);
+  const maxActivatedArea = Math.max(0, ...activations.filter(a => a.applied).map(a => a.activatedHectares || 0));
 
   for (const combo of complementaryCombos) {
     if (!hasActivatedOffers) {
@@ -189,28 +212,34 @@ export function applyComboCascadeWithLedger(
     }
 
     const matchedRefs: string[] = [];
+    const compDetails: ComboItemDetail[] = [];
+
     for (const rule of combo.products) {
       const ruleRef = (rule.ref || '').toUpperCase().trim();
       if (!ruleRef) continue;
-      const sel = selections.find(s => getSelectionRef(s) === ruleRef);
-      if (!sel) continue;
-      if (sel.dosePerHectare >= rule.minDosePerHa && sel.dosePerHectare <= rule.maxDosePerHa) {
-        matchedRefs.push(ruleRef);
-      }
+
+      const volume = remainingQty.get(ruleRef) || 0;
+      if (volume <= 0) continue;
+
+      const selectionDose = doseLookup.get(ruleRef) || 0;
+      if (selectionDose < rule.minDosePerHa || selectionDose > rule.maxDosePerHa) continue;
+
+      matchedRefs.push(ruleRef);
+      compDetails.push({
+        ref: ruleRef, volume, teste1: 0, teste2: 0,
+        minimo: 0, maximo: volume, volumeAtivado: volume,
+        saldo: 0, consolidado: volume * (1 - combo.discountPercent / 100),
+      });
     }
 
     if (matchedRefs.length > 0) {
       const comboLedger: Record<string, number> = {};
-      for (const ref of matchedRefs) {
-        const remaining = remainingQty.get(ref) || 0;
-        if (remaining > 0) {
-          comboLedger[ref] = remaining;
-          remainingQty.set(ref, 0);
-        }
+      for (const d of compDetails) {
+        comboLedger[d.ref] = d.volumeAtivado;
+        remainingQty.set(d.ref, 0);
       }
-      if (Object.keys(comboLedger).length > 0) {
-        consumptionLedger[combo.id] = comboLedger;
-      }
+      consumptionLedger[combo.id] = comboLedger;
+      itemDetails[combo.id] = compDetails;
     }
 
     activations.push({
@@ -220,11 +249,11 @@ export function applyComboCascadeWithLedger(
       matchedProducts: matchedRefs,
       applied: matchedRefs.length > 0,
       isComplementary: true,
-      proportionalHectares: matchedRefs.length > 0 ? totalActivatedHectares : undefined,
+      proportionalHectares: matchedRefs.length > 0 ? maxActivatedArea : undefined,
     });
   }
 
-  return { activations, consumptionLedger, totalDiscountValue: 0 };
+  return { activations, consumptionLedger, totalDiscountValue: 0, itemDetails };
 }
 
 // Backwards-compatible wrapper
