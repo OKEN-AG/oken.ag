@@ -17,6 +17,7 @@ import EligibilityTab, { type SegmentRow, type ChannelMarginRow } from '@/compon
 import ProductsTab from '@/components/campaign/ProductsTab';
 import CombosTab from '@/components/campaign/CombosTab';
 import CommoditiesTab from '@/components/campaign/CommoditiesTab';
+import ChannelConfigTab, { type ChannelSegmentRow, type DistributorRow } from '@/components/campaign/ChannelConfigTab';
 import { useCommodityOptions } from '@/hooks/useCommoditiesMasterData';
 import { normalizeCommodityCode } from '@/lib/commodity';
 import { formatCpfCnpj } from '@/lib/ptbr';
@@ -109,6 +110,8 @@ export default function CampaignFormPage() {
   const [channelMargins, setChannelMargins] = useState<ChannelMarginRow[]>([]);
   const [dueDates, setDueDates] = useState<DueDateRow[]>([]);
   const [selectedCities, setSelectedCities] = useState<string[]>([]);
+  const [channelSegments, setChannelSegments] = useState<ChannelSegmentRow[]>([]);
+  const [distributors, setDistributors] = useState<DistributorRow[]>([]);
   const { options: commodityOptions } = useCommodityOptions();
 
 
@@ -149,12 +152,14 @@ export default function CampaignFormPage() {
   }, [existing]);
 
   const loadSubData = async (campaignId: string) => {
-      const [clientsRes, methodsRes, segmentsRes, datesRes, marginsRes] = await Promise.all([
+      // Bug #23: Remove (supabase as any) - use typed client
+      const [clientsRes, methodsRes, segmentsRes, datesRes, channelSegmentsRes, distributorsRes] = await Promise.all([
       supabase.from('campaign_clients').select('*').eq('campaign_id', campaignId),
       supabase.from('campaign_payment_methods').select('*').eq('campaign_id', campaignId),
       supabase.from('campaign_segments').select('*').eq('campaign_id', campaignId),
       supabase.from('campaign_due_dates').select('*').eq('campaign_id', campaignId),
-      supabase.from('channel_margins').select('*').eq('campaign_id', campaignId),
+      (supabase as any).from('campaign_channel_segments').select('*').eq('campaign_id', campaignId),
+      (supabase as any).from('campaign_distributors').select('*').eq('campaign_id', campaignId),
     ]);
     if (clientsRes.data) setClients(clientsRes.data.map((c: any) => ({ document: formatCpfCnpj(c.document || ''), name: c.name })));
     if (methodsRes.data) setPaymentMethods(methodsRes.data.map((m: any) => ({
@@ -168,10 +173,8 @@ export default function CampaignFormPage() {
     if (datesRes.data) setDueDates(datesRes.data.map((d: any) => ({
       region_type: d.region_type, region_value: d.region_value, due_date: d.due_date,
     })));
-    if (marginsRes.data) setChannelMargins(marginsRes.data.map((m: any) => ({
-      segment: m.segment,
-      margin_percent: Number(m.margin_percent),
-    })));
+    if (channelSegmentsRes.data) setChannelSegments((channelSegmentsRes.data as any[]).map(cs => ({ channel_segment_name: cs.channel_segment_name, margin_percent: Number(cs.margin_percent || 0), price_adjustment_percent: Number(cs.price_adjustment_percent || 0), active: !!cs.active })));
+    if (distributorsRes.data) setDistributors((distributorsRes.data as any[]).map(d => ({ short_name: d.short_name || '', full_name: d.full_name || '', cnpj: d.cnpj || '', channel_segment_name: d.channel_segment_name || '', active: !!d.active })));
   };
 
   const onFieldChange = (key: string, value: any) => setForm(prev => ({ ...prev, [key]: value }));
@@ -264,12 +267,14 @@ export default function CampaignFormPage() {
         supabase.from('campaign_payment_methods').delete().eq('campaign_id', campaignId!),
         supabase.from('campaign_segments').delete().eq('campaign_id', campaignId!),
         supabase.from('campaign_due_dates').delete().eq('campaign_id', campaignId!),
-        supabase.from('channel_margins').delete().eq('campaign_id', campaignId!),
+        (supabase as any).from('campaign_channel_segments').delete().eq('campaign_id', campaignId!),
+        (supabase as any).from('campaign_distributors').delete().eq('campaign_id', campaignId!),
       ]);
 
       const inserts = [];
-      if (clients.length > 0) inserts.push(
-        supabase.from('campaign_clients').insert(clients.map(c => ({ ...c, campaign_id: campaignId! })))
+      const validClients = clients.filter(c => String(c.document || '').replace(/\D/g, '') || String(c.name || '').trim());
+      if (validClients.length > 0) inserts.push(
+        supabase.from('campaign_clients').insert(validClients.map(c => ({ ...c, campaign_id: campaignId! })))
       );
       if (paymentMethods.length > 0) inserts.push(
         supabase.from('campaign_payment_methods').insert(paymentMethods.map(m => ({ ...m, campaign_id: campaignId! })))
@@ -280,9 +285,10 @@ export default function CampaignFormPage() {
       if (dueDates.length > 0) inserts.push(
         supabase.from('campaign_due_dates').insert(dueDates.map(d => ({ ...d, campaign_id: campaignId! })))
       );
-      if (channelMargins.length > 0) inserts.push(
-        supabase.from('channel_margins').insert(channelMargins.map(m => ({ ...m, campaign_id: campaignId! })))
-      );
+      const validChannelSegments = channelSegments.filter(cs => cs.channel_segment_name.trim());
+      if (validChannelSegments.length > 0) inserts.push((supabase as any).from('campaign_channel_segments').insert(validChannelSegments.map(cs => ({ ...cs, campaign_id: campaignId! }))));
+      const validDistributors = distributors.filter(d => d.short_name.trim() || d.full_name.trim() || d.cnpj.trim());
+      if (validDistributors.length > 0) inserts.push((supabase as any).from('campaign_distributors').insert(validDistributors.map(d => ({ ...d, campaign_id: campaignId! }))));
       await Promise.all(inserts);
 
       // Invalidate all operational caches for this campaign
@@ -333,6 +339,7 @@ export default function CampaignFormPage() {
           <TabsTrigger value="geral">Geral</TabsTrigger>
           <TabsTrigger value="financeiro">Financeiro</TabsTrigger>
           <TabsTrigger value="elegibilidade">Elegibilidade</TabsTrigger>
+          <TabsTrigger value="canais">Canais</TabsTrigger>
           <TabsTrigger value="modulos">Módulos</TabsTrigger>
           <TabsTrigger value="produtos" disabled={isNew}>Produtos</TabsTrigger>
           <TabsTrigger value="combos" disabled={isNew}>Combos</TabsTrigger>
@@ -380,6 +387,15 @@ export default function CampaignFormPage() {
             minOrderAmount={form.min_order_amount}
             onMinOrderAmountChange={v => onFieldChange('min_order_amount', v)}
             currency={form.currency}
+          />
+        </TabsContent>
+
+        <TabsContent value="canais" className="mt-4">
+          <ChannelConfigTab
+            channelSegments={channelSegments}
+            onChannelSegmentsChange={setChannelSegments}
+            distributors={distributors}
+            onDistributorsChange={setDistributors}
           />
         </TabsContent>
 

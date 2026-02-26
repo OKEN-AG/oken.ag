@@ -215,8 +215,12 @@ export default function OperationStepperPage() {
   const [clientPhone, setClientPhone] = useState('');
   const [clientIE, setClientIE] = useState('');
   const [deliveryAddress, setDeliveryAddress] = useState('');
-   const [segment, setSegment] = useState<string>(''); // segment_name (nome comercial do segmento)
-   const [channelEnum, setChannelEnum] = useState<ChannelSegment>('distribuidor'); // canal operacional (enum para margem)
+  const [selectedDistributorId, setSelectedDistributorId] = useState('');
+  const [channelSegmentName, setChannelSegmentName] = useState('');
+  const [channelMarginPercent, setChannelMarginPercent] = useState(0);
+  const [channelAdjustmentPercent, setChannelAdjustmentPercent] = useState(0);
+  const [segment, setSegment] = useState<string>(''); // segmento comercial
+  const [channelEnum, setChannelEnum] = useState<ChannelSegment>('distribuidor'); // compat legado para telas antigas
   const [area, setArea] = useState(500);
   const [quantityMode, setQuantityMode] = useState<'dose' | 'livre'>('dose'); // dose/ha or free quantity
   const [freeQuantities, setFreeQuantities] = useState<Map<string, number>>(new Map());
@@ -264,6 +268,9 @@ export default function OperationStepperPage() {
         setClientCityCode(cityMatch?.ibge || '');
       }
       setChannelEnum((existingOp.channel || 'distribuidor') as ChannelSegment);
+      setSelectedDistributorId((existingOp as any).distributor_id || '');
+      setChannelSegmentName((existingOp as any).channel_segment_name || '');
+      setSegment((existingOp as any).commercial_segment_name || '');
       setArea(existingOp.area_hectares || 500);
       if (existingOp.commodity) setSelectedCommodity(existingOp.commodity);
       if (existingOp.due_months) setDueMonths(existingOp.due_months);
@@ -324,6 +331,24 @@ export default function OperationStepperPage() {
     },
   });
 
+  const { data: campaignDistributors } = useQuery({
+    queryKey: ['campaign-distributors', selectedCampaignId],
+    enabled: !!selectedCampaignId,
+    queryFn: async () => {
+      const { data } = await (supabase as any).from('campaign_distributors').select('*').eq('campaign_id', selectedCampaignId).eq('active', true);
+      return (data || []) as any[];
+    },
+  });
+
+  const { data: channelSegmentsConfig } = useQuery({
+    queryKey: ['campaign-channel-segments', selectedCampaignId],
+    enabled: !!selectedCampaignId,
+    queryFn: async () => {
+      const { data } = await (supabase as any).from('campaign_channel_segments').select('*').eq('campaign_id', selectedCampaignId).eq('active', true);
+      return (data || []) as any[];
+    },
+  });
+
   // ─── Derived data ───
   const segmentAdjustmentPercent = useMemo(() => {
     const match = campaignSegments?.find(s => s.active && s.segment_name.toLowerCase() === segment.toLowerCase());
@@ -376,6 +401,21 @@ export default function OperationStepperPage() {
   }, [commodityOptions, selectedCommodity]);
 
   const paymentMethodMarkup = selectedPM?.markup_percent || 0;
+
+  useEffect(() => {
+    if (!campaignDistributors?.length) return;
+    if (!selectedDistributorId) setSelectedDistributorId(campaignDistributors[0].id);
+  }, [campaignDistributors, selectedDistributorId]);
+
+  useEffect(() => {
+    if (!selectedDistributorId || !campaignDistributors?.length) return;
+    const dist = campaignDistributors.find((d: any) => d.id === selectedDistributorId);
+    const chName = dist?.channel_segment_name || '';
+    setChannelSegmentName(chName);
+    const cfg = (channelSegmentsConfig || []).find((c: any) => String(c.channel_segment_name).toLowerCase() === String(chName).toLowerCase());
+    setChannelMarginPercent(Number(cfg?.margin_percent || 0));
+    setChannelAdjustmentPercent(Number(cfg?.price_adjustment_percent || 0));
+  }, [selectedDistributorId, campaignDistributors, channelSegmentsConfig]);
 
   // Due dates with precedence
   const filteredDueDates = useMemo(() => getDueDatesWithPrecedence(dueDates || [], clientCity, undefined, clientState, undefined), [dueDates, clientCity, clientState]);
@@ -533,12 +573,11 @@ export default function OperationStepperPage() {
   }, [selectedCampaignId, selectedProducts, area, segment, channelEnum, dueMonths, selectedDueDate, selectedPaymentMethod,
       selectedCommodity, port, freightOrigin, selectedDeliveryLocationId, hasContract, userPrice, showInsurance,
       selectedBuyerId, contractPriceType, performanceIndex, clientState, selectedCityName,
-      clientCityCode, usesIbgeCityEligibility, clientType, clientDocument, quantityMode, freeQuantities]);
+      clientCityCode, usesIbgeCityEligibility, clientType, clientDocument, quantityMode, freeQuantities, selectedDistributorId, channelSegmentName]);
 
   // ─── Trigger simulation on input changes (server-authoritative) ───
   useEffect(() => {
-    if (!selectedCampaignId || selectedProducts.size === 0 || !dueMonths || hasDueDateConfigIssue || !segment) return;
-    if (!selectedCampaignId || selectedProducts.size === 0 || !dueMonths || hasDueDateConfigIssue) return;
+    if (!selectedCampaignId || selectedProducts.size === 0 || !dueMonths || hasDueDateConfigIssue || !segment || !selectedDistributorId) return;
     if (lastSimulationKeyRef.current === simulationKey) return;
     lastSimulationKeyRef.current = simulationKey;
 
@@ -547,8 +586,7 @@ export default function OperationStepperPage() {
       overrideQuantity: quantityMode === 'livre' ? (freeQuantities.get(id) || undefined) : undefined,
     }));
     simulateDebounced({
-      campaignId: selectedCampaignId, selections: inputSelections, segmentName: segment, channelSegment: channelEnum, dueMonths, dueDate: selectedDueDate || undefined,
-      campaignId: selectedCampaignId, selections: inputSelections, segmentName: segment || channelEnum, channelSegment: channelEnum, dueMonths, dueDate: selectedDueDate || undefined,
+      campaignId: selectedCampaignId, selections: inputSelections, distributorId: selectedDistributorId || undefined, channelSegmentName: channelSegmentName || undefined, commercialSegmentName: segment, segmentName: segment, channelSegment: channelEnum, dueMonths, dueDate: selectedDueDate || undefined,
       paymentMethodId: selectedPaymentMethod || undefined,
       commodityCode: selectedCommodity || undefined,
       port: port || undefined, freightOrigin: freightOrigin || undefined, deliveryLocationId: selectedDeliveryLocationId,
@@ -781,7 +819,7 @@ export default function OperationStepperPage() {
       if (isNewOperation) {
         const op = await createOperation.mutateAsync({
           campaign_id: selectedCampaignId, user_id: user.id, client_name: clientName || 'Sem nome',
-          client_document: clientDocument || undefined, channel: channelEnum, city: clientCity || undefined,
+          client_document: clientDocument || undefined, channel: channelEnum, distributor_id: selectedDistributorId || undefined, channel_segment_name: channelSegmentName || undefined, commercial_segment_name: segment || undefined, city: clientCity || undefined,
           state: clientState || undefined, due_months: dueMonths, area_hectares: area,
           gross_revenue: grossToNet.grossRevenue, combo_discount: grossToNet.comboDiscount,
           net_revenue: grossToNet.netRevenue, financial_revenue: grossToNet.financialRevenue,
@@ -811,6 +849,9 @@ export default function OperationStepperPage() {
             client_name: clientName,
             client_document: clientDocument || undefined,
             channel: channelEnum,
+            distributor_id: selectedDistributorId || undefined,
+            channel_segment_name: channelSegmentName || undefined,
+            commercial_segment_name: segment || undefined,
             city: clientCity,
             state: clientState,
             due_months: dueMonths,
@@ -858,7 +899,7 @@ export default function OperationStepperPage() {
   // ─── Step validation ───
   const canProceed = (stepId: string): boolean => {
     switch (stepId) {
-      case 'context': return !!selectedCampaignId && !!clientName && !eligibility?.blocked && !hasDueDateConfigIssue;
+      case 'context': return !!selectedCampaignId && !!clientName && !!selectedDistributorId && !eligibility?.blocked && !hasDueDateConfigIssue;
       case 'order': return selectedProducts.size > 0;
       case 'simulation': return grossToNet.grossRevenue > 0;
       case 'payment': return true;
@@ -1001,15 +1042,17 @@ export default function OperationStepperPage() {
               </div>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div className="glass-card p-4">
-                  <label className="stat-label">Canal</label>
-                  <Select value={segment} onValueChange={v => {
-                    setSegment(v);
-                    const normalized = v.toLowerCase();
-                    if (normalized.includes('direto')) setChannelEnum('direto');
-                    else if (normalized.includes('cooper')) setChannelEnum('cooperativa');
-                    else setChannelEnum('distribuidor');
-                  }}>
-                    <SelectTrigger className="mt-1 bg-muted border-border text-foreground"><SelectValue /></SelectTrigger>
+                  <label className="stat-label">Distribuidor / Canal</label>
+                  <Select value={selectedDistributorId} onValueChange={setSelectedDistributorId}>
+                    <SelectTrigger className="mt-1 bg-muted border-border text-foreground"><SelectValue placeholder="Selecione..." /></SelectTrigger>
+                    <SelectContent>{(campaignDistributors || []).map((d: any) => <SelectItem key={d.id} value={d.id}>{d.short_name || d.full_name} ({d.cnpj})</SelectItem>)}</SelectContent>
+                  </Select>
+                  <p className="text-[11px] text-muted-foreground mt-2">Segmento canal: {channelSegmentName || '—'} · Margem: {channelMarginPercent}% · Ajuste: {channelAdjustmentPercent}%</p>
+                </div>
+                <div className="glass-card p-4">
+                  <label className="stat-label">Segmento Comercial</label>
+                  <Select value={segment} onValueChange={setSegment}>
+                    <SelectTrigger className="mt-1 bg-muted border-border text-foreground"><SelectValue placeholder="Selecione..." /></SelectTrigger>
                     <SelectContent>{segmentOptions.map(o => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}</SelectContent>
                   </Select>
                 </div>

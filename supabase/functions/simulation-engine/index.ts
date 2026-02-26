@@ -223,8 +223,7 @@ function applyComboCascade(
 function calculatePricing(
   product: ProductRow, campaign: any, margins: any[], channelSegment: string,
   segmentName: string, dueMonths: number, quantity: number,
-  opts: { paymentMethodMarkup: number; segmentAdjustmentPercent: number; paymentMethodAnnualRate: number; boxes: number; pallets: number; useBarterFx: boolean }
-  opts: { paymentMethodMarkup: number; segmentAdjustmentPercent: number; paymentMethodAnnualRate: number; boxes: number; pallets: number }
+  opts: { paymentMethodMarkup: number; segmentAdjustmentPercent: number; paymentMethodAnnualRate: number; boxes: number; pallets: number; useBarterFx: boolean; forcedChannelMarginPercent?: number }
 ): { pricing: PricingResultItem; debug: PricingDebugRow } {
   const priceListFormat = String(campaign.price_list_format || '').toLowerCase();
   const forceTerm = priceListFormat.includes('prazo');
@@ -246,7 +245,6 @@ function calculatePricing(
 
   const listCurrency = (forcedCurrency || product.currency || 'BRL') as 'BRL' | 'USD';
   const useBarterFx = opts.useBarterFx || priceListFormat.includes('indicativa') || priceListFormat.includes('barter');
-  const useBarterFx = priceListFormat.includes('indicativa') || priceListFormat.includes('barter');
   const exchangeRateProducts = useBarterFx
     ? Number(campaign.exchange_rate_barter || campaign.exchange_rate_products || 1)
     : Number(campaign.exchange_rate_products || 1);
@@ -262,8 +260,10 @@ function calculatePricing(
     ? Math.pow(1 + totalMonthlyRate, dueMonths) - 1 : 0;
 
   const margin = margins.find((m: any) => m.segment === channelSegment);
-  const marginPercent = (!forceIncludesMargin && !product.includes_margin && margin && channelSegment !== 'direto')
-    ? margin.margin_percent / 100 : 0;
+  const marginPercentFromConfig = opts.forcedChannelMarginPercent != null ? (opts.forcedChannelMarginPercent / 100) : null;
+  const marginPercent = (!forceIncludesMargin && !product.includes_margin && channelSegment !== 'direto')
+    ? (marginPercentFromConfig != null ? marginPercentFromConfig : (margin ? margin.margin_percent / 100 : 0))
+    : 0;
 
   const segAdj = (opts.segmentAdjustmentPercent || 0) / 100;
   const pmMarkup = (opts.paymentMethodMarkup || 0) / 100;
@@ -550,7 +550,7 @@ serve(async (req: Request) => {
       // ═══════════════════════════════════════════
       case 'simulate': {
         const {
-          campaignId, selections: inputSelections, segmentName, channelSegment, dueMonths, dueDate,
+          campaignId, selections: inputSelections, segmentName, channelSegment, channelSegmentName, commercialSegmentName, distributorId, dueMonths, dueDate,
           paymentMethodId, commodityCode, port: portName,
           freightOrigin, deliveryLocationId, hasContract: hasExistingContract, userOverridePrice,
           showInsurance, clientContext, barterDiscountPercent,
@@ -568,9 +568,11 @@ serve(async (req: Request) => {
         if (cErr || !campaign) throw new Error('Campaign not found');
 
         // 2. Fetch related data in parallel
-        const [marginsRes, segmentsRes, pmRes, combosRes, cpRes, frRes, dlRes, buyersRes, valRes, clientsRes] = await Promise.all([
+        const [marginsRes, segmentsRes, channelSegRes, distributorsRes, pmRes, combosRes, cpRes, frRes, dlRes, buyersRes, valRes, clientsRes] = await Promise.all([
           supabase.from('channel_margins').select('*').eq('campaign_id', campaignId),
           supabase.from('campaign_segments').select('*').eq('campaign_id', campaignId).eq('active', true),
+          supabase.from('campaign_channel_segments').select('*').eq('campaign_id', campaignId).eq('active', true),
+          supabase.from('campaign_distributors').select('*').eq('campaign_id', campaignId).eq('active', true),
           supabase.from('campaign_payment_methods').select('*').eq('campaign_id', campaignId).eq('active', true),
           supabase.from('combos').select('id, name, discount_percent, combo_products(product_id, min_dose_per_ha, max_dose_per_ha, products(ref))').eq('campaign_id', campaignId),
           supabase.from('commodity_pricing').select('*').eq('campaign_id', campaignId),
@@ -627,20 +629,32 @@ serve(async (req: Request) => {
           return Math.max(Math.round(Number(dueMonths || 0)), 1);
         })();
 
-        const segmentMatch = segments.find((s: any) => s.segment_name.toLowerCase() === segmentName.toLowerCase());
-        const segmentAdjustmentPercent = segmentMatch?.price_adjustment_percent || 0;
+        const segmentCommercialName = commercialSegmentName || segmentName;
+        const segmentMatch = segments.find((s: any) => s.segment_name.toLowerCase() === String(segmentCommercialName || '').toLowerCase());
+        const commercialAdjustmentPercent = segmentMatch?.price_adjustment_percent || 0;
+
+        const distributors = distributorsRes.data || [];
+        const channelSegments = channelSegRes.data || [];
+        const selectedDistributor = distributorId ? distributors.find((d: any) => d.id === distributorId) : null;
+        const effectiveChannelSegmentName = channelSegmentName || selectedDistributor?.channel_segment_name || channelSegment;
+        const channelSegmentCfg = channelSegments.find((cs: any) => String(cs.channel_segment_name).toLowerCase() === String(effectiveChannelSegmentName || '').toLowerCase());
+        const channelMarginPercent = Number(channelSegmentCfg?.margin_percent || 0);
+        const channelAdjustmentPercent = Number(channelSegmentCfg?.price_adjustment_percent || 0);
+
+        const segmentAdjustmentPercent = commercialAdjustmentPercent + channelAdjustmentPercent;
         const selectedPM = paymentMethodId ? paymentMethods.find((pm: any) => pm.id === paymentMethodId) : paymentMethods[0];
         const paymentMethodMarkup = selectedPM?.markup_percent || 0;
 
         const pricingDetails = agronomicSelections.map(sel => {
           const product = productMap.get(sel.productId)!;
-          return calculatePricing(product, campaign, margins, channelSegment, segmentName, dueMonthsFinal, sel.roundedQuantity, {
+          return calculatePricing(product, campaign, margins, effectiveChannelSegmentName || channelSegment, segmentCommercialName || segmentName, dueMonthsFinal, sel.roundedQuantity, {
             paymentMethodMarkup,
             segmentAdjustmentPercent,
             paymentMethodAnnualRate: selectedPM?.annual_interest_rate || 0,
             boxes: sel.boxes,
             pallets: sel.pallets,
             useBarterFx: !!selectedPM?.method_name?.toLowerCase().includes('barter'),
+            forcedChannelMarginPercent: channelMarginPercent,
           });
         });
 
@@ -671,7 +685,7 @@ serve(async (req: Request) => {
         });
 
         // 8. Eligibility
-        const whitelist = (clientsRes.data || []).map((c: any) => c.document);
+        const whitelist = (clientsRes.data || []).map((c: any) => c.document).filter((d: string) => String(d || '').replace(/\D/g, '').length > 0);
         const eligibility = checkEligibility(campaign, { ...clientContext, orderAmount: grossToNet.grossRevenue, whitelist });
 
         // 9. Parity (if barter)
@@ -774,11 +788,6 @@ serve(async (req: Request) => {
           row.g2nNetRevenueAllocated = grossToNet.netRevenue * share;
         }
 
-          for (const row of pricingDebugRowsAllocated) {
-            row.parityPricePerSaca = parityResult.commodityPricePerUnit;
-          }
-        }
-
         // 10. Combo suggestions
         const maxDiscount = comboDefinitions.filter((c: any) => !/^COMPLEMENTAR/i.test(c.name)).reduce((max: number, c: any) => Math.max(max, c.discount_percent), 0);
         const activatedDiscount = comboCascade.activations.filter(a => a.applied && !a.isComplementary).reduce((max, a) => Math.max(max, a.discountPercent), 0);
@@ -801,7 +810,6 @@ serve(async (req: Request) => {
           complementaryDiscount,
           discountProgress: maxDiscount > 0 ? (activatedDiscount / maxDiscount) * 100 : 0,
           moneyCurrency: (campaign.currency || 'BRL').toUpperCase(),
-          moneyCurrency: 'BRL',
           campaignConfig: {
             currency: campaign.currency,
             target: campaign.target,
@@ -822,6 +830,7 @@ serve(async (req: Request) => {
           })(),
           freightOrigins: (frRes.data || []).map((fr: any) => ({ origin: fr.origin, destination: fr.destination })),
           comboDefinitions: comboDefinitions.map((c: any) => ({ id: c.id, name: c.name, discountPercent: c.discount_percent, productRefs: c.products.map((p: any) => p.ref) })),
+          distributorContext: selectedDistributor ? { id: selectedDistributor.id, shortName: selectedDistributor.short_name, channelSegmentName: selectedDistributor.channel_segment_name } : null,
           timestamp: new Date().toISOString(),
         };
         break;
@@ -838,7 +847,7 @@ serve(async (req: Request) => {
         if (cErr || !campaign) throw new Error('Campaign not found');
 
         const { data: clients } = await supabase.from('campaign_clients').select('document').eq('campaign_id', campaignId);
-        const whitelist = (clients || []).map((c: any) => c.document);
+        const whitelist = (clients || []).map((c: any) => c.document).filter((d: string) => String(d || '').replace(/\D/g, '').length > 0);
 
         result = checkEligibility(campaign, { ...ctx, whitelist });
         break;

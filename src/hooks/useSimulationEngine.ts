@@ -119,6 +119,7 @@ export interface SimulationResult {
   ports: string[];
   freightOrigins: { origin: string; destination: string }[];
   comboDefinitions: ComboDefinitionSummary[];
+  distributorContext?: { id: string; shortName: string; channelSegmentName: string } | null;
   timestamp: string;
 }
 
@@ -133,6 +134,9 @@ export interface SimulateInput {
   campaignId: string;
   selections: SimulationSelection[];
   segmentName: string;
+  commercialSegmentName?: string;
+  distributorId?: string;
+  channelSegmentName?: string;
   channelSegment: 'direto' | 'distribuidor' | 'cooperativa';
   dueMonths?: number;
   dueDate?: string;
