@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Plus, Trash2 } from 'lucide-react';
+import { parsePtBrNumber, formatPtBrNumber } from '@/lib/ptbr';
 
 export type PaymentMethodRow = {
   method_name: string;
@@ -73,23 +74,24 @@ export default function FinancialTab({ form, onFieldChange, paymentMethods, onPa
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         <div className="space-y-2">
           <Label>Câmbio Produtos (R$/USD)</Label>
-          <Input type="number" step="0.01" value={form.exchange_rate_products} onChange={e => onFieldChange('exchange_rate_products', Number(e.target.value))} />
+          <p className="text-[10px] text-muted-foreground">Ex.: {formatPtBrNumber(form.exchange_rate_products, 4)}</p>
+          <Input type="text" inputMode="decimal" value={form.exchange_rate_products} onChange={e => onFieldChange('exchange_rate_products', parsePtBrNumber(e.target.value))} />
         </div>
         <div className="space-y-2">
           <Label>Câmbio Barter (R$/USD)</Label>
-          <Input type="number" step="0.01" value={form.exchange_rate_barter} onChange={e => onFieldChange('exchange_rate_barter', Number(e.target.value))} />
+          <Input type="text" inputMode="decimal" value={form.exchange_rate_barter} onChange={e => onFieldChange('exchange_rate_barter', parsePtBrNumber(e.target.value))} />
         </div>
         <div className="space-y-2">
           <Label>Juros (% a.m.)</Label>
-          <Input type="number" step="0.01" value={form.interest_rate} onChange={e => onFieldChange('interest_rate', Number(e.target.value))} />
+          <Input type="text" inputMode="decimal" value={form.interest_rate} onChange={e => onFieldChange('interest_rate', parsePtBrNumber(e.target.value))} />
         </div>
         <div className="space-y-2">
           <Label>Desc. Máx. Interno (%)</Label>
-          <Input type="number" step="0.1" value={form.max_discount_internal} onChange={e => onFieldChange('max_discount_internal', Number(e.target.value))} />
+          <Input type="text" inputMode="decimal" value={form.max_discount_internal} onChange={e => onFieldChange('max_discount_internal', parsePtBrNumber(e.target.value))} />
         </div>
         <div className="space-y-2">
           <Label>Desc. Máx. Revenda (%)</Label>
-          <Input type="number" step="0.1" value={form.max_discount_reseller} onChange={e => onFieldChange('max_discount_reseller', Number(e.target.value))} />
+          <Input type="text" inputMode="decimal" value={form.max_discount_reseller} onChange={e => onFieldChange('max_discount_reseller', parsePtBrNumber(e.target.value))} />
         </div>
       </div>
 
@@ -121,10 +123,10 @@ export default function FinancialTab({ form, onFieldChange, paymentMethods, onPa
                       <Switch checked={m.active} onCheckedChange={v => updateMethod(i, 'active', v)} />
                     </TableCell>
                     <TableCell>
-                      <Input type="number" step="0.1" value={m.markup_percent} onChange={e => updateMethod(i, 'markup_percent', Number(e.target.value))} className="h-8" />
+                      <Input type="text" inputMode="decimal" value={m.markup_percent} onChange={e => updateMethod(i, 'markup_percent', parsePtBrNumber(e.target.value))} className="h-8" />
                     </TableCell>
                     <TableCell>
-                      <Input type="number" step="0.1" value={m.annual_interest_rate} onChange={e => updateMethod(i, 'annual_interest_rate', Number(e.target.value))} className="h-8" />
+                      <Input type="text" inputMode="decimal" value={m.annual_interest_rate} onChange={e => updateMethod(i, 'annual_interest_rate', parsePtBrNumber(e.target.value))} className="h-8" />
                     </TableCell>
                     <TableCell>
                       <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => removeMethod(i)}>
@@ -204,7 +206,7 @@ export default function FinancialTab({ form, onFieldChange, paymentMethods, onPa
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div className="space-y-2">
             <Label>Aforo (%)</Label>
-            <Input type="number" step="1" min={100} max={300} value={(form as any).aforo_percent ?? 130} onChange={e => onFieldChange('aforo_percent', Number(e.target.value))} />
+            <Input type="text" inputMode="decimal" value={(form as any).aforo_percent ?? ''} onChange={e => onFieldChange('aforo_percent', parsePtBrNumber(e.target.value))} />
             <p className="text-[10px] text-muted-foreground">Percentual de sobrecolateralização exigido. Ex: 130% significa que o cliente precisa entregar garantias equivalentes a 130% do valor da operação.</p>
           </div>
         </div>
@@ -216,7 +218,7 @@ export default function FinancialTab({ form, onFieldChange, paymentMethods, onPa
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div className="space-y-2">
             <Label>Custo Padrão Frete (R$/km)</Label>
-            <Input type="number" step="0.01" value={(form as any).default_freight_cost_per_km ?? 0.11} onChange={e => onFieldChange('default_freight_cost_per_km', Number(e.target.value))} />
+            <Input type="text" inputMode="decimal" value={(form as any).default_freight_cost_per_km ?? ''} onChange={e => onFieldChange('default_freight_cost_per_km', parsePtBrNumber(e.target.value))} />
             <p className="text-[10px] text-muted-foreground">Usado como fallback quando não há redutor logístico configurado.</p>
           </div>
         </div>

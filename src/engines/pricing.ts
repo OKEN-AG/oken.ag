@@ -1,4 +1,5 @@
 import type { Product, Campaign, PricingResult, AgronomicSelection, ChannelSegment, GrossToNet, ComboActivation } from '@/types/barter';
+import { applyIncentiveRules, type IncentiveRule } from '@/engines/incentives';
 
 /**
  * PRICING NORMALIZATION ENGINE
@@ -106,6 +107,9 @@ export function calculateGrossToNet(
     globalIncentive2?: number;
     globalIncentive3?: number;
     valorizationPercent?: number;
+    incentiveRules?: IncentiveRule[];
+    clientType?: 'PF' | 'PJ';
+    productId?: string;
   },
   selections?: AgronomicSelection[]
 ): GrossToNet {
@@ -170,25 +174,38 @@ export function calculateGrossToNet(
 
   const barterDiscount = (grossRevenue - comboDiscount) * barterDiscountPercent / 100;
 
-  // I7: Global incentives
+  // I7: Global incentives + rule-based incentives (multi-insumo ready)
+  const incentiveBase = grossRevenue - comboDiscount;
   const incentiveType = options?.globalIncentiveType || '';
   const incentiveTotal = (options?.globalIncentive1 || 0) + (options?.globalIncentive2 || 0) + (options?.globalIncentive3 || 0);
   const directIncentiveDiscount = incentiveType === 'desconto_direto'
-    ? (grossRevenue - comboDiscount) * incentiveTotal / 100 : 0;
-  const creditLiberacao = incentiveType === 'credito_liberacao'
-    ? (grossRevenue - comboDiscount) * incentiveTotal / 100 : 0;
-  const creditLiquidacao = incentiveType === 'credito_liquidacao'
-    ? (grossRevenue - comboDiscount) * incentiveTotal / 100 : 0;
+    ? incentiveBase * incentiveTotal / 100 : 0;
+  const creditLiberacaoLegacy = incentiveType === 'credito_liberacao'
+    ? incentiveBase * incentiveTotal / 100 : 0;
+  const creditLiquidacaoLegacy = incentiveType === 'credito_liquidacao'
+    ? incentiveBase * incentiveTotal / 100 : 0;
 
-  const netRevenue = grossRevenue - comboDiscount - barterDiscount - directIncentiveDiscount;
+  const ruleIncentives = applyIncentiveRules(options?.incentiveRules || [], {
+    baseAmount: incentiveBase,
+    productId: options?.productId,
+    segment: undefined,
+    clientType: options?.clientType,
+  });
+
+  const creditLiberacao = creditLiberacaoLegacy + ruleIncentives.creditLiberacao;
+  const creditLiquidacao = creditLiquidacaoLegacy + ruleIncentives.creditLiquidacao;
+  const totalDirectDiscount = directIncentiveDiscount + ruleIncentives.directDiscount;
+
+  const netRevenue = grossRevenue - comboDiscount - barterDiscount - totalDirectDiscount;
 
   return {
     grossRevenue,
     comboDiscount,
     barterDiscount,
-    directIncentiveDiscount,
+    directIncentiveDiscount: totalDirectDiscount,
     creditLiberacao,
     creditLiquidacao,
+    appliedIncentiveRules: ruleIncentives.appliedRules,
     netRevenue,
     financialRevenue: totalInterest,
     distributorMargin: totalMargin,
