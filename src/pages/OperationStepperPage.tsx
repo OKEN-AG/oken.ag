@@ -10,7 +10,7 @@ import { getSuggestedDoseForRef } from '@/engines/combo-cascade';
 import { useSimulationEngine } from '@/hooks/useSimulationEngine';
 import { formatCpfCnpj, parsePtBrNumber } from '@/lib/ptbr';
 import { buildWagonStages, canAdvance, getBlockingReason } from '@/engines/orchestrator';
-import type { ChannelSegment, Product, JourneyModule, DocumentType, ContractPriceType } from '@/types/barter';
+import type { ChannelSegment, Product, JourneyModule, DocumentType, ContractPriceType, AgronomicSelection } from '@/types/barter';
 import { getAllMunicipios } from '@/data/municipios';
 import { supabase } from '@/integrations/supabase/client';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -1007,7 +1007,8 @@ export default function OperationStepperPage() {
                   const dose = selectedProducts.get(product.id) ?? product.dosePerHectare;
                   const selection = selections.find(s => s.productId === product.id);
                   // Normalized price for display (always in BRL)
-                  const displayPrice = campaign ? normalizePrice(product, campaign, (segment || channelEnum) as ChannelSegment, dueMonths, { paymentMethodMarkup, segmentAdjustmentPercent }) : product.pricePerUnit;
+                  const simPricing = simResult?.pricingResults?.find((p: any) => p.productId === product.id);
+                  const displayPrice = simPricing?.normalizedPrice ?? product.pricePerUnit;
                   return (
                     <div key={product.id} className={`glass-card p-4 cursor-pointer transition-all ${isSelected ? 'glow-border' : 'hover:border-muted-foreground/30'}`} onClick={() => !isSelected && toggleProduct(product.id)}>
                       <div className="flex items-center justify-between mb-1">
@@ -1322,16 +1323,16 @@ export default function OperationStepperPage() {
                 </div>
               </div>
               {/* Consumption ledger */}
-              {Object.keys(comboCascade.consumptionLedger).length > 0 && (
+              {simResult?.consumptionLedger && Object.keys(simResult.consumptionLedger).length > 0 && (
                 <div className="glass-card p-4">
                   <h3 className="text-sm font-semibold text-foreground mb-2">Ledger de Consumo (Combos)</h3>
-                  {Object.entries(comboCascade.consumptionLedger).map(([comboId, refs]) => {
+                  {Object.entries(simResult.consumptionLedger).map(([comboId, refs]) => {
                     const ca = comboActivations.find(a => a.comboId === comboId);
                     return (
                       <div key={comboId} className="mb-2">
                         <div className="text-xs font-medium text-foreground">{ca?.comboName || comboId}</div>
                         <div className="flex gap-2 mt-1">
-                          {Object.entries(refs).map(([ref, qty]) => <span key={ref} className="engine-badge bg-muted text-muted-foreground text-xs">{ref}: {qty.toFixed(0)}</span>)}
+                          {Object.entries(refs as Record<string, number>).map(([ref, qty]) => <span key={ref} className="engine-badge bg-muted text-muted-foreground text-xs">{ref}: {qty.toFixed(0)}</span>)}
                         </div>
                       </div>
                     );
