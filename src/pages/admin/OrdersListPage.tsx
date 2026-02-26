@@ -95,7 +95,8 @@ export default function OrdersListPage() {
               <tr><td className="p-3 text-muted-foreground" colSpan={8}>Nenhuma operação encontrada.</td></tr>
             )}
             {filtered.map((row: any) => {
-              const currency = String(row.campaigns?.currency || 'BRL').toUpperCase();
+               // Montantes de operação são sempre em BRL (motor converte USD→BRL)
+               const currency = 'BRL';
               return (
                 <tr key={row.id} className="border-t border-border">
                   <td className="p-3 font-mono text-xs">{row.id}</td>

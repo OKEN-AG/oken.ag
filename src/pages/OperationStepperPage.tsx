@@ -189,8 +189,8 @@ export default function OperationStepperPage() {
   const [clientPhone, setClientPhone] = useState('');
   const [clientIE, setClientIE] = useState('');
   const [deliveryAddress, setDeliveryAddress] = useState('');
-  const [segment, setSegment] = useState<string>('');
-  const [channelEnum, setChannelEnum] = useState<ChannelSegment>('distribuidor');
+   const [segment, setSegment] = useState<string>(''); // segment_name (nome comercial do segmento)
+   const [channelEnum, setChannelEnum] = useState<ChannelSegment>('distribuidor'); // canal operacional (enum para margem)
   const [area, setArea] = useState(500);
   const [quantityMode, setQuantityMode] = useState<'dose' | 'livre'>('dose'); // dose/ha or free quantity
   const [freeQuantities, setFreeQuantities] = useState<Map<string, number>>(new Map());
@@ -363,7 +363,7 @@ export default function OperationStepperPage() {
       return uniqueDates.map(d => {
         const date = new Date(d + 'T00:00:00');
         const diffDays = Math.max(Math.round((date.getTime() - Date.now()) / 86400000), 1);
-        return { value: String(parseFloat((diffDays / 30).toFixed(4))), label: `${date.toLocaleDateString('pt-BR')} (${diffDays}d)`, date: d };
+        return { value: String(Math.max(Math.round(diffDays / 30), 1)), label: `${date.toLocaleDateString('pt-BR')} (${diffDays}d)`, date: d };
       });
     }
     // 2. Try available_due_dates array from campaign
@@ -372,7 +372,7 @@ export default function OperationStepperPage() {
       return availDates.sort().map(d => {
         const date = new Date(d + 'T00:00:00');
         const diffDays = Math.max(Math.round((date.getTime() - Date.now()) / 86400000), 1);
-        return { value: String(parseFloat((diffDays / 30).toFixed(4))), label: `${date.toLocaleDateString('pt-BR')} (${diffDays}d)`, date: d };
+        return { value: String(Math.max(Math.round(diffDays / 30), 1)), label: `${date.toLocaleDateString('pt-BR')} (${diffDays}d)`, date: d };
       });
     }
     // 3. No fallback — campaign must configure due dates
@@ -778,7 +778,8 @@ export default function OperationStepperPage() {
   const goNext = () => { if (currentStep < visibleSteps.length - 1 && canProceed(visibleSteps[currentStep].id)) setCurrentStep(currentStep + 1); };
   const goPrev = () => { if (currentStep > 0) setCurrentStep(currentStep - 1); };
 
-  const formatCurrency = (v: number) => v.toLocaleString('pt-BR', { style: 'currency', currency: campaignCurrency === 'USD' ? 'USD' : 'BRL' });
+  // Montantes do pedido (gross/net/margem/juros) são SEMPRE em BRL pois o motor já converte USD→BRL
+  const formatCurrency = (v: number) => v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
   const currentStepDef = visibleSteps[currentStep];
 
   if (loadingCampaigns) return <div className="p-6"><Skeleton className="h-64 w-full" /></div>;
