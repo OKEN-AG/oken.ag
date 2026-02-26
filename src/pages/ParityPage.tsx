@@ -2,6 +2,8 @@ import { useState, useMemo, useCallback, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { useLocation } from 'react-router-dom';
 import { useActiveCampaigns, useCampaignData } from '@/hooks/useActiveCampaign';
+import { useCommodityOptions } from '@/hooks/useCommoditiesMasterData';
+import { normalizeCommodityCode, toCommodityLabel } from '@/lib/commodity';
 import { useOperations, useUpdateOperation, useCreateOperationLog } from '@/hooks/useOperations';
 import { useAuth } from '@/contexts/AuthContext';
 import { useRealtimePricing } from '@/hooks/useRealtimePricing';
@@ -51,14 +53,14 @@ export default function ParityPage() {
   }, [stateOperationId, selectedOperationId]);
 
   const selectedOp = operations?.find(op => op.id === selectedOperationId);
-  const [selectedCommodity, setSelectedCommodity] = useState<string>('soja');
+  const [selectedCommodity, setSelectedCommodity] = useState<string>('');
 
   const { commodityPricing: commodityPricingAll, freightReducers, rawCommodityPricing, deliveryLocations, rawCampaign, isLoading } = useCampaignData(selectedCampaignId || undefined);
   
   // Select commodity pricing matching selected commodity
   const commodityPricing: CommodityPricing | null = useMemo(() => {
     if (!rawCommodityPricing || rawCommodityPricing.length === 0) return null;
-    const match = rawCommodityPricing.find((cp: any) => cp.commodity === selectedCommodity);
+    const match = rawCommodityPricing.find((cp: any) => normalizeCommodityCode(cp.commodity) === normalizeCommodityCode(selectedCommodity));
     if (match) {
       return {
         commodity: match.commodity as any,
@@ -91,12 +93,21 @@ export default function ParityPage() {
         .from('campaign_commodity_valorizations')
         .select('*')
         .eq('campaign_id', selectedCampaignId)
-        .eq('commodity', selectedCommodity)
+        .eq('commodity', normalizeCommodityCode(selectedCommodity))
         .maybeSingle();
       if (error) throw error;
       return data;
     },
   });
+
+  const { options: commodityOptions } = useCommodityOptions((rawCampaign?.commodities || []) as string[]);
+
+  useEffect(() => {
+    if (!commodityOptions.length) return;
+    if (!commodityOptions.some(option => normalizeCommodityCode(option.value) === normalizeCommodityCode(selectedCommodity))) {
+      setSelectedCommodity(normalizeCommodityCode(commodityOptions[0].value));
+    }
+  }, [commodityOptions, selectedCommodity]);
 
   const updateOperation = useUpdateOperation();
   const createLog = useCreateOperationLog();
@@ -104,7 +115,7 @@ export default function ParityPage() {
 
   const hasCommodityData = !!commodityPricing;
   const pricing: CommodityPricing = commodityPricing || {
-    commodity: 'soja', exchange: 'CBOT', contract: 'K', exchangePrice: 0,
+    commodity: (selectedCommodity || 'soja'), exchange: 'CBOT', contract: 'K', exchangePrice: 0,
     optionCost: 0, exchangeRateBolsa: 0, exchangeRateOption: 0,
     basisByPort: {}, securityDeltaMarket: 0, securityDeltaFreight: 0,
     stopLoss: 0, bushelsPerTon: 36.744, pesoSacaKg: 60,
@@ -131,7 +142,7 @@ export default function ParityPage() {
     if (selectedOp) {
       if (selectedOp.net_revenue) setAmount(selectedOp.net_revenue);
       if (selectedOp.gross_revenue) setGrossAmount(selectedOp.gross_revenue);
-      if (selectedOp.commodity) setSelectedCommodity(selectedOp.commodity);
+      if (selectedOp.commodity) setSelectedCommodity(normalizeCommodityCode(selectedOp.commodity));
     }
   }, [selectedOp]);
 
@@ -157,7 +168,7 @@ export default function ParityPage() {
         const autoTotal = autoDistanceKm * freightReducer.costPerKm + (freightReducer.adjustment || 0);
         return { ...freightReducer, distanceKm: autoDistanceKm, totalReducer: autoTotal };
       }
-      const campaignFreightCostPerKm = (rawCampaign as any)?.default_freight_cost_per_km || 0.11;
+      const campaignFreightCostPerKm = (rawCampaign as any)?.default_freight_cost_per_km ?? 0;
       return {
         origin: 'Auto',
         destination: port,
@@ -300,13 +311,15 @@ export default function ParityPage() {
     try {
       await updateOperation.mutateAsync({
         id: selectedOperationId,
-        total_sacas: insurancePremium?.totalSacas ?? parity.quantitySacas,
-        commodity_price: parity.commodityPricePerUnit,
-        reference_price: parity.referencePrice,
-        has_existing_contract: hasContract,
-        insurance_premium_sacas: insurancePremium?.additionalSacas ?? 0,
-        payment_method: 'barter' as const,
-        status: 'pedido' as const,
+        updates: {
+          total_sacas: insurancePremium?.totalSacas ?? parity.quantitySacas,
+          commodity_price: parity.commodityPricePerUnit,
+          reference_price: parity.referencePrice,
+          has_existing_contract: hasContract,
+          insurance_premium_sacas: insurancePremium?.additionalSacas ?? 0,
+          payment_method: 'barter' as const,
+          status: 'pedido' as const,
+        },
       });
       await createLog.mutateAsync({
         operation_id: selectedOperationId,
@@ -383,8 +396,10 @@ export default function ParityPage() {
           <Select value={selectedCommodity} onValueChange={setSelectedCommodity}>
             <SelectTrigger className="mt-1 bg-muted border-border text-foreground"><SelectValue /></SelectTrigger>
             <SelectContent>
-              {(rawCampaign?.commodities?.length ? rawCampaign.commodities : ['soja', 'milho', 'cafe', 'algodao']).map((c: string) => (
-                <SelectItem key={c} value={c} className="capitalize">{c}</SelectItem>
+              {commodityOptions.map(option => (
+                <SelectItem key={option.value} value={option.value}>
+                  {option.label}
+                </SelectItem>
               ))}
             </SelectContent>
           </Select>
@@ -480,7 +495,7 @@ export default function ParityPage() {
             freightReducer={effectiveFreightReducer}
             commodityNetPrice={effectiveCommodityPrice}
             showInsurance={showInsurance}
-            commodityName={selectedCommodity.charAt(0).toUpperCase() + selectedCommodity.slice(1)}
+            commodityName={commodityOptions.find(c => normalizeCommodityCode(c.value) === normalizeCommodityCode(selectedCommodity))?.label || toCommodityLabel(selectedCommodity)}
             valorizationBonus={valorizationBonus}
             formatCurrency={formatCurrency}
             formatNum={formatNum}
