@@ -178,11 +178,11 @@ export default function ProductPriceBreakdownDialog({ open, onOpenChange, produc
             <div className="grid grid-cols-2 gap-4">
               <div className="p-3 bg-muted/50 rounded-md">
                 <p className="text-xs text-muted-foreground">Preço Cash (Base)</p>
-                <p className="text-lg font-bold text-foreground">{product.currency} {fmt(basePrice)}</p>
+                <p className="text-lg font-bold text-foreground">{campaign?.currency || product.currency} {fmt(basePrice)}</p>
               </div>
               <div className="p-3 bg-muted/50 rounded-md">
                 <p className="text-xs text-muted-foreground">Preço Prazo</p>
-                <p className="text-lg font-bold text-foreground">{product.currency} {fmt(termPrice)}</p>
+                <p className="text-lg font-bold text-foreground">{campaign?.currency || product.currency} {fmt(termPrice)}</p>
               </div>
             </div>
 
@@ -231,7 +231,7 @@ export default function ProductPriceBreakdownDialog({ open, onOpenChange, produc
                 <p className="text-xs text-muted-foreground">Preço Mínimo Possível</p>
                 <p className="text-xs text-muted-foreground mb-1">(todos descontos aplicados)</p>
                 <p className="text-lg font-bold text-green-700 dark:text-green-400">
-                  {product.currency} {fmt(Math.max(0, worstCasePrice))}
+                  {campaign?.currency || product.currency} {fmt(Math.max(0, worstCasePrice))}
                 </p>
                 <p className="text-[10px] text-muted-foreground">
                   {maxDiscountTotal !== 0 ? `${fmt(maxDiscountTotal)}% sobre base` : 'Sem descontos'}
@@ -241,7 +241,7 @@ export default function ProductPriceBreakdownDialog({ open, onOpenChange, produc
                 <p className="text-xs text-muted-foreground">Preço Máximo Possível</p>
                 <p className="text-xs text-muted-foreground mb-1">(todos acréscimos aplicados)</p>
                 <p className="text-lg font-bold text-orange-700 dark:text-orange-400">
-                  {product.currency} {fmt(bestCasePrice)}
+                  {campaign?.currency || product.currency} {fmt(bestCasePrice)}
                 </p>
                 <p className="text-[10px] text-muted-foreground">
                   {maxMarkupTotal !== 0 ? `+${fmt(maxMarkupTotal)}% sobre base` : 'Sem acréscimos'}

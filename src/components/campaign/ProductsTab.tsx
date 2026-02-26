@@ -12,11 +12,11 @@ import * as XLSX from 'xlsx';
 import { parseLocaleNumber, splitFlexibleLine, normalizeText, normalizeRef } from '@/lib/import-utils';
 import ProductPriceBreakdownDialog from './ProductPriceBreakdownDialog';
 
-type Props = {campaignId?: string;};
+type Props = {campaignId?: string; currency?: string;};
 
 type EditingCell = {rowId: string;field: string;} | null;
 
-export default function ProductsTab({ campaignId }: Props) {
+export default function ProductsTab({ campaignId, currency = 'BRL' }: Props) {
   const { data: allProducts } = useProducts();
   const { data: linkedProducts, isLoading } = useCampaignProducts(campaignId);
   const createMut = useCreateProduct();
@@ -69,7 +69,7 @@ export default function ProductsTab({ campaignId }: Props) {
         name: 'Novo Produto', category: 'Herbicida', code: '', ref: '',
         price_cash: 0, price_term: 0, price_per_unit: 0, units_per_box: 12,
         unit_type: 'l', dose_per_hectare: 1, min_dose: 0.1, max_dose: 10,
-        boxes_per_pallet: 40, pallets_per_truck: 20, currency: 'USD',
+        boxes_per_pallet: 40, pallets_per_truck: 20, currency,
         price_type: 'vista', includes_margin: false
       });
       await linkMut.mutateAsync({ campaignId, productId: created.id });
@@ -107,7 +107,7 @@ export default function ProductsTab({ campaignId }: Props) {
         max_dose: 10,
         boxes_per_pallet: 40,
         pallets_per_truck: 20,
-        currency: 'USD',
+        currency,
         price_type: 'vista',
         includes_margin: false
       });

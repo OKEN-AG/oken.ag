@@ -23,6 +23,7 @@ export type DueDateRow = {
 
 type Props = {
   form: {
+    currency: string;
     exchange_rate_products: number;
     exchange_rate_barter: number;
     interest_rate: number;
@@ -72,14 +73,18 @@ export default function FinancialTab({ form, onFieldChange, paymentMethods, onPa
     <div className="space-y-6">
       {/* Financial params */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        <div className="space-y-2">
-          <Label>Câmbio Produtos (R$/USD)</Label>
-          <NumericInput value={form.exchange_rate_products} onChange={v => onFieldChange('exchange_rate_products', v)} decimals={4} min={0} />
-        </div>
-        <div className="space-y-2">
-          <Label>Câmbio Barter (R$/USD)</Label>
-          <NumericInput value={form.exchange_rate_barter} onChange={v => onFieldChange('exchange_rate_barter', v)} decimals={4} min={0} />
-        </div>
+        {form.currency !== 'BRL' && (
+          <>
+            <div className="space-y-2">
+              <Label>Câmbio Produtos (R$/USD)</Label>
+              <NumericInput value={form.exchange_rate_products} onChange={v => onFieldChange('exchange_rate_products', v)} decimals={4} min={0} />
+            </div>
+            <div className="space-y-2">
+              <Label>Câmbio Barter (R$/USD)</Label>
+              <NumericInput value={form.exchange_rate_barter} onChange={v => onFieldChange('exchange_rate_barter', v)} decimals={4} min={0} />
+            </div>
+          </>
+        )}
         <div className="space-y-2">
           <Label>Juros (% a.m.)</Label>
           <NumericInput value={form.interest_rate} onChange={v => onFieldChange('interest_rate', v)} decimals={2} min={0} max={100} />
