@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { ArrowLeft, Save } from 'lucide-react';
@@ -114,10 +114,10 @@ export default function CampaignFormPage() {
   const [distributors, setDistributors] = useState<DistributorRow[]>([]);
   const [channelTypes, setChannelTypes] = useState<ChannelTypeRow[]>([]);
   const { options: commodityOptions } = useCommodityOptions();
-
+  const isSavingRef = useRef(false);
 
   useEffect(() => {
-    if (existing) {
+    if (existing && !isSavingRef.current) {
       const e = existing as any;
       setForm({
         name: e.name,
@@ -218,6 +218,7 @@ export default function CampaignFormPage() {
     }
 
     try {
+      isSavingRef.current = true;
       const allMunicipios = getAllMunicipios();
       const selectedMunicipios = allMunicipios.filter(m => selectedCities.includes(m.ibge));
       const states = [...new Set(selectedMunicipios.map(m => m.uf))];
@@ -365,7 +366,10 @@ export default function CampaignFormPage() {
       if (isNew && campaignId) {
         navigate(`/admin/campanhas/${campaignId}`, { replace: true });
       }
+      // Allow useEffect to reload fresh data after save is fully complete
+      isSavingRef.current = false;
     } catch (err: any) {
+      isSavingRef.current = false;
       const { handleDatabaseError } = await import('@/lib/error-handler');
       toast.error(handleDatabaseError(err));
     }
