@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect, useCallback } from 'react';
-import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
+import { useParams, useNavigate, useSearchParams, Link } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '@/contexts/AuthContext';
 import { useActiveCampaigns, useCampaignData } from '@/hooks/useActiveCampaign';
@@ -66,39 +66,64 @@ function getComboRecommendations(
   products: Product[],
   area: number
 ): { productName: string; ref: string; action: string; productId?: string; suggestedDose?: number; suggestedQty?: number }[] {
-  const recs: { productName: string; ref: string; action: string; productId?: string; suggestedDose?: number; suggestedQty?: number }[] = [];
+  const recommendations: { productName: string; ref: string; action: string; productId?: string; suggestedDose?: number; suggestedQty?: number }[] = [];
   const selectedRefs = new Set(selections.map(s => (s.ref || '').toUpperCase().trim()));
+  const productsByRef = new Map(products.map(p => [String(p.ref || '').toUpperCase().trim(), p]));
+  const selectionsByRef = new Map(selections.map(sel => [String(sel.ref || '').toUpperCase().trim(), sel]));
 
-  for (const combo of combos) {
+  const prioritizedCombos = [...combos]
+    .sort((a, b) => (b.discountPercent - a.discountPercent) || (b.products.length - a.products.length))
+    .slice(0, 30);
+
+  for (const combo of prioritizedCombos) {
+    if (recommendations.length >= 5) break;
+
     const missing = combo.products.filter((cp: any) => !selectedRefs.has((cp.ref || '').toUpperCase().trim()));
     if (missing.length > 0 && missing.length <= 2) {
       for (const mp of missing) {
-        const prod = products.find(p => (p.ref || '').toUpperCase() === (mp.ref || '').toUpperCase());
-        if (prod) {
-          const suggestedDose = (mp.minDosePerHa + mp.maxDosePerHa) / 2;
-          const suggestedQty = Math.ceil(area * suggestedDose);
-          recs.push({
-            productName: prod.name, ref: mp.ref, productId: prod.id,
-            suggestedDose, suggestedQty,
-            action: `Incluir ${prod.name} (${suggestedDose.toFixed(2)}/${prod.unitType}${(prod.pricingBasis || 'por_hectare') === 'por_hectare' ? '/ha' : ''} ≈ ${suggestedQty} ${prod.unitType}) → combo "${combo.name}" (+${combo.discountPercent}%)`
-          });
-        }
+        if (recommendations.length >= 5) break;
+        const ref = (mp.ref || '').toUpperCase().trim();
+        const prod = productsByRef.get(ref);
+        if (!prod) continue;
+
+        const suggestedDose = (mp.minDosePerHa + mp.maxDosePerHa) / 2;
+        const suggestedQty = Math.ceil(area * suggestedDose);
+        recommendations.push({
+          productName: prod.name,
+          ref: mp.ref,
+          productId: prod.id,
+          suggestedDose,
+          suggestedQty,
+          action: `Incluir ${prod.name} (${suggestedDose.toFixed(2)}/${prod.unitType}${(prod.pricingBasis || 'por_hectare') === 'por_hectare' ? '/ha' : ''} ≈ ${suggestedQty} ${prod.unitType}) → combo "${combo.name}" (+${combo.discountPercent}%)`
+        });
       }
     }
+
     for (const cp of combo.products) {
-      const sel = selections.find(s => (s.ref || '').toUpperCase().trim() === (cp.ref || '').toUpperCase().trim());
+      if (recommendations.length >= 5) break;
+      const ref = (cp.ref || '').toUpperCase().trim();
+      const sel = selectionsByRef.get(ref);
       if (sel && sel.dosePerHectare < cp.minDosePerHa) {
         const suggestedQty = Math.ceil(area * cp.minDosePerHa);
-        recs.push({
-          productName: sel.product.name, ref: cp.ref, productId: sel.productId,
-          suggestedDose: cp.minDosePerHa, suggestedQty,
+        recommendations.push({
+          productName: sel.product.name,
+          ref: cp.ref,
+          productId: sel.productId,
+          suggestedDose: cp.minDosePerHa,
+          suggestedQty,
           action: `Ajustar ${sel.product.name} para ${cp.minDosePerHa}${(sel.product.pricingBasis || 'por_hectare') === 'por_hectare' ? '/ha' : ''} (≈ ${suggestedQty} ${sel.product.unitType}) → combo "${combo.name}"`
         });
       }
     }
   }
+
   const seen = new Set<string>();
-  return recs.filter(r => { if (seen.has(r.ref)) return false; seen.add(r.ref); return true; }).slice(0, 5);
+  return recommendations.filter(rec => {
+    const key = (rec.ref || '').toUpperCase().trim();
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  }).slice(0, 5);
 }
 
 // ─── Due date precedence: municipio/cidade > mesorregiao > estado > regiao > default ───
@@ -237,7 +262,6 @@ export default function OperationStepperPage() {
         const cityMatch = getAllMunicipios().find(m => m.uf === existingOp.state && normalizeKey(m.name) === normalizeKey(existingOp.city || ''));
         setClientCityCode(cityMatch?.ibge || '');
       }
-      setSegment(existingOp.channel || '');
       setChannelEnum((existingOp.channel || 'distribuidor') as ChannelSegment);
       setArea(existingOp.area_hectares || 500);
       if (existingOp.commodity) setSelectedCommodity(existingOp.commodity);
@@ -465,7 +489,7 @@ export default function OperationStepperPage() {
       overrideQuantity: quantityMode === 'livre' ? (freeQuantities.get(id) || undefined) : undefined,
     }));
     simulateDebounced({
-      campaignId: selectedCampaignId, selections: inputSelections, segment: segment || channelEnum, dueMonths,
+      campaignId: selectedCampaignId, selections: inputSelections, segmentName: segment || channelEnum, channelSegment: channelEnum, dueMonths, dueDate: selectedDueDate || undefined,
       paymentMethodId: selectedPaymentMethod || undefined,
       commodityCode: selectedCommodity || undefined,
       port: port || undefined, freightOrigin: freightOrigin || undefined,
@@ -479,7 +503,7 @@ export default function OperationStepperPage() {
         clientType, clientDocument: clientDocument || undefined, segment,
       },
     });
-  }, [selectedCampaignId, selectedProducts, area, segment, channelEnum, dueMonths, selectedPaymentMethod,
+  }, [selectedCampaignId, selectedProducts, area, segment, channelEnum, dueMonths, selectedDueDate, selectedPaymentMethod,
       selectedCommodity, port, freightOrigin, hasContract, userPrice, showInsurance,
       selectedBuyerId, contractPriceType, performanceIndex, clientState, selectedCityName,
       clientCityCode, usesIbgeCityEligibility, clientType, clientDocument, quantityMode, freeQuantities]);
@@ -778,8 +802,9 @@ export default function OperationStepperPage() {
   const goNext = () => { if (currentStep < visibleSteps.length - 1 && canProceed(visibleSteps[currentStep].id)) setCurrentStep(currentStep + 1); };
   const goPrev = () => { if (currentStep > 0) setCurrentStep(currentStep - 1); };
 
-  // Montantes do pedido (gross/net/margem/juros) são SEMPRE em BRL pois o motor já converte USD→BRL
-  const formatCurrency = (v: number) => v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+  // Montantes do pedido usam a moeda de saída informada pelo motor (server-authoritative)
+  const moneyCurrency = simResult?.moneyCurrency || 'BRL';
+  const formatCurrency = (v: number) => v.toLocaleString('pt-BR', { style: 'currency', currency: moneyCurrency });
   const currentStepDef = visibleSteps[currentStep];
 
   if (loadingCampaigns) return <div className="p-6"><Skeleton className="h-64 w-full" /></div>;
@@ -797,6 +822,11 @@ export default function OperationStepperPage() {
             {existingOp && <span className="ml-2 engine-badge bg-primary/10 text-primary">{existingOp.status}</span>}
           </p>
         </div>
+        {!isNewOperation && operationId && (
+          <Button asChild variant="outline" size="sm">
+            <Link to={`/operacao/${operationId}/analise-precos`}>Análise de cálculo</Link>
+          </Button>
+        )}
       </div>
 
       {/* Stepper bar */}
@@ -902,7 +932,13 @@ export default function OperationStepperPage() {
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div className="glass-card p-4">
                   <label className="stat-label">Canal</label>
-                  <Select value={segment} onValueChange={v => setSegment(v)}>
+                  <Select value={segment} onValueChange={v => {
+                    setSegment(v);
+                    const normalized = v.toLowerCase();
+                    if (normalized.includes('direto')) setChannelEnum('direto');
+                    else if (normalized.includes('cooper')) setChannelEnum('cooperativa');
+                    else setChannelEnum('distribuidor');
+                  }}>
                     <SelectTrigger className="mt-1 bg-muted border-border text-foreground"><SelectValue /></SelectTrigger>
                     <SelectContent>{segmentOptions.map(o => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}</SelectContent>
                   </Select>

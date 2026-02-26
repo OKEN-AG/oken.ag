@@ -58,6 +58,8 @@ type FormData = {
   campaign_type: string;
   client_type: string[];
   min_order_amount: number;
+  aforo_percent: number;
+  default_freight_cost_per_km: number;
 };
 
 const emptyForm: FormData = {
@@ -85,6 +87,8 @@ const emptyForm: FormData = {
   campaign_type: 'vendas',
   client_type: [],
   min_order_amount: 0,
+  aforo_percent: 130,
+  default_freight_cost_per_km: 0.11,
 };
 
 export default function CampaignFormPage() {
@@ -135,6 +139,8 @@ export default function CampaignFormPage() {
         campaign_type: e.campaign_type || 'vendas',
         client_type: e.client_type || [],
         min_order_amount: Number(e.min_order_amount || 0),
+        aforo_percent: Number(e.aforo_percent ?? 130),
+        default_freight_cost_per_km: Number(e.default_freight_cost_per_km ?? 0.11),
       });
       setSelectedCities(e.eligible_cities || []);
       loadSubData(e.id);
@@ -231,6 +237,8 @@ export default function CampaignFormPage() {
         campaign_type: form.campaign_type,
         client_type: form.client_type,
         min_order_amount: form.min_order_amount,
+        aforo_percent: form.aforo_percent,
+        default_freight_cost_per_km: form.default_freight_cost_per_km,
       };
 
       let campaignId = id;
