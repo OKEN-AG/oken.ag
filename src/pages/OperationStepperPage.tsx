@@ -669,7 +669,13 @@ export default function OperationStepperPage() {
 
   // Local combo cascade for instant feedback
   const localComboResult = useMemo(() => {
-    if (combos.length === 0 || selectedProducts.size === 0) return null;
+    if (combos.length === 0) return null;
+    // When no products selected, show all combos as inactive
+    if (selectedProducts.size === 0) {
+      const maxD = getMaxPossibleDiscount(combos);
+      const emptyActs = combos.map(c => ({ comboId: c.id, comboName: c.name, discountPercent: c.discountPercent, applied: false, consumed: {} }));
+      return { activations: emptyActs, maxDiscount: maxD, activatedDiscount: 0, complementaryDiscount: 0, progress: 0 };
+    }
     const localSels: AgronomicSelection[] = Array.from(selectedProducts.entries()).map(([id, dose]) => {
       const prod = products.find(p => p.id === id);
       if (!prod) return null;
