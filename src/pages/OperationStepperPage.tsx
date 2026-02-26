@@ -17,6 +17,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { NumericInput } from '@/components/NumericInput';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Progress } from '@/components/ui/progress';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -662,15 +663,24 @@ export default function OperationStepperPage() {
   const complementaryDiscount = simResult?.complementaryDiscount ?? 0;
   const discountProgress = simResult?.discountProgress ?? 0;
 
-  // Combo recommendations (UI helper — uses combo definitions from campaign data)
-  const comboRecommendations = useMemo(() => getComboRecommendations(combos, selections, products, area), [combos, selections, products, area]);
+  // Combo recommendations — use local selectedProducts for instant feedback, fall back to backend selections
+  const localSelections = useMemo(() => {
+    if (selections.length > 0) return selections;
+    // Build lightweight selections from local state for instant combo hints
+    return Array.from(selectedProducts.entries()).map(([id, dose]) => {
+      const prod = products.find(p => p.id === id);
+      return prod ? { productId: id, ref: prod.ref || '', product: prod, dosePerHectare: dose, areaHectares: area, rawQuantity: area * dose, roundedQuantity: area * dose, boxes: 0, pallets: 0 } : null;
+    }).filter(Boolean) as any[];
+  }, [selections, selectedProducts, products, area]);
+  const comboRecommendations = useMemo(() => getComboRecommendations(combos, localSelections, products, area), [combos, localSelections, products, area]);
 
   const pricingResults = simResult?.pricingResults ?? [];
-  const grossToNet = simResult?.grossToNet ?? {
-    grossRevenue: 0, comboDiscount: 0, barterDiscount: 0, directIncentiveDiscount: 0,
-    creditLiberacao: 0, creditLiquidacao: 0, netRevenue: 0, financialRevenue: 0,
-    distributorMargin: 0, segmentAdjustment: 0, paymentMethodMarkup: 0,
-    barterCost: 0, netNetRevenue: 0,
+  const rawGrossToNet = simResult?.grossToNet;
+  const grossToNet = {
+    grossRevenue: rawGrossToNet?.grossRevenue ?? 0, comboDiscount: rawGrossToNet?.comboDiscount ?? 0, barterDiscount: rawGrossToNet?.barterDiscount ?? 0, directIncentiveDiscount: rawGrossToNet?.directIncentiveDiscount ?? 0,
+    creditLiberacao: rawGrossToNet?.creditLiberacao ?? 0, creditLiquidacao: rawGrossToNet?.creditLiquidacao ?? 0, netRevenue: rawGrossToNet?.netRevenue ?? 0, financialRevenue: rawGrossToNet?.financialRevenue ?? 0,
+    distributorMargin: rawGrossToNet?.distributorMargin ?? 0, segmentAdjustment: rawGrossToNet?.segmentAdjustment ?? 0, paymentMethodMarkup: rawGrossToNet?.paymentMethodMarkup ?? 0,
+    barterCost: rawGrossToNet?.barterCost ?? 0, netNetRevenue: rawGrossToNet?.netNetRevenue ?? 0,
   };
 
   // ─── Parity (with valorization + buyer fee) ───
@@ -710,7 +720,8 @@ export default function OperationStepperPage() {
   // ─── Calculation results from backend ───
   const commodityNetPrice = simResult?.commodityNetPrice ?? 0;
   const ivp = simResult?.ivp ?? 1;
-  const parity = simResult?.parity ?? { totalAmountBRL: 0, commodityPricePerUnit: 0, quantitySacas: 0, referencePrice: 0, valorization: 0, userOverridePrice: null, hasExistingContract: false };
+  const rawParity = simResult?.parity;
+  const parity = { totalAmountBRL: rawParity?.totalAmountBRL ?? 0, commodityPricePerUnit: rawParity?.commodityPricePerUnit ?? 0, quantitySacas: rawParity?.quantitySacas ?? 0, referencePrice: rawParity?.referencePrice ?? 0, valorization: rawParity?.valorization ?? 0, userOverridePrice: rawParity?.userOverridePrice ?? null, hasExistingContract: rawParity?.hasExistingContract ?? false };
   const insurancePremium = simResult?.insurance ?? null;
 
   // ─── Formalization ───
@@ -968,7 +979,7 @@ export default function OperationStepperPage() {
                 </div>
                 <div className="glass-card p-4">
                   <label className="stat-label">Área (ha)</label>
-                  <Input type="text" inputMode="decimal" value={area} onChange={e => setArea(Math.max(1, parsePtBrNumber(e.target.value)))} className="mt-1 bg-muted border-border font-mono text-foreground" />
+                  <NumericInput value={area} onChange={v => setArea(v)} min={1} decimals={0} className="mt-1 bg-muted border-border text-foreground" />
                 </div>
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -1162,12 +1173,12 @@ export default function OperationStepperPage() {
                           {quantityMode === 'dose' ? (
                             <div className="flex items-center gap-2">
                               <label className="text-xs text-muted-foreground w-24">{isPerAreaProduct(product) ? 'Dose/ha:' : 'Quantidade:'}</label>
-                              <Input type="text" inputMode="decimal" value={dose} onChange={e => { e.stopPropagation(); updateDose(product.id, parsePtBrNumber(e.target.value)); }} onClick={e => e.stopPropagation()} className="h-7 bg-muted border-border font-mono text-xs text-foreground" />
+                              <NumericInput value={dose} onChange={v => updateDose(product.id, v)} decimals={2} className="h-7 bg-muted border-border text-xs text-foreground" />
                             </div>
                           ) : (
                             <div className="flex items-center gap-2">
                               <label className="text-xs text-muted-foreground w-16">Qtd ({product.unitType}):</label>
-                              <Input type="text" inputMode="decimal" value={freeQuantities.get(product.id) || ''} onChange={e => { e.stopPropagation(); updateFreeQuantity(product.id, parsePtBrNumber(e.target.value)); }} onClick={e => e.stopPropagation()} className="h-7 bg-muted border-border font-mono text-xs text-foreground" placeholder="0" />
+                              <NumericInput value={freeQuantities.get(product.id) || 0} onChange={v => updateFreeQuantity(product.id, v)} decimals={0} placeholder="0" className="h-7 bg-muted border-border text-xs text-foreground" />
                             </div>
                           )}
                           {selection && (
@@ -1254,16 +1265,11 @@ export default function OperationStepperPage() {
                     </SelectContent>
                   </Select>
                 </div>
-                <div className="glass-card p-4">
-                  <label className="stat-label">Porto Referência</label>
-                  <Select value={port} onValueChange={setPort}>
-                    <SelectTrigger className="mt-1 bg-muted border-border text-foreground"><SelectValue /></SelectTrigger>
-                    <SelectContent>{ports.map(p => <SelectItem key={p} value={p}>{p}</SelectItem>)}</SelectContent>
-                  </Select>
-                  {freightReducer && freightReducer.totalReducer > 0 && (
-                    <div className="text-xs text-muted-foreground mt-1">Redutor logístico: R$ {freightReducer.totalReducer.toFixed(2)}/sc ({freightReducer.distanceKm}km)</div>
-                  )}
-                </div>
+                {freightReducer && freightReducer.totalReducer > 0 && (
+                  <div className="glass-card p-4">
+                    <div className="text-xs text-muted-foreground">Redutor logístico: R$ {freightReducer.totalReducer.toFixed(2)}/sc ({freightReducer.distanceKm}km) — Porto: {port || '—'}</div>
+                  </div>
+                )}
                 <div className="glass-card p-4">
                   <label className="stat-label">Comprador</label>
                   <Select value={selectedBuyerId} onValueChange={setSelectedBuyerId}>
@@ -1293,7 +1299,7 @@ export default function OperationStepperPage() {
                     <Switch checked={hasContract} onCheckedChange={setHasContract} />
                     <Label className="text-xs">Contrato existente</Label>
                   </div>
-                  {hasContract && <Input type="text" inputMode="decimal" value={userPrice} onChange={e => setUserPrice(parsePtBrNumber(e.target.value))} placeholder="Preço/sc" className="bg-muted border-border font-mono text-foreground" />}
+                  {hasContract && <NumericInput value={userPrice} onChange={setUserPrice} decimals={2} prefix="R$" placeholder="0,00" className="bg-muted border-border text-foreground" />}
                 </div>
               </div>
               <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
@@ -1417,7 +1423,7 @@ export default function OperationStepperPage() {
                       <div>
                         <div className="stat-label">Índice de Cumprimento</div>
                         <div className="flex items-center gap-2 mt-1">
-                          <Input type="text" inputMode="decimal" value={performanceIndex} onChange={e => setPerformanceIndex(Math.min(100, Math.max(0, parsePtBrNumber(e.target.value))))} className="h-8 w-20 bg-muted border-border font-mono text-xs text-foreground" />
+                          <NumericInput value={performanceIndex} onChange={setPerformanceIndex} min={0} max={100} decimals={0} className="h-8 w-20 bg-muted border-border text-xs text-foreground" />
                           <span className="text-xs text-muted-foreground">%</span>
                         </div>
                       </div>
