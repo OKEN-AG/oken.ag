@@ -147,13 +147,12 @@ export default function CampaignFormPage() {
         default_freight_cost_per_km: Number(e.default_freight_cost_per_km ?? 0.11),
       });
       setSelectedCities(e.eligible_cities || []);
-      loadSubData(e.id);
+      loadSubData(e.id).catch((err: any) => toast.error('Erro ao carregar dados da campanha: ' + (err?.message || 'desconhecido')));
     }
   }, [existing]);
 
   const loadSubData = async (campaignId: string) => {
-      // Bug #23: Remove (supabase as any) - use typed client
-      const [clientsRes, methodsRes, segmentsRes, datesRes, channelSegmentsRes, distributorsRes] = await Promise.all([
+    const [clientsRes, methodsRes, segmentsRes, datesRes, channelSegmentsRes, distributorsRes] = await Promise.all([
       supabase.from('campaign_clients').select('*').eq('campaign_id', campaignId),
       supabase.from('campaign_payment_methods').select('*').eq('campaign_id', campaignId),
       supabase.from('campaign_segments').select('*').eq('campaign_id', campaignId),
@@ -161,6 +160,10 @@ export default function CampaignFormPage() {
       (supabase as any).from('campaign_channel_segments').select('*').eq('campaign_id', campaignId),
       (supabase as any).from('campaign_distributors').select('*').eq('campaign_id', campaignId),
     ]);
+
+    const firstError = clientsRes.error || methodsRes.error || segmentsRes.error || datesRes.error || (channelSegmentsRes as any).error || (distributorsRes as any).error;
+    if (firstError) throw firstError;
+
     if (clientsRes.data) setClients(clientsRes.data.map((c: any) => ({ document: formatCpfCnpj(c.document || ''), name: c.name })));
     if (methodsRes.data) setPaymentMethods(methodsRes.data.map((m: any) => ({
       method_name: m.method_name, markup_percent: Number(m.markup_percent),
@@ -261,8 +264,8 @@ export default function CampaignFormPage() {
         toast.success('Campanha atualizada!');
       }
 
-      // Save sub-tables
-      await Promise.all([
+      // Save sub-tables (with explicit error checks)
+      const deleteResults = await Promise.all([
         supabase.from('campaign_clients').delete().eq('campaign_id', campaignId!),
         supabase.from('campaign_payment_methods').delete().eq('campaign_id', campaignId!),
         supabase.from('campaign_segments').delete().eq('campaign_id', campaignId!),
@@ -270,26 +273,35 @@ export default function CampaignFormPage() {
         (supabase as any).from('campaign_channel_segments').delete().eq('campaign_id', campaignId!),
         (supabase as any).from('campaign_distributors').delete().eq('campaign_id', campaignId!),
       ]);
+      const deleteError = (deleteResults as any[]).find(r => r?.error)?.error;
+      if (deleteError) throw deleteError;
 
-      const inserts = [];
       const validClients = clients.filter(c => String(c.document || '').replace(/\D/g, '') || String(c.name || '').trim());
-      if (validClients.length > 0) inserts.push(
-        supabase.from('campaign_clients').insert(validClients.map(c => ({ ...c, campaign_id: campaignId! })))
-      );
-      if (paymentMethods.length > 0) inserts.push(
-        supabase.from('campaign_payment_methods').insert(paymentMethods.map(m => ({ ...m, campaign_id: campaignId! })))
-      );
-      if (segments.length > 0) inserts.push(
-        supabase.from('campaign_segments').insert(segments.map(s => ({ ...s, campaign_id: campaignId! })))
-      );
-      if (dueDates.length > 0) inserts.push(
-        supabase.from('campaign_due_dates').insert(dueDates.map(d => ({ ...d, campaign_id: campaignId! })))
-      );
       const validChannelSegments = channelSegments.filter(cs => cs.channel_segment_name.trim());
-      if (validChannelSegments.length > 0) inserts.push((supabase as any).from('campaign_channel_segments').insert(validChannelSegments.map(cs => ({ ...cs, campaign_id: campaignId! }))));
       const validDistributors = distributors.filter(d => d.short_name.trim() || d.full_name.trim() || d.cnpj.trim());
-      if (validDistributors.length > 0) inserts.push((supabase as any).from('campaign_distributors').insert(validDistributors.map(d => ({ ...d, campaign_id: campaignId! }))));
-      await Promise.all(inserts);
+
+      const insertResults = await Promise.all([
+        validClients.length > 0
+          ? supabase.from('campaign_clients').insert(validClients.map(c => ({ ...c, campaign_id: campaignId! })))
+          : Promise.resolve({ error: null }),
+        paymentMethods.length > 0
+          ? supabase.from('campaign_payment_methods').insert(paymentMethods.map(m => ({ ...m, campaign_id: campaignId! })))
+          : Promise.resolve({ error: null }),
+        segments.length > 0
+          ? supabase.from('campaign_segments').insert(segments.map(s => ({ ...s, campaign_id: campaignId! })))
+          : Promise.resolve({ error: null }),
+        dueDates.length > 0
+          ? supabase.from('campaign_due_dates').insert(dueDates.map(d => ({ ...d, campaign_id: campaignId! })))
+          : Promise.resolve({ error: null }),
+        validChannelSegments.length > 0
+          ? (supabase as any).from('campaign_channel_segments').insert(validChannelSegments.map(cs => ({ ...cs, campaign_id: campaignId! })))
+          : Promise.resolve({ error: null }),
+        validDistributors.length > 0
+          ? (supabase as any).from('campaign_distributors').insert(validDistributors.map(d => ({ ...d, campaign_id: campaignId! })))
+          : Promise.resolve({ error: null }),
+      ]);
+      const insertError = (insertResults as any[]).find(r => r?.error)?.error;
+      if (insertError) throw insertError;
 
       // Invalidate all operational caches for this campaign
       const cid = campaignId!;

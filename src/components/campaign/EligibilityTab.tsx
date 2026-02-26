@@ -326,12 +326,10 @@ export default function EligibilityTab({
         </div>
       </div>
 
-      {/* Client Segments (Segmentos de Cliente) */}
+      {/* Segmentos Comerciais */}
       <div className="space-y-3">
-        <Label className="text-base font-semibold">Segmentos de Cliente (Desconto/Ágio)</Label>
-        <p className="text-xs text-muted-foreground">
-          Segmento do cliente final. Ativa desconto direto ou ágio sobre o preço normalizado. Valores positivos = ágio; negativos = desconto.
-        </p>
+        <Label className="text-base font-semibold">Segmentos Comerciais</Label>
+        <p className="text-xs text-muted-foreground">Ágio/desconto comercial, separado da margem do canal.</p>
         <div className="flex gap-2">
           <Input placeholder="Nome do segmento" value={newSegment} onChange={e => setNewSegment(e.target.value)} onKeyDown={e => e.key === 'Enter' && (e.preventDefault(), addSegment())} />
           <Button variant="outline" onClick={addSegment}><Plus className="w-4 h-4" /></Button>

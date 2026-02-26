@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Plus, Trash2 } from 'lucide-react';
 import { parsePtBrNumber } from '@/lib/ptbr';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
 export type ChannelSegmentRow = {
   channel_segment_name: string;
@@ -71,7 +72,24 @@ export default function ChannelConfigTab({ channelSegments, onChannelSegmentsCha
                   <TableCell><Input value={row.short_name} onChange={e => { const next=[...distributors]; next[i]={...row,short_name:e.target.value}; onDistributorsChange(next); }} /></TableCell>
                   <TableCell><Input value={row.full_name} onChange={e => { const next=[...distributors]; next[i]={...row,full_name:e.target.value}; onDistributorsChange(next); }} /></TableCell>
                   <TableCell><Input value={row.cnpj} onChange={e => { const next=[...distributors]; next[i]={...row,cnpj:e.target.value}; onDistributorsChange(next); }} /></TableCell>
-                  <TableCell><Input value={row.channel_segment_name} onChange={e => { const next=[...distributors]; next[i]={...row,channel_segment_name:e.target.value}; onDistributorsChange(next); }} /></TableCell>
+                  <TableCell>
+                    <Select
+                      value={row.channel_segment_name || '__none__'}
+                      onValueChange={v => {
+                        const next=[...distributors];
+                        next[i]={...row,channel_segment_name:v === '__none__' ? '' : v};
+                        onDistributorsChange(next);
+                      }}
+                    >
+                      <SelectTrigger><SelectValue placeholder={channelSegments.length === 0 ? 'Sem segmentos do canal' : 'Selecione...'} /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="__none__">{channelSegments.length === 0 ? 'Sem segmentos do canal' : 'Nenhum'}</SelectItem>
+                        {channelSegments
+                          .filter(cs => cs.channel_segment_name.trim())
+                          .map(cs => <SelectItem key={cs.channel_segment_name} value={cs.channel_segment_name}>{cs.channel_segment_name}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
+                  </TableCell>
                   <TableCell><Switch checked={row.active} onCheckedChange={v => { const next=[...distributors]; next[i]={...row,active:v}; onDistributorsChange(next); }} /></TableCell>
                   <TableCell><Button variant="ghost" size="icon" onClick={() => onDistributorsChange(distributors.filter((_,j)=>j!==i))}><Trash2 className="w-4 h-4" /></Button></TableCell>
                 </TableRow>
