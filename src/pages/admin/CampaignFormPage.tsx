@@ -63,7 +63,7 @@ type FormData = {
 const emptyForm: FormData = {
   name: '',
   season: '',
-  currency: 'USD',
+  currency: 'BRL',
   target: 'venda_direta_consumidor',
   active: false,
   commodities: [],
@@ -73,7 +73,7 @@ const emptyForm: FormData = {
   max_discount_internal: 8,
   max_discount_reseller: 5,
   active_modules: [],
-  price_list_format: 'usd_vista',
+  price_list_format: 'brl_vista',
   code_custom: '',
   code_auto: '',
   company_name: '',
@@ -113,7 +113,7 @@ export default function CampaignFormPage() {
       setForm({
         name: e.name,
         season: e.season,
-        currency: e.currency || 'USD',
+        currency: e.currency || 'BRL',
         target: e.target,
         active: e.active,
         commodities: (e.commodities || []).map(normalizeCommodityCode),

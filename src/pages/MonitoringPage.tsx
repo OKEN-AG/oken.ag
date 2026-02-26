@@ -23,7 +23,8 @@ export default function MonitoringPage() {
       const { data, error } = await supabase.from('campaigns').select('id, currency').in('id', ids);
       if (error) throw error;
       const map: Record<string, string> = {};
-      for (const row of data || []) map[row.id] = (row.currency || 'BRL').toUpperCase();
+      // Montantes de operação são sempre em BRL (motor converte USD→BRL)
+      for (const row of data || []) map[row.id] = 'BRL';
       return map;
     },
   });
