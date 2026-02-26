@@ -1318,12 +1318,24 @@ export default function OperationStepperPage() {
             <div className="space-y-4">
               {/* Sticky discount bar + mode toggle */}
               <div className="glass-card p-4 space-y-3 sticky top-0 z-10 backdrop-blur-md">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-3">
+                <div className="flex items-center justify-between flex-wrap gap-2">
+                  <div className="flex items-center gap-3 flex-wrap">
                     <span className="text-sm font-semibold text-foreground">Modo de Seleção:</span>
                     <div className="flex rounded-md border border-border overflow-hidden">
                       <button onClick={() => setQuantityMode('dose')} className={`px-3 py-1 text-xs font-medium transition-colors ${quantityMode === 'dose' ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground hover:bg-muted/80'}`}>Área × Dose/Qtd</button>
                       <button onClick={() => setQuantityMode('livre')} className={`px-3 py-1 text-xs font-medium transition-colors ${quantityMode === 'livre' ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground hover:bg-muted/80'}`}>Qtd Livre</button>
+                    </div>
+                    <div className="flex items-center gap-1.5 border-l border-border pl-3">
+                      <span className="text-xs text-muted-foreground whitespace-nowrap">Área:</span>
+                      <span className="text-xs font-mono font-semibold text-foreground">{area} ha</span>
+                      <span className="text-xs text-muted-foreground">×</span>
+                      <div className="flex items-center gap-0.5">
+                        <Button size="icon" variant="ghost" className="h-5 w-5" onClick={() => setComboQty(q => Math.max(1, q - 1))} disabled={comboQty <= 1}><Minus className="w-3 h-3" /></Button>
+                        <span className="text-xs font-mono font-bold text-primary w-5 text-center">{comboQty}</span>
+                        <Button size="icon" variant="ghost" className="h-5 w-5" onClick={() => setComboQty(q => q + 1)}><Plus className="w-3 h-3" /></Button>
+                      </div>
+                      <span className="text-xs text-muted-foreground">=</span>
+                      <span className="text-xs font-mono font-bold text-success">{effectiveArea} ha</span>
                     </div>
                   </div>
                   <div className="flex items-center gap-3">
