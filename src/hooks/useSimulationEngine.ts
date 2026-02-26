@@ -196,7 +196,7 @@ export function useSimulationEngine() {
   }, [invoke]);
 
   /** Debounced simulate — waits `delayMs` after the last call before firing. */
-  const simulateDebounced = useCallback((input: SimulateInput, delayMs = 600) => {
+  const simulateDebounced = useCallback((input: SimulateInput, delayMs = 300) => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(() => {
       simulate(input).catch(() => {}); // error is captured in state
