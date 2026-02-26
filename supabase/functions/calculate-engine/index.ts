@@ -38,6 +38,49 @@ function requireFields(payload: Record<string, unknown>, fields: string[]) {
   }
 }
 
+function validateTemporalRules(payload: Record<string, unknown>) {
+  const concessao = new Date(`${payload.dataConcessao}T00:00:00`).getTime();
+  const vencimento = new Date(`${payload.vencimento}T00:00:00`).getTime();
+  const entrega = new Date(`${payload.dataEntrega}T00:00:00`).getTime();
+  const pagamento = new Date(`${payload.dataPagamento}T00:00:00`).getTime();
+  const repasse = payload.dataRepasse ? new Date(`${payload.dataRepasse}T00:00:00`).getTime() : null;
+  const excecao = String(payload.regraExcecaoTemporal || '').trim();
+
+  if (concessao > vencimento) {
+    throw new Error('Temporal validation failed: dataConcessao must be <= vencimento');
+  }
+  if (entrega > pagamento) {
+    throw new Error('Temporal validation failed: dataEntrega must be <= dataPagamento');
+  }
+  if (repasse !== null && pagamento > repasse && !excecao) {
+    throw new Error('Temporal validation failed: dataPagamento must be <= dataRepasse (or provide regraExcecaoTemporal)');
+  }
+}
+
+function buildFormulaMetadata(scenario: 'insumo' | 'divida') {
+  const formulas = scenario === 'insumo'
+    ? {
+      valorPresenteCredito: 'precoFornecedor*(1+markupPct-descontoPct)',
+      periodoJurosAnos: '(vencimento-dataConcessao)/365',
+      valorPontaSemFee: 'FV(jurosCetAa,periodoJurosAnos,valorPresenteCredito)*(1-incentivoPct)',
+      valorPontaComFee: 'valorPontaSemFee*(1+feeOkenPct)',
+      precoLiquido: 'precoBrutoCommodity*(1+(temImposto?descontoImpostosPct:0))',
+      periodoAntecipAnos: '(dataPagamento-dataRepasse)/365',
+      precoEntregaAjustado: 'PV(rendimentoAntecipacaoAa,periodoAntecipAnos,precoLiquido)',
+    }
+    : {
+      periodoJurosAnos: '(vencimento-dataConcessao)/365',
+      valorPontaSemFee: 'FV(jurosCetAa,periodoJurosAnos,valorDividaPv)*(1-incentivoPct)',
+      valorPontaComFee: 'valorPontaSemFee*(1+feeOkenPct)',
+      precoLiquido: 'precoBrutoCommodity*(1+(temImposto?descontoImpostosPct:0))',
+      periodoAntecipAnos: '(dataPagamento-dataRepasse)/365',
+      precoEntregaAjustado: 'PV(rendimentoAntecipacaoAa,periodoAntecipAnos,precoLiquido)',
+    };
+
+  const dependencies = ['jurosCetAa','dataConcessao','vencimento','feeOkenPct','incentivoPct','precoBrutoCommodity','temImposto','descontoImpostosPct','dataRepasse','dataPagamento','rendimentoAntecipacaoAa'];
+  return { formulas, dependencies };
+}
+
 serve(async (req: Request) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
@@ -202,10 +245,15 @@ serve(async (req: Request) => {
           'vencimento',
           'feeOkenPct',
           'incentivoPct',
+          'commodity',
+          'periodoEntrega',
+          'localEntrega',
           'precoBrutoCommodity',
+          'temImposto',
           'descontoImpostosPct',
           'dataEntrega',
           'dataPagamento',
+          'dataRepasse',
           'rendimentoAntecipacaoAa',
           'feeMerchantPct',
         ]);
@@ -215,8 +263,10 @@ serve(async (req: Request) => {
         const valorPontaSemFee = fv(Number(body.jurosCetAa), periodoJurosAnos, valorPresenteCredito) * (1 - Number(body.incentivoPct));
         const valorPontaComFee = valorPontaSemFee * (1 + Number(body.feeOkenPct));
 
-        const precoLiquido = Number(body.precoBrutoCommodity) * (1 + Number(body.descontoImpostosPct));
-        const periodoAteRepasseAnos = yearsBetween(body.dataEntrega, body.dataPagamento);
+        validateTemporalRules(body);
+        const descontoImpostosEfetivo = body.temImposto ? Number(body.descontoImpostosPct) : 0;
+        const precoLiquido = Number(body.precoBrutoCommodity) * (1 + descontoImpostosEfetivo);
+        const periodoAteRepasseAnos = yearsBetween(body.dataRepasse, body.dataPagamento);
         const precoEntregaAjustado = pv(Number(body.rendimentoAntecipacaoAa), periodoAteRepasseAnos, precoLiquido);
 
         const paridadeRealSacas = valorPontaComFee / precoEntregaAjustado;
@@ -266,11 +316,43 @@ serve(async (req: Request) => {
             snapshot_type: 'memory_input',
             snapshot: {
               version: 'v1',
+              ...buildFormulaMetadata('insumo'),
               input: body,
               output: result,
             },
             created_by: user.id,
           });
+
+
+          await supabase.from('operation_calculation_inputs').upsert({
+            operation_id: body.operationId,
+            scenario_type: 'insumo',
+            calculation_version: 'v1',
+            juros_cet_aa: Number(body.jurosCetAa),
+            fee_oken_pct: Number(body.feeOkenPct),
+            incentivo_pct: Number(body.incentivoPct),
+            commodity: String(body.commodity),
+            periodo_entrega: String(body.periodoEntrega),
+            local_entrega: String(body.localEntrega),
+            preco_bruto_commodity: Number(body.precoBrutoCommodity),
+            tem_imposto: Boolean(body.temImposto),
+            desconto_impostos_pct: Number(body.descontoImpostosPct),
+            data_concessao: String(body.dataConcessao),
+            vencimento: String(body.vencimento),
+            data_entrega: String(body.dataEntrega),
+            data_pagamento: String(body.dataPagamento),
+            data_repasse: String(body.dataRepasse),
+            rendimento_antecipacao_aa: Number(body.rendimentoAntecipacaoAa),
+            preco_fornecedor: Number(body.precoFornecedor),
+            markup_pct: Number(body.markupPct),
+            desconto_pct: Number(body.descontoPct),
+            fee_merchant_pct: Number(body.feeMerchantPct),
+            formula_dependencies: buildFormulaMetadata('insumo').dependencies,
+            formula_resolved: buildFormulaMetadata('insumo').formulas,
+            input_audit_tags: body.inputAuditTags || {},
+            regra_excecao_temporal: body.regraExcecaoTemporal || null,
+            created_by: user.id,
+          }, { onConflict: 'operation_id,scenario_type' });
 
           await supabase.from('operation_logs').insert({
             operation_id: body.operationId,
@@ -290,10 +372,15 @@ serve(async (req: Request) => {
           'vencimento',
           'feeOkenPct',
           'incentivoPct',
+          'commodity',
+          'periodoEntrega',
+          'localEntrega',
           'precoBrutoCommodity',
+          'temImposto',
           'descontoImpostosPct',
           'dataEntrega',
           'dataPagamento',
+          'dataRepasse',
           'rendimentoAntecipacaoAa',
           'feeDealerPct',
         ]);
@@ -302,8 +389,10 @@ serve(async (req: Request) => {
         const valorPontaSemFee = fv(Number(body.jurosCetAa), periodoJurosAnos, Number(body.valorDividaPv)) * (1 - Number(body.incentivoPct));
         const valorPontaComFee = valorPontaSemFee * (1 + Number(body.feeOkenPct));
 
-        const precoLiquido = Number(body.precoBrutoCommodity) * (1 + Number(body.descontoImpostosPct));
-        const periodoAteRepasseAnos = yearsBetween(body.dataEntrega, body.dataPagamento);
+        validateTemporalRules(body);
+        const descontoImpostosEfetivo = body.temImposto ? Number(body.descontoImpostosPct) : 0;
+        const precoLiquido = Number(body.precoBrutoCommodity) * (1 + descontoImpostosEfetivo);
+        const periodoAteRepasseAnos = yearsBetween(body.dataRepasse, body.dataPagamento);
         const precoEntregaAjustado = pv(Number(body.rendimentoAntecipacaoAa), periodoAteRepasseAnos, precoLiquido);
 
         const paridadeRealSacas = valorPontaComFee / precoEntregaAjustado;
@@ -348,11 +437,41 @@ serve(async (req: Request) => {
             snapshot_type: 'memory_debt',
             snapshot: {
               version: 'v1',
+              ...buildFormulaMetadata('divida'),
               input: body,
               output: result,
             },
             created_by: user.id,
           });
+
+
+          await supabase.from('operation_calculation_inputs').upsert({
+            operation_id: body.operationId,
+            scenario_type: 'divida',
+            calculation_version: 'v1',
+            juros_cet_aa: Number(body.jurosCetAa),
+            fee_oken_pct: Number(body.feeOkenPct),
+            incentivo_pct: Number(body.incentivoPct),
+            commodity: String(body.commodity),
+            periodo_entrega: String(body.periodoEntrega),
+            local_entrega: String(body.localEntrega),
+            preco_bruto_commodity: Number(body.precoBrutoCommodity),
+            tem_imposto: Boolean(body.temImposto),
+            desconto_impostos_pct: Number(body.descontoImpostosPct),
+            data_concessao: String(body.dataConcessao),
+            vencimento: String(body.vencimento),
+            data_entrega: String(body.dataEntrega),
+            data_pagamento: String(body.dataPagamento),
+            data_repasse: String(body.dataRepasse),
+            rendimento_antecipacao_aa: Number(body.rendimentoAntecipacaoAa),
+            valor_divida_pv: Number(body.valorDividaPv),
+            fee_dealer_pct: Number(body.feeDealerPct),
+            formula_dependencies: buildFormulaMetadata('divida').dependencies,
+            formula_resolved: buildFormulaMetadata('divida').formulas,
+            input_audit_tags: body.inputAuditTags || {},
+            regra_excecao_temporal: body.regraExcecaoTemporal || null,
+            created_by: user.id,
+          }, { onConflict: 'operation_id,scenario_type' });
 
           await supabase.from('operation_logs').insert({
             operation_id: body.operationId,

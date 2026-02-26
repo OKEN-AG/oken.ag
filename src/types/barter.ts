@@ -191,6 +191,7 @@ export interface FreightReducer {
 
 // === CALCULATION MEMORY ENGINE ===
 export type CalculationMemoryScenario = 'insumo' | 'divida';
+export type CalculationInputAuditTag = 'input_manual' | 'calculated' | 'imported' | 'api';
 
 export interface CalculationMemoryInputCommon {
   scenarioType: CalculationMemoryScenario;
@@ -198,7 +199,11 @@ export interface CalculationMemoryInputCommon {
   jurosCetAa: number;
   feeOkenPct: number;
   incentivoPct: number;
+  commodity: string;
+  periodoEntrega: string;
+  localEntrega: string;
   precoBrutoCommodity: number;
+  temImposto: boolean;
   descontoImpostosPct: number;
   dataConcessao: string;
   vencimento: string;
@@ -206,6 +211,8 @@ export interface CalculationMemoryInputCommon {
   dataPagamento: string;
   dataRepasse?: string;
   rendimentoAntecipacaoAa: number;
+  regraExcecaoTemporal?: string;
+  inputAuditTags?: Record<string, CalculationInputAuditTag>;
 }
 
 export interface CalculationMemoryInputInsumo extends CalculationMemoryInputCommon {

@@ -895,17 +895,25 @@ export type Database = {
           fee_merchant_pct: number | null
           fee_oken_pct: number
           id: string
+          input_audit_tags: Json
           incentivo_pct: number
           juros_cet_aa: number
           markup_pct: number | null
           operation_id: string
+          periodo_entrega: string
           preco_bruto_commodity: number
           preco_fornecedor: number | null
+          formula_dependencies: Json
+          formula_resolved: Json
           rendimento_antecipacao_aa: number
           scenario_type: string
+          regra_excecao_temporal: string | null
+          tem_imposto: boolean
           updated_at: string
           valor_divida_pv: number | null
           vencimento: string
+          commodity: string
+          local_entrega: string
         }
         Insert: {
           calculation_version?: string
@@ -921,17 +929,25 @@ export type Database = {
           fee_merchant_pct?: number | null
           fee_oken_pct: number
           id?: string
+          input_audit_tags?: Json
           incentivo_pct?: number
           juros_cet_aa: number
           markup_pct?: number | null
           operation_id: string
+          periodo_entrega: string
           preco_bruto_commodity: number
           preco_fornecedor?: number | null
+          formula_dependencies?: Json
+          formula_resolved?: Json
           rendimento_antecipacao_aa?: number
           scenario_type: string
+          regra_excecao_temporal?: string | null
+          tem_imposto?: boolean
           updated_at?: string
           valor_divida_pv?: number | null
           vencimento: string
+          commodity: string
+          local_entrega: string
         }
         Update: {
           calculation_version?: string
@@ -947,17 +963,25 @@ export type Database = {
           fee_merchant_pct?: number | null
           fee_oken_pct?: number
           id?: string
+          input_audit_tags?: Json
           incentivo_pct?: number
           juros_cet_aa?: number
           markup_pct?: number | null
           operation_id?: string
+          periodo_entrega?: string
           preco_bruto_commodity?: number
           preco_fornecedor?: number | null
+          formula_dependencies?: Json
+          formula_resolved?: Json
           rendimento_antecipacao_aa?: number
           scenario_type?: string
+          regra_excecao_temporal?: string | null
+          tem_imposto?: boolean
           updated_at?: string
           valor_divida_pv?: number | null
           vencimento?: string
+          commodity?: string
+          local_entrega?: string
         }
         Relationships: [
           {

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { calculateCommodityDebtMemory, calculateInputMemory } from '@/engines/calculation-memory';
 
 describe('calculation-memory', () => {
-  it('usa dataEntrega -> dataPagamento para antecipacao no fluxo insumo', () => {
+  it('usa dataRepasse -> dataPagamento para antecipacao no fluxo insumo', () => {
     const result = calculateInputMemory({
       precoFornecedor: 1000,
       markupPct: 0.1,
@@ -12,7 +12,11 @@ describe('calculation-memory', () => {
       vencimento: '2027-01-01',
       feeOkenPct: 0.02,
       incentivoPct: 0,
+      commodity: 'soja',
+      periodoEntrega: '2026-02',
+      localEntrega: 'Sorriso-MT',
       precoBrutoCommodity: 100,
+      temImposto: true,
       descontoImpostosPct: 0,
       dataEntrega: '2026-02-01',
       dataPagamento: '2026-08-01',
@@ -21,7 +25,7 @@ describe('calculation-memory', () => {
       feeMerchantPct: 0.01,
     });
 
-    expect(result.periodoAteRepasseAnos).toBeCloseTo((181 / 365), 3);
+    expect(result.periodoAteRepasseAnos).toBeCloseTo((7 / 365), 3);
   });
 
   it('calcula fluxo dívida com outputs financeiros positivos', () => {
@@ -32,7 +36,11 @@ describe('calculation-memory', () => {
       vencimento: '2026-12-31',
       feeOkenPct: 0.02,
       incentivoPct: 0.01,
+      commodity: 'milho',
+      periodoEntrega: '2026-03',
+      localEntrega: 'Rio Verde-GO',
       precoBrutoCommodity: 150,
+      temImposto: true,
       descontoImpostosPct: -0.05,
       dataEntrega: '2026-03-01',
       dataPagamento: '2026-09-01',

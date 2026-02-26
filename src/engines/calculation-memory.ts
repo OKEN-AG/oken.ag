@@ -7,7 +7,11 @@ export interface InputMemoryParams {
   vencimento: string;
   feeOkenPct: number;
   incentivoPct: number;
+  commodity: string;
+  periodoEntrega: string;
+  localEntrega: string;
   precoBrutoCommodity: number;
+  temImposto: boolean;
   descontoImpostosPct: number;
   dataEntrega: string;
   dataPagamento: string;
@@ -23,7 +27,11 @@ export interface CommodityDebtMemoryParams {
   vencimento: string;
   feeOkenPct: number;
   incentivoPct: number;
+  commodity: string;
+  periodoEntrega: string;
+  localEntrega: string;
   precoBrutoCommodity: number;
+  temImposto: boolean;
   descontoImpostosPct: number;
   dataEntrega: string;
   dataPagamento: string;
@@ -52,12 +60,11 @@ export function calculateInputMemory(p: InputMemoryParams) {
   const valorPontaSemFee = fv(p.jurosCetAa, periodoJurosAnos, valorPresenteCredito) * (1 - p.incentivoPct);
   const valorPontaComFee = valorPontaSemFee * (1 + p.feeOkenPct);
 
-  const precoLiquido = p.precoBrutoCommodity * (1 + p.descontoImpostosPct);
-<<<<<<< codex/generalize-codebase-to-order-first-architecture-17w753
-  const periodoAteRepasseAnos = yearsBetween(p.dataEntrega, p.dataPagamento);
-=======
+  const descontoImpostosEfetivo = p.temImposto ? p.descontoImpostosPct : 0;
+  const precoLiquido = p.precoBrutoCommodity * (1 + descontoImpostosEfetivo);
   const periodoAteRepasseAnos = yearsBetween(p.dataRepasse, p.dataPagamento);
->>>>>>> main
+  const periodoAteRepasseAnos = yearsBetween(p.dataEntrega, p.dataPagamento);
+  
   const precoEntregaAjustado = pv(p.rendimentoAntecipacaoAa, periodoAteRepasseAnos, precoLiquido);
 
   const paridadeRealSacas = valorPontaComFee / precoEntregaAjustado;
@@ -106,12 +113,11 @@ export function calculateCommodityDebtMemory(p: CommodityDebtMemoryParams) {
   const valorPontaSemFee = fv(p.jurosCetAa, periodoJurosAnos, p.valorDividaPv) * (1 - p.incentivoPct);
   const valorPontaComFee = valorPontaSemFee * (1 + p.feeOkenPct);
 
-  const precoLiquido = p.precoBrutoCommodity * (1 + p.descontoImpostosPct);
-<<<<<<< codex/generalize-codebase-to-order-first-architecture-17w753
-  const periodoAteRepasseAnos = yearsBetween(p.dataEntrega, p.dataPagamento);
-=======
+  const descontoImpostosEfetivo = p.temImposto ? p.descontoImpostosPct : 0;
+  const precoLiquido = p.precoBrutoCommodity * (1 + descontoImpostosEfetivo);
   const periodoAteRepasseAnos = yearsBetween(p.dataRepasse, p.dataPagamento);
->>>>>>> main
+  const periodoAteRepasseAnos = yearsBetween(p.dataEntrega, p.dataPagamento);
+  
   const precoEntregaAjustado = pv(p.rendimentoAntecipacaoAa, periodoAteRepasseAnos, precoLiquido);
 
   const paridadeRealSacas = valorPontaComFee / precoEntregaAjustado;
