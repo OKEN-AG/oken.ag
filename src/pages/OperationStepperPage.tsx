@@ -1470,14 +1470,18 @@ export default function OperationStepperPage() {
                       {isSelected && (
                         <div className="mt-2 pt-2 border-t border-border space-y-2" onClick={e => e.stopPropagation()}>
                           {quantityMode === 'dose' ? (
-                            <div className="flex items-center gap-2">
-                              <label className="text-xs text-muted-foreground w-24">{isPerAreaProduct(primaryVariant) ? 'Dose/ha:' : 'Quantidade:'}</label>
+                            <div className="flex items-center gap-1">
+                              <label className="text-xs text-muted-foreground w-24 shrink-0">{isPerAreaProduct(primaryVariant) ? 'Dose/ha:' : 'Quantidade:'}</label>
+                              <Button size="icon" variant="outline" className="h-7 w-7 shrink-0" onClick={() => updateDoseForRef(group.ref, Math.max(0, dose - 0.1))}><Minus className="w-3 h-3" /></Button>
                               <NumericInput value={dose} onChange={v => updateDoseForRef(group.ref, v)} decimals={2} className="h-7 bg-muted border-border text-xs text-foreground" />
+                              <Button size="icon" variant="outline" className="h-7 w-7 shrink-0" onClick={() => updateDoseForRef(group.ref, dose + 0.1)}><Plus className="w-3 h-3" /></Button>
                             </div>
                           ) : (
-                            <div className="flex items-center gap-2">
-                              <label className="text-xs text-muted-foreground w-16">Qtd ({group.unitType}):</label>
+                            <div className="flex items-center gap-1">
+                              <label className="text-xs text-muted-foreground w-16 shrink-0">Qtd ({group.unitType}):</label>
+                              <Button size="icon" variant="outline" className="h-7 w-7 shrink-0" onClick={() => updateFreeQuantity(primaryVariant.id, Math.max(0, (freeQuantities.get(primaryVariant.id) || 0) - 1))}><Minus className="w-3 h-3" /></Button>
                               <NumericInput value={freeQuantities.get(primaryVariant.id) || 0} onChange={v => updateFreeQuantity(primaryVariant.id, v)} decimals={0} placeholder="0" className="h-7 bg-muted border-border text-xs text-foreground" />
+                              <Button size="icon" variant="outline" className="h-7 w-7 shrink-0" onClick={() => updateFreeQuantity(primaryVariant.id, (freeQuantities.get(primaryVariant.id) || 0) + 1)}><Plus className="w-3 h-3" /></Button>
                             </div>
                           )}
                           {/* Packaging variants */}
@@ -1504,9 +1508,11 @@ export default function OperationStepperPage() {
                                     )}
                                   </div>
                                   {selectedVariants.length > 1 && (
-                                    <div className="flex items-center gap-2">
-                                      <label className="text-[10px] text-muted-foreground">Qtd ({variant.unitType}):</label>
+                                    <div className="flex items-center gap-1">
+                                      <label className="text-[10px] text-muted-foreground shrink-0">Qtd ({variant.unitType}):</label>
+                                      <Button size="icon" variant="outline" className="h-6 w-6 shrink-0" onClick={() => updateFreeQuantity(variant.id, Math.max(0, (freeQuantities.get(variant.id) || totalQty) - 1))}><Minus className="w-2.5 h-2.5" /></Button>
                                       <NumericInput value={freeQuantities.get(variant.id) || totalQty} onChange={v => updateFreeQuantity(variant.id, v)} decimals={0} className="h-6 bg-background border-border text-[11px] text-foreground flex-1" />
+                                      <Button size="icon" variant="outline" className="h-6 w-6 shrink-0" onClick={() => updateFreeQuantity(variant.id, (freeQuantities.get(variant.id) || totalQty) + 1)}><Plus className="w-2.5 h-2.5" /></Button>
                                     </div>
                                   )}
                                   <div className="grid grid-cols-3 gap-1 text-[10px]">
