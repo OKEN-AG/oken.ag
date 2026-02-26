@@ -3,13 +3,14 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Plus, Trash2, Upload, ClipboardPaste } from 'lucide-react';
+import { Plus, Trash2, Upload, ClipboardPaste, DollarSign, Trash } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Textarea } from '@/components/ui/textarea';
 import { useProducts, useCreateProduct, useDeleteProduct, useUpdateProduct, useCampaignProducts, useLinkProductToCampaign, useUnlinkProductFromCampaign } from '@/hooks/useProducts';
 import { toast } from 'sonner';
 import * as XLSX from 'xlsx';
 import { parseLocaleNumber, splitFlexibleLine, normalizeText, normalizeRef } from '@/lib/import-utils';
+import ProductPriceBreakdownDialog from './ProductPriceBreakdownDialog';
 
 type Props = {campaignId?: string;};
 
@@ -29,6 +30,7 @@ export default function ProductsTab({ campaignId }: Props) {
   const [editValue, setEditValue] = useState('');
   const [pasteOpen, setPasteOpen] = useState(false);
   const [pasteText, setPasteText] = useState('');
+  const [priceProduct, setPriceProduct] = useState<any>(null);
 
   const products = (linkedProducts || []).map((lp: any) => lp.product).filter(Boolean);
 
@@ -225,7 +227,18 @@ export default function ProductsTab({ campaignId }: Props) {
     <div className="space-y-3">
       <div className="flex items-center justify-between gap-2 flex-wrap">
         <Label className="text-base font-semibold text-foreground">Portfólio de Produtos</Label>
-        <div className="flex gap-2">
+        <div className="flex gap-2 flex-wrap">
+          {products.length > 0 && (
+            <Button size="sm" variant="destructive" onClick={async () => {
+              if (!campaignId || !confirm(`Remover todos os ${products.length} produtos vinculados?`)) return;
+              for (const p of products) {
+                try { await unlinkMut.mutateAsync({ campaignId, productId: p.id }); } catch {}
+              }
+              toast.success('Todos os produtos foram desvinculados');
+            }}>
+              <Trash className="w-4 h-4 mr-1" /> Excluir Todos
+            </Button>
+          )}
           <Button size="sm" variant="outline" onClick={() => setPasteOpen(true)}>
             <ClipboardPaste className="w-4 h-4 mr-1" /> Colar Texto
           </Button>
@@ -272,8 +285,11 @@ export default function ProductsTab({ campaignId }: Props) {
                   <TableCell>{renderCell(p, 'min_dose', `${p.min_dose}-${p.max_dose}`)}</TableCell>
                   <TableCell>
                     <div className="flex gap-0.5">
+                      <Button variant="ghost" size="icon" className="h-6 w-6" title="Lista de preço" onClick={() => setPriceProduct(p)}>
+                        <DollarSign className="w-3 h-3" />
+                      </Button>
                       <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => unlinkMut.mutate({ campaignId: campaignId!, productId: p.id })}>
-                        
+                        <Trash2 className="w-3 h-3 text-muted-foreground" />
                       </Button>
                       <Button variant="ghost" size="icon" className="h-6 w-6 text-destructive" onClick={() => deleteMut.mutate(p.id)}>
                         <Trash2 className="w-3 h-3" />
@@ -293,6 +309,14 @@ export default function ProductsTab({ campaignId }: Props) {
           </Table>
         </div>
       }
+
+      {/* Price breakdown dialog */}
+      <ProductPriceBreakdownDialog
+        open={!!priceProduct}
+        onOpenChange={(o) => { if (!o) setPriceProduct(null); }}
+        product={priceProduct}
+        campaignId={campaignId!}
+      />
 
       {/* Paste dialog */}
       <Dialog open={pasteOpen} onOpenChange={setPasteOpen}>
