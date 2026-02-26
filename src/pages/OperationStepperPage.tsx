@@ -976,24 +976,34 @@ export default function OperationStepperPage() {
         )}
       </div>
 
-      {/* Stepper bar */}
-      <div className="flex items-center gap-1 overflow-x-auto pb-2">
-        {visibleSteps.map((step, i) => {
-          const isActive = i === currentStep;
-          const isDone = i < currentStep;
-          const StepIcon = step.icon;
-          return (
-            <button key={step.id} onClick={() => i <= currentStep && setCurrentStep(i)}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium whitespace-nowrap transition-colors ${
-                isActive ? 'bg-primary text-primary-foreground' :
-                isDone ? 'bg-success/10 text-success cursor-pointer' :
-                'bg-muted text-muted-foreground'
-              }`}>
-              {isDone ? <Check className="w-3 h-3" /> : <StepIcon className="w-3 h-3" />}
-              {step.label}
-            </button>
-          );
-        })}
+      {/* Stepper bar — sticky with nav buttons */}
+      <div className="sticky top-0 z-20 bg-background/95 backdrop-blur-md pb-2 pt-1 border-b border-border mb-2">
+        <div className="flex items-center gap-2">
+          <Button size="sm" variant="outline" onClick={goPrev} disabled={currentStep === 0} className="border-border h-7 px-2 shrink-0">
+            <ChevronLeft className="w-3.5 h-3.5" />
+          </Button>
+          <div className="flex items-center gap-1 overflow-x-auto flex-1">
+            {visibleSteps.map((step, i) => {
+              const isActive = i === currentStep;
+              const isDone = i < currentStep;
+              const StepIcon = step.icon;
+              return (
+                <button key={step.id} onClick={() => i <= currentStep && setCurrentStep(i)}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium whitespace-nowrap transition-colors ${
+                    isActive ? 'bg-primary text-primary-foreground' :
+                    isDone ? 'bg-success/10 text-success cursor-pointer' :
+                    'bg-muted text-muted-foreground'
+                  }`}>
+                  {isDone ? <Check className="w-3 h-3" /> : <StepIcon className="w-3 h-3" />}
+                  {step.label}
+                </button>
+              );
+            })}
+          </div>
+          <Button size="sm" onClick={goNext} disabled={currentStep >= visibleSteps.length - 1 || !canProceed(currentStepDef.id)} className="bg-primary text-primary-foreground h-7 px-2 shrink-0">
+            <ChevronRight className="w-3.5 h-3.5" />
+          </Button>
+        </div>
       </div>
 
       {/* Step content */}
