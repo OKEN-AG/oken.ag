@@ -12,10 +12,16 @@ type Props = {
   campaignId: string;
 };
 
-type PriceScenario = {
+type PriceVariable = {
   label: string;
-  impact: number; // percentage impact
+  impact: number;
   type: 'discount' | 'markup' | 'neutral';
+};
+
+type VariableGroup = {
+  groupLabel: string;
+  relation: 'and' | 'or'; // "and" = always applies; "or" = pick one from group
+  variables: PriceVariable[];
 };
 
 export default function ProductPriceBreakdownDialog({ open, onOpenChange, product, campaignId }: Props) {
@@ -52,112 +58,138 @@ export default function ProductPriceBreakdownDialog({ open, onOpenChange, produc
   if (!product) return null;
 
   const basePrice = product.price_cash || product.price_per_unit || 0;
-  const termPrice = product.price_term || basePrice;
 
-  // Collect all variable impacts
-  const variables: PriceScenario[] = [];
+  // Build groups with AND/OR logic
+  const groups: VariableGroup[] = [];
 
-  // Interest rate
+  // --- AND groups (always apply together) ---
   if (campaign?.interest_rate > 0) {
-    variables.push({
-      label: `Juros Campanha (${campaign.interest_rate}% a.m.)`,
-      impact: campaign.interest_rate * 12,
-      type: 'markup',
+    groups.push({
+      groupLabel: 'Juros da Campanha',
+      relation: 'and',
+      variables: [{
+        label: `Juros (${campaign.interest_rate}% a.m. × 12)`,
+        impact: campaign.interest_rate * 12,
+        type: 'markup',
+      }],
     });
   }
 
-  // Max discounts
   if (campaign?.max_discount_internal > 0) {
-    variables.push({
-      label: `Desconto Interno Máx. (${campaign.max_discount_internal}%)`,
-      impact: -campaign.max_discount_internal,
-      type: 'discount',
-    });
-  }
-  if (campaign?.max_discount_reseller > 0) {
-    variables.push({
-      label: `Desconto Revenda Máx. (${campaign.max_discount_reseller}%)`,
-      impact: -campaign.max_discount_reseller,
-      type: 'discount',
-    });
-  }
-
-  // Channel types (price adjustment)
-  channelTypes.forEach((ct) => {
-    if (ct.price_adjustment_percent !== 0) {
-      variables.push({
-        label: `Tipo Canal: ${ct.channel_type_name} (${ct.price_adjustment_percent > 0 ? '+' : ''}${ct.price_adjustment_percent}%)`,
-        impact: ct.price_adjustment_percent,
-        type: ct.price_adjustment_percent > 0 ? 'markup' : 'discount',
-      });
-    }
-  });
-
-  // Channel segments (margin + adjustment)
-  channelSegments.forEach((cs) => {
-    if (cs.margin_percent !== 0) {
-      variables.push({
-        label: `Margem Seg. Canal: ${cs.channel_segment_name} (${cs.margin_percent > 0 ? '+' : ''}${cs.margin_percent}%)`,
-        impact: cs.margin_percent,
-        type: cs.margin_percent > 0 ? 'markup' : 'discount',
-      });
-    }
-    if (cs.price_adjustment_percent !== 0) {
-      variables.push({
-        label: `Ajuste Seg. Canal: ${cs.channel_segment_name} (${cs.price_adjustment_percent > 0 ? '+' : ''}${cs.price_adjustment_percent}%)`,
-        impact: cs.price_adjustment_percent,
-        type: cs.price_adjustment_percent > 0 ? 'markup' : 'discount',
-      });
-    }
-  });
-
-  // Client segments
-  clientSegments.forEach((s) => {
-    if (s.price_adjustment_percent !== 0) {
-      variables.push({
-        label: `Seg. Cliente: ${s.segment_name} (${s.price_adjustment_percent > 0 ? '+' : ''}${s.price_adjustment_percent}%)`,
-        impact: s.price_adjustment_percent,
-        type: s.price_adjustment_percent > 0 ? 'markup' : 'discount',
-      });
-    }
-  });
-
-  // Payment methods (markup)
-  paymentMethods.forEach((pm) => {
-    if (pm.markup_percent !== 0) {
-      variables.push({
-        label: `Pagamento: ${pm.method_name} (${pm.markup_percent > 0 ? '+' : ''}${pm.markup_percent}%)`,
-        impact: pm.markup_percent,
-        type: pm.markup_percent > 0 ? 'markup' : 'discount',
-      });
-    }
-  });
-
-  // Combos
-  combos.forEach((c) => {
-    if (c.discount_percent > 0) {
-      variables.push({
-        label: `Combo: ${c.name} (-${c.discount_percent}%)`,
-        impact: -c.discount_percent,
+    groups.push({
+      groupLabel: 'Desconto Interno',
+      relation: 'and',
+      variables: [{
+        label: `Desconto Interno Máx. (${campaign.max_discount_internal}%)`,
+        impact: -campaign.max_discount_internal,
         type: 'discount',
-      });
+      }],
+    });
+  }
+
+  if (campaign?.max_discount_reseller > 0) {
+    groups.push({
+      groupLabel: 'Desconto Revenda',
+      relation: 'and',
+      variables: [{
+        label: `Desconto Revenda Máx. (${campaign.max_discount_reseller}%)`,
+        impact: -campaign.max_discount_reseller,
+        type: 'discount',
+      }],
+    });
+  }
+
+  // --- OR groups (pick one from each) ---
+  const ctVars: PriceVariable[] = channelTypes
+    .filter(ct => ct.price_adjustment_percent !== 0)
+    .map(ct => ({
+      label: `${ct.channel_type_name} (${ct.price_adjustment_percent > 0 ? '+' : ''}${ct.price_adjustment_percent}%)`,
+      impact: ct.price_adjustment_percent,
+      type: (ct.price_adjustment_percent > 0 ? 'markup' : 'discount') as 'markup' | 'discount',
+    }));
+  if (ctVars.length > 0) {
+    groups.push({ groupLabel: 'Tipo de Canal (escolhe 1)', relation: 'or', variables: ctVars });
+  }
+
+  const csMarginVars: PriceVariable[] = channelSegments
+    .filter(cs => cs.margin_percent !== 0 || cs.price_adjustment_percent !== 0)
+    .map(cs => {
+      const totalImpact = (cs.margin_percent || 0) + (cs.price_adjustment_percent || 0);
+      const parts: string[] = [];
+      if (cs.margin_percent !== 0) parts.push(`margem ${cs.margin_percent}%`);
+      if (cs.price_adjustment_percent !== 0) parts.push(`ajuste ${cs.price_adjustment_percent}%`);
+      return {
+        label: `${cs.channel_segment_name} (${parts.join(' + ')})`,
+        impact: totalImpact,
+        type: (totalImpact > 0 ? 'markup' : 'discount') as 'markup' | 'discount',
+      };
+    });
+  if (csMarginVars.length > 0) {
+    groups.push({ groupLabel: 'Segmento de Canal (escolhe 1)', relation: 'or', variables: csMarginVars });
+  }
+
+  const clientSegVars: PriceVariable[] = clientSegments
+    .filter(s => s.price_adjustment_percent !== 0)
+    .map(s => ({
+      label: `${s.segment_name} (${s.price_adjustment_percent > 0 ? '+' : ''}${s.price_adjustment_percent}%)`,
+      impact: s.price_adjustment_percent,
+      type: (s.price_adjustment_percent > 0 ? 'markup' : 'discount') as 'markup' | 'discount',
+    }));
+  if (clientSegVars.length > 0) {
+    groups.push({ groupLabel: 'Segmento de Cliente (escolhe 1)', relation: 'or', variables: clientSegVars });
+  }
+
+  const pmVars: PriceVariable[] = paymentMethods
+    .filter(pm => pm.markup_percent !== 0)
+    .map(pm => ({
+      label: `${pm.method_name} (${pm.markup_percent > 0 ? '+' : ''}${pm.markup_percent}%)`,
+      impact: pm.markup_percent,
+      type: (pm.markup_percent > 0 ? 'markup' : 'discount') as 'markup' | 'discount',
+    }));
+  if (pmVars.length > 0) {
+    groups.push({ groupLabel: 'Meio de Pagamento (escolhe 1)', relation: 'or', variables: pmVars });
+  }
+
+  const comboVars: PriceVariable[] = combos
+    .filter(c => c.discount_percent > 0)
+    .map(c => ({
+      label: `${c.name} (-${c.discount_percent}%)`,
+      impact: -c.discount_percent,
+      type: 'discount' as const,
+    }));
+  if (comboVars.length > 0) {
+    groups.push({ groupLabel: 'Combo (cascata, melhor aplicável)', relation: 'or', variables: comboVars });
+  }
+
+  // Calculate min/max intelligently
+  // AND groups: all impacts always apply
+  // OR groups: pick best (max impact) for max price, pick worst (min impact) for min price
+  let totalAndImpact = 0;
+  let bestOrImpact = 0; // for max price scenario
+  let worstOrImpact = 0; // for min price scenario
+
+  groups.forEach(g => {
+    if (g.relation === 'and') {
+      g.variables.forEach(v => { totalAndImpact += v.impact; });
+    } else {
+      // OR: pick best and worst from this group
+      const impacts = g.variables.map(v => v.impact);
+      const best = Math.max(...impacts, 0); // 0 = option of not selecting any
+      const worst = Math.min(...impacts, 0);
+      bestOrImpact += best;
+      worstOrImpact += worst;
     }
   });
 
-  // Calculate min and max
-  const discounts = variables.filter((v) => v.impact < 0);
-  const markups = variables.filter((v) => v.impact > 0);
+  const maxPriceImpact = totalAndImpact + bestOrImpact;
+  const minPriceImpact = totalAndImpact + worstOrImpact;
 
-  const maxDiscountTotal = discounts.reduce((sum, v) => sum + v.impact, 0);
-  const maxMarkupTotal = markups.reduce((sum, v) => sum + v.impact, 0);
+  // For display, separate AND discounts from AND markups
+  const andDiscounts = totalAndImpact < 0 ? totalAndImpact : 0;
+  const andMarkups = totalAndImpact > 0 ? totalAndImpact : 0;
 
-  const minPrice = basePrice * (1 + maxDiscountTotal / 100);
-  const maxPrice = basePrice * (1 + maxMarkupTotal / 100);
-
-  // Best case: all markups + no discounts
-  const bestCasePrice = basePrice * (1 + maxMarkupTotal / 100);
-  // Worst case: all discounts + no markups
-  const worstCasePrice = basePrice * (1 + maxDiscountTotal / 100);
+  const maxPrice = basePrice * (1 + Math.max(0, maxPriceImpact) / 100);
+  const minPrice = basePrice * (1 + Math.min(0, minPriceImpact) / 100);
 
   const fmt = (v: number) => v.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
@@ -174,51 +206,48 @@ export default function ProductPriceBreakdownDialog({ open, onOpenChange, produc
           <p className="text-sm text-muted-foreground py-4">Carregando...</p>
         ) : (
           <div className="space-y-4">
-            {/* Base prices */}
-            <div className="grid grid-cols-2 gap-4">
-              <div className="p-3 bg-muted/50 rounded-md">
-                <p className="text-xs text-muted-foreground">Preço Cash (Base)</p>
-                <p className="text-lg font-bold text-foreground">{campaign?.currency || product.currency} {fmt(basePrice)}</p>
-              </div>
-              <div className="p-3 bg-muted/50 rounded-md">
-                <p className="text-xs text-muted-foreground">Preço Prazo</p>
-                <p className="text-lg font-bold text-foreground">{campaign?.currency || product.currency} {fmt(termPrice)}</p>
-              </div>
+            {/* Base price */}
+            <div className="p-3 bg-muted/50 rounded-md">
+              <p className="text-xs text-muted-foreground">Preço Base (Cash)</p>
+              <p className="text-lg font-bold text-foreground">{campaign?.currency || product.currency} {fmt(basePrice)}</p>
             </div>
 
             <Separator />
 
-            {/* Variables table */}
+            {/* Variables grouped by AND/OR */}
             <div>
               <p className="text-sm font-semibold text-foreground mb-2">Variáveis de Impacto no Preço</p>
-              {variables.length === 0 ? (
+              {groups.length === 0 ? (
                 <p className="text-xs text-muted-foreground">Nenhuma variável configurada nesta campanha.</p>
               ) : (
-                <div className="border rounded-md overflow-hidden">
-                  <Table>
-                    <TableHeader>
-                      <TableRow className="bg-muted/50">
-                        <TableHead className="text-foreground">Variável</TableHead>
-                        <TableHead className="text-right text-foreground">Impacto (%)</TableHead>
-                        <TableHead className="text-right text-foreground">Tipo</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {variables.map((v, i) => (
-                        <TableRow key={i}>
-                          <TableCell className="text-xs">{v.label}</TableCell>
-                          <TableCell className="text-xs text-right font-mono">
-                            {v.impact > 0 ? '+' : ''}{fmt(v.impact)}%
-                          </TableCell>
-                          <TableCell className="text-right">
-                            <Badge variant={v.type === 'discount' ? 'default' : 'secondary'} className="text-[10px]">
-                              {v.type === 'discount' ? 'Desconto' : 'Acréscimo'}
-                            </Badge>
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
+                <div className="space-y-3">
+                  {groups.map((g, gi) => (
+                    <div key={gi} className="border rounded-md overflow-hidden">
+                      <div className="bg-muted/50 px-3 py-1.5 flex items-center gap-2">
+                        <p className="text-xs font-semibold text-foreground">{g.groupLabel}</p>
+                        <Badge variant="outline" className="text-[9px] px-1.5 py-0">
+                          {g.relation === 'and' ? 'Sempre aplica' : 'Escolhe 1'}
+                        </Badge>
+                      </div>
+                      <Table>
+                        <TableBody>
+                          {g.variables.map((v, vi) => (
+                            <TableRow key={vi}>
+                              <TableCell className="text-xs">{v.label}</TableCell>
+                              <TableCell className="text-xs text-right font-mono w-24">
+                                {v.impact > 0 ? '+' : ''}{fmt(v.impact)}%
+                              </TableCell>
+                              <TableCell className="text-right w-20">
+                                <Badge variant={v.type === 'discount' ? 'default' : 'secondary'} className="text-[10px]">
+                                  {v.type === 'discount' ? '↓' : '↑'}
+                                </Badge>
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </div>
+                  ))}
                 </div>
               )}
             </div>
@@ -229,22 +258,22 @@ export default function ProductPriceBreakdownDialog({ open, onOpenChange, produc
             <div className="grid grid-cols-2 gap-4">
               <div className="p-3 bg-green-500/10 border border-green-500/30 rounded-md">
                 <p className="text-xs text-muted-foreground">Preço Mínimo Possível</p>
-                <p className="text-xs text-muted-foreground mb-1">(todos descontos aplicados)</p>
+                <p className="text-xs text-muted-foreground mb-1">(pior cenário de desconto)</p>
                 <p className="text-lg font-bold text-green-700 dark:text-green-400">
-                  {campaign?.currency || product.currency} {fmt(Math.max(0, worstCasePrice))}
+                  {campaign?.currency || product.currency} {fmt(Math.max(0, minPrice))}
                 </p>
                 <p className="text-[10px] text-muted-foreground">
-                  {maxDiscountTotal !== 0 ? `${fmt(maxDiscountTotal)}% sobre base` : 'Sem descontos'}
+                  {minPriceImpact !== 0 ? `${fmt(minPriceImpact)}% sobre base` : 'Sem impacto'}
                 </p>
               </div>
               <div className="p-3 bg-orange-500/10 border border-orange-500/30 rounded-md">
                 <p className="text-xs text-muted-foreground">Preço Máximo Possível</p>
-                <p className="text-xs text-muted-foreground mb-1">(todos acréscimos aplicados)</p>
+                <p className="text-xs text-muted-foreground mb-1">(melhor cenário de acréscimo)</p>
                 <p className="text-lg font-bold text-orange-700 dark:text-orange-400">
-                  {campaign?.currency || product.currency} {fmt(bestCasePrice)}
+                  {campaign?.currency || product.currency} {fmt(maxPrice)}
                 </p>
                 <p className="text-[10px] text-muted-foreground">
-                  {maxMarkupTotal !== 0 ? `+${fmt(maxMarkupTotal)}% sobre base` : 'Sem acréscimos'}
+                  {maxPriceImpact !== 0 ? `+${fmt(maxPriceImpact)}% sobre base` : 'Sem acréscimos'}
                 </p>
               </div>
             </div>
