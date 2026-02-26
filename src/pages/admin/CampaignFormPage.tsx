@@ -360,7 +360,11 @@ export default function CampaignFormPage() {
       queryClient.invalidateQueries({ queryKey: ['channel_margins', cid] });
       queryClient.invalidateQueries({ queryKey: ['operation-stats'] });
 
-      navigate('/admin/campanhas');
+      toast.success('Campanha salva com sucesso!');
+      // If new campaign, redirect to edit URL so subsequent saves work as updates
+      if (isNew && campaignId) {
+        navigate(`/admin/campanhas/${campaignId}`, { replace: true });
+      }
     } catch (err: any) {
       const { handleDatabaseError } = await import('@/lib/error-handler');
       toast.error(handleDatabaseError(err));
