@@ -180,7 +180,7 @@ export default function CampaignFormPage() {
       region_type: d.region_type, region_value: d.region_value, due_date: d.due_date,
     })));
     if (channelSegmentsRes.data) setChannelSegments((channelSegmentsRes.data as any[]).map(cs => ({ channel_segment_name: cs.channel_segment_name, margin_percent: Number(cs.margin_percent || 0), price_adjustment_percent: Number(cs.price_adjustment_percent || 0), active: !!cs.active, channel_type: cs.channel_type || '' })));
-    if (distributorsRes.data) setDistributors((distributorsRes.data as any[]).map(d => ({ short_name: d.short_name || '', full_name: d.full_name || '', cnpj: d.cnpj || '', channel_type: d.channel_segment_name ? '' : '', channel_segment_name: d.channel_segment_name || '', active: !!d.active })));
+    if (distributorsRes.data) setDistributors((distributorsRes.data as any[]).map(d => ({ short_name: d.short_name || '', full_name: d.full_name || '', cnpj: d.cnpj || '', channel_type: d.channel_type || '', channel_segment_name: d.channel_segment_name || '', active: !!d.active })));
     if (channelMarginsRes.data) setChannelMargins((channelMarginsRes.data as any[]).map(m => ({ segment: m.segment, margin_percent: Number(m.margin_percent) })));
     if (channelTypesRes.data) setChannelTypes((channelTypesRes.data as any[]).map(ct => ({ channel_type_name: ct.channel_type_name || '', model: ct.model || '', active: !!ct.active, price_adjustment_percent: Number(ct.price_adjustment_percent || 0) })));
   };
