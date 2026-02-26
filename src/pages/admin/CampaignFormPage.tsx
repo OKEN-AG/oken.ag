@@ -17,6 +17,7 @@ import EligibilityTab, { type SegmentRow } from '@/components/campaign/Eligibili
 import ProductsTab from '@/components/campaign/ProductsTab';
 import CombosTab from '@/components/campaign/CombosTab';
 import CommoditiesTab from '@/components/campaign/CommoditiesTab';
+import ChannelConfigTab, { type ChannelSegmentRow, type DistributorRow } from '@/components/campaign/ChannelConfigTab';
 import { useCommodityOptions } from '@/hooks/useCommoditiesMasterData';
 import { normalizeCommodityCode } from '@/lib/commodity';
 import { formatCpfCnpj } from '@/lib/ptbr';
@@ -58,6 +59,8 @@ type FormData = {
   campaign_type: string;
   client_type: string[];
   min_order_amount: number;
+  aforo_percent: number;
+  default_freight_cost_per_km: number;
 };
 
 const emptyForm: FormData = {
@@ -85,6 +88,8 @@ const emptyForm: FormData = {
   campaign_type: 'vendas',
   client_type: [],
   min_order_amount: 0,
+  aforo_percent: 130,
+  default_freight_cost_per_km: 0.11,
 };
 
 export default function CampaignFormPage() {
@@ -104,6 +109,8 @@ export default function CampaignFormPage() {
   const [segments, setSegments] = useState<SegmentRow[]>([]);
   const [dueDates, setDueDates] = useState<DueDateRow[]>([]);
   const [selectedCities, setSelectedCities] = useState<string[]>([]);
+  const [channelSegments, setChannelSegments] = useState<ChannelSegmentRow[]>([]);
+  const [distributors, setDistributors] = useState<DistributorRow[]>([]);
   const { options: commodityOptions } = useCommodityOptions();
 
 
@@ -135,20 +142,27 @@ export default function CampaignFormPage() {
         campaign_type: e.campaign_type || 'vendas',
         client_type: e.client_type || [],
         min_order_amount: Number(e.min_order_amount || 0),
+        aforo_percent: Number(e.aforo_percent ?? 130),
+        default_freight_cost_per_km: Number(e.default_freight_cost_per_km ?? 0.11),
       });
       setSelectedCities(e.eligible_cities || []);
-      loadSubData(e.id);
+      loadSubData(e.id).catch((err: any) => toast.error('Erro ao carregar dados da campanha: ' + (err?.message || 'desconhecido')));
     }
   }, [existing]);
 
   const loadSubData = async (campaignId: string) => {
-      // Bug #23: Remove (supabase as any) - use typed client
-      const [clientsRes, methodsRes, segmentsRes, datesRes] = await Promise.all([
+    const [clientsRes, methodsRes, segmentsRes, datesRes, channelSegmentsRes, distributorsRes] = await Promise.all([
       supabase.from('campaign_clients').select('*').eq('campaign_id', campaignId),
       supabase.from('campaign_payment_methods').select('*').eq('campaign_id', campaignId),
       supabase.from('campaign_segments').select('*').eq('campaign_id', campaignId),
       supabase.from('campaign_due_dates').select('*').eq('campaign_id', campaignId),
+      (supabase as any).from('campaign_channel_segments').select('*').eq('campaign_id', campaignId),
+      (supabase as any).from('campaign_distributors').select('*').eq('campaign_id', campaignId),
     ]);
+
+    const firstError = clientsRes.error || methodsRes.error || segmentsRes.error || datesRes.error || (channelSegmentsRes as any).error || (distributorsRes as any).error;
+    if (firstError) throw firstError;
+
     if (clientsRes.data) setClients(clientsRes.data.map((c: any) => ({ document: formatCpfCnpj(c.document || ''), name: c.name })));
     if (methodsRes.data) setPaymentMethods(methodsRes.data.map((m: any) => ({
       method_name: m.method_name, markup_percent: Number(m.markup_percent),
@@ -161,6 +175,8 @@ export default function CampaignFormPage() {
     if (datesRes.data) setDueDates(datesRes.data.map((d: any) => ({
       region_type: d.region_type, region_value: d.region_value, due_date: d.due_date,
     })));
+    if (channelSegmentsRes.data) setChannelSegments((channelSegmentsRes.data as any[]).map(cs => ({ channel_segment_name: cs.channel_segment_name, margin_percent: Number(cs.margin_percent || 0), price_adjustment_percent: Number(cs.price_adjustment_percent || 0), active: !!cs.active })));
+    if (distributorsRes.data) setDistributors((distributorsRes.data as any[]).map(d => ({ short_name: d.short_name || '', full_name: d.full_name || '', cnpj: d.cnpj || '', channel_segment_name: d.channel_segment_name || '', active: !!d.active })));
   };
 
   const onFieldChange = (key: string, value: any) => setForm(prev => ({ ...prev, [key]: value }));
@@ -231,6 +247,8 @@ export default function CampaignFormPage() {
         campaign_type: form.campaign_type,
         client_type: form.client_type,
         min_order_amount: form.min_order_amount,
+        aforo_percent: form.aforo_percent,
+        default_freight_cost_per_km: form.default_freight_cost_per_km,
       };
 
       let campaignId = id;
@@ -247,29 +265,44 @@ export default function CampaignFormPage() {
         toast.success('Campanha atualizada!');
       }
 
-      // Save sub-tables
-      // Bug #23: Remove (supabase as any)
-      await Promise.all([
+      // Save sub-tables (with explicit error checks)
+      const deleteResults = await Promise.all([
         supabase.from('campaign_clients').delete().eq('campaign_id', campaignId!),
         supabase.from('campaign_payment_methods').delete().eq('campaign_id', campaignId!),
         supabase.from('campaign_segments').delete().eq('campaign_id', campaignId!),
         supabase.from('campaign_due_dates').delete().eq('campaign_id', campaignId!),
+        (supabase as any).from('campaign_channel_segments').delete().eq('campaign_id', campaignId!),
+        (supabase as any).from('campaign_distributors').delete().eq('campaign_id', campaignId!),
       ]);
+      const deleteError = (deleteResults as any[]).find(r => r?.error)?.error;
+      if (deleteError) throw deleteError;
 
-      const inserts = [];
-      if (clients.length > 0) inserts.push(
-        supabase.from('campaign_clients').insert(clients.map(c => ({ ...c, campaign_id: campaignId! })))
-      );
-      if (paymentMethods.length > 0) inserts.push(
-        supabase.from('campaign_payment_methods').insert(paymentMethods.map(m => ({ ...m, campaign_id: campaignId! })))
-      );
-      if (segments.length > 0) inserts.push(
-        supabase.from('campaign_segments').insert(segments.map(s => ({ ...s, campaign_id: campaignId! })))
-      );
-      if (dueDates.length > 0) inserts.push(
-        supabase.from('campaign_due_dates').insert(dueDates.map(d => ({ ...d, campaign_id: campaignId! })))
-      );
-      await Promise.all(inserts);
+      const validClients = clients.filter(c => String(c.document || '').replace(/\D/g, '') || String(c.name || '').trim());
+      const validChannelSegments = channelSegments.filter(cs => cs.channel_segment_name.trim());
+      const validDistributors = distributors.filter(d => d.short_name.trim() || d.full_name.trim() || d.cnpj.trim());
+
+      const insertResults = await Promise.all([
+        validClients.length > 0
+          ? supabase.from('campaign_clients').insert(validClients.map(c => ({ ...c, campaign_id: campaignId! })))
+          : Promise.resolve({ error: null }),
+        paymentMethods.length > 0
+          ? supabase.from('campaign_payment_methods').insert(paymentMethods.map(m => ({ ...m, campaign_id: campaignId! })))
+          : Promise.resolve({ error: null }),
+        segments.length > 0
+          ? supabase.from('campaign_segments').insert(segments.map(s => ({ ...s, campaign_id: campaignId! })))
+          : Promise.resolve({ error: null }),
+        dueDates.length > 0
+          ? supabase.from('campaign_due_dates').insert(dueDates.map(d => ({ ...d, campaign_id: campaignId! })))
+          : Promise.resolve({ error: null }),
+        validChannelSegments.length > 0
+          ? (supabase as any).from('campaign_channel_segments').insert(validChannelSegments.map(cs => ({ ...cs, campaign_id: campaignId! })))
+          : Promise.resolve({ error: null }),
+        validDistributors.length > 0
+          ? (supabase as any).from('campaign_distributors').insert(validDistributors.map(d => ({ ...d, campaign_id: campaignId! })))
+          : Promise.resolve({ error: null }),
+      ]);
+      const insertError = (insertResults as any[]).find(r => r?.error)?.error;
+      if (insertError) throw insertError;
 
       // Invalidate all operational caches for this campaign
       const cid = campaignId!;
@@ -318,6 +351,7 @@ export default function CampaignFormPage() {
           <TabsTrigger value="geral">Geral</TabsTrigger>
           <TabsTrigger value="financeiro">Financeiro</TabsTrigger>
           <TabsTrigger value="elegibilidade">Elegibilidade</TabsTrigger>
+          <TabsTrigger value="canais">Canais</TabsTrigger>
           <TabsTrigger value="modulos">Módulos</TabsTrigger>
           <TabsTrigger value="produtos" disabled={isNew}>Produtos</TabsTrigger>
           <TabsTrigger value="combos" disabled={isNew}>Combos</TabsTrigger>
@@ -369,6 +403,15 @@ export default function CampaignFormPage() {
             minOrderAmount={form.min_order_amount}
             onMinOrderAmountChange={v => onFieldChange('min_order_amount', v)}
             currency={form.currency}
+          />
+        </TabsContent>
+
+        <TabsContent value="canais" className="mt-4">
+          <ChannelConfigTab
+            channelSegments={channelSegments}
+            onChannelSegmentsChange={setChannelSegments}
+            distributors={distributors}
+            onDistributorsChange={setDistributors}
           />
         </TabsContent>
 
