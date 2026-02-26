@@ -540,7 +540,7 @@ serve(async (req: Request) => {
     const { data: { user }, error: authError } = await supabase.auth.getUser();
     if (authError || !user) return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 
-    let result: Record<string, unknown>;
+    let result: Record<string, unknown> | EligibilityResult;
 
     switch (endpoint) {
       // ═══════════════════════════════════════════
