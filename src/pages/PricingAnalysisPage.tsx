@@ -44,23 +44,11 @@ type PricingDebugRow = {
   g2nNetRevenueAllocated: number;
   parityCommodity: string | null;
   parityPricePerSaca: number | null;
+  fxSourceUsed: 'products' | 'barter';
+  pricingPlaza: string | null;
 };
 
-type GrossToNetResult = {
-  grossRevenue: number;
-  comboDiscount: number;
-  barterDiscount: number;
-  directIncentiveDiscount: number;
-  netRevenue: number;
-  financialRevenue: number;
-  distributorMargin: number;
-  segmentAdjustment: number;
-  paymentMethodMarkup: number;
-  barterCost: number;
-  netNetRevenue: number;
-};
-
-const brMoney = (v: number, c: 'BRL' | 'USD' = 'BRL') => Number(v || 0).toLocaleString('pt-BR', { style: 'currency', currency: c });
+const brMoney = (v: number, c: 'BRL' | 'USD') => Number(v || 0).toLocaleString('pt-BR', { style: 'currency', currency: c });
 
 export default function PricingAnalysisPage() {
   const { id } = useParams();
@@ -81,23 +69,11 @@ export default function PricingAnalysisPage() {
     },
   });
 
-  const snapshot = useMemo(() => (data?.snapshot as any) || {}, [data]);
-  const rows = useMemo(() => (snapshot.pricingDebugRows || []) as PricingDebugRow[], [snapshot]);
-  const g2n = useMemo(() => (snapshot.grossToNet || null) as GrossToNetResult | null, [snapshot]);
-  const commodityNetPrice = useMemo(() => snapshot.commodityNetPrice as number | null, [snapshot]);
-  
+  const rows = useMemo(() => ((data?.snapshot as any)?.pricingDebugRows || []) as PricingDebugRow[], [data]);
   const dictionaryByModule = useMemo(() => PRICING_MEMORY_DICTIONARY.reduce((acc, item) => {
     acc[item.module] = (acc[item.module] || 0) + 1;
     return acc;
   }, {} as Record<string, number>), []);
-
-  // Calculate net totals for parity
-  const netTotals = useMemo(() => {
-    if (!rows.length) return null;
-    const grossTotal = rows.reduce((s, r) => s + (r.subtotal || 0), 0);
-    const netTotal = g2n?.netRevenue ?? grossTotal;
-    return { grossTotal, netTotal };
-  }, [rows, g2n]);
 
   return (
     <div className="p-6 space-y-4">
@@ -117,51 +93,6 @@ export default function PricingAnalysisPage() {
         ))}
       </div>
 
-      {/* Gross-to-Net Summary */}
-      {g2n && (
-        <div className="border border-border rounded-md p-4 space-y-2">
-          <h2 className="text-sm font-semibold">Resumo Gross-to-Net</h2>
-          <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3 text-xs">
-            <div><span className="text-muted-foreground">Bruto</span><div className="font-mono font-bold">{brMoney(g2n.grossRevenue)}</div></div>
-            <div><span className="text-muted-foreground">Desc. Combo</span><div className="font-mono text-warning">-{brMoney(g2n.comboDiscount)}</div></div>
-            <div><span className="text-muted-foreground">Desc. Barter</span><div className="font-mono text-warning">-{brMoney(g2n.barterDiscount)}</div></div>
-            <div><span className="text-muted-foreground">Desc. Incentivo</span><div className="font-mono text-warning">-{brMoney(g2n.directIncentiveDiscount)}</div></div>
-            <div><span className="text-muted-foreground">Receita Líquida</span><div className="font-mono font-bold text-success">{brMoney(g2n.netRevenue)}</div></div>
-            <div><span className="text-muted-foreground">Margem Canal</span><div className="font-mono">{brMoney(g2n.distributorMargin)}</div></div>
-            <div><span className="text-muted-foreground">Ajuste Segmento</span><div className="font-mono">{brMoney(g2n.segmentAdjustment)}</div></div>
-            <div><span className="text-muted-foreground">Receita Financeira</span><div className="font-mono">{brMoney(g2n.financialRevenue)}</div></div>
-          </div>
-        </div>
-      )}
-
-      {/* Parity Summary */}
-      {netTotals && commodityNetPrice && commodityNetPrice > 0 && (
-        <div className="border border-border rounded-md p-4 space-y-2">
-          <h2 className="text-sm font-semibold">Paridade (Valores Líquidos)</h2>
-          <p className="text-[10px] text-muted-foreground">Paridade = montante líquido ÷ preço líquido commodity. Todos os acréscimos e descontos já aplicados.</p>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-xs">
-            <div>
-              <span className="text-muted-foreground">Montante Líquido</span>
-              <div className="font-mono font-bold">{brMoney(netTotals.netTotal)}</div>
-            </div>
-            <div>
-              <span className="text-muted-foreground">Preço Commodity</span>
-              <div className="font-mono font-bold">{brMoney(commodityNetPrice)}/sc</div>
-            </div>
-            <div>
-              <span className="text-muted-foreground">Paridade Total (sacas)</span>
-              <div className="font-mono font-bold text-success">{Math.ceil(netTotals.netTotal / commodityNetPrice).toLocaleString('pt-BR')}</div>
-            </div>
-            <div>
-              <span className="text-muted-foreground">Preço Valorizado</span>
-              <div className="font-mono font-bold text-primary">
-                {brMoney(netTotals.grossTotal / Math.ceil(netTotals.netTotal / commodityNetPrice))}/sc
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
       {isLoading ? <div className="text-sm text-muted-foreground">Carregando...</div> : null}
       {!isLoading && rows.length === 0 ? (
         <div className="text-sm text-muted-foreground">Nenhum pricingDebugRows encontrado no snapshot da operação.</div>
@@ -173,65 +104,49 @@ export default function PricingAnalysisPage() {
             <thead className="bg-muted/40">
               <tr>
                 <th className="p-2 text-left">Produto</th>
-                <th className="p-2 text-left">Canal</th>
-                <th className="p-2 text-left">Segmento</th>
+                <th className="p-2 text-left">Canal/Segmento</th>
                 <th className="p-2 text-left">Origem Preço</th>
+                <th className="p-2 text-left">FX/Praça</th>
                 <th className="p-2 text-right">Base</th>
                 <th className="p-2 text-right">Juros</th>
-                <th className="p-2 text-right">Margem Canal</th>
-                <th className="p-2 text-right">Ajuste Seg.</th>
+                <th className="p-2 text-right">Margem</th>
+                <th className="p-2 text-right">Ajuste Seg</th>
                 <th className="p-2 text-right">Markup PM</th>
                 <th className="p-2 text-right">Preço Final</th>
                 <th className="p-2 text-right">Subtotal</th>
+                <th className="p-2 text-right">Fee %</th>
+                <th className="p-2 text-right">G2N Combo</th>
+                <th className="p-2 text-right">G2N Barter</th>
+                <th className="p-2 text-right">G2N Incentivo</th>
                 <th className="p-2 text-right">G2N Net</th>
-                {commodityNetPrice && commodityNetPrice > 0 && (
-                  <>
-                    <th className="p-2 text-right">Paridade Unit.</th>
-                    <th className="p-2 text-right">Paridade Subtot.</th>
-                  </>
-                )}
+                <th className="p-2 text-right">Parity</th>
               </tr>
             </thead>
             <tbody>
-              {rows.map((r) => {
-                const netSubtotal = r.g2nNetRevenueAllocated || r.subtotal || 0;
-                const unitParity = commodityNetPrice && commodityNetPrice > 0
-                  ? r.normalizedPrice / commodityNetPrice
-                  : null;
-                const subtotalParity = commodityNetPrice && commodityNetPrice > 0
-                  ? Math.ceil(netSubtotal / commodityNetPrice)
-                  : null;
-
-                return (
-                  <tr key={r.productId} className="border-t">
-                    <td className="p-2">
-                      <div className="font-medium">{r.productName}</div>
-                      <div className="text-muted-foreground">{r.ref || r.code} · {r.quantity} {r.unitType}</div>
-                    </td>
-                    <td className="p-2 capitalize">{r.channelSegment}</td>
-                    <td className="p-2">{r.segmentName || '—'}</td>
-                    <td className="p-2">{r.sourceField} ({r.listCurrency})</td>
-                    <td className="p-2 text-right">{brMoney(r.priceAfterFx)}</td>
-                    <td className="p-2 text-right">{brMoney(r.interestPerUnit)} <span className="text-muted-foreground">({r.interestMultiplier.toFixed(4)})</span></td>
-                    <td className="p-2 text-right">{brMoney(r.marginPerUnit)} <span className="text-muted-foreground">({r.marginPercent.toFixed(2)}%)</span></td>
-                    <td className="p-2 text-right">{brMoney(r.segmentAdjPerUnit)} <span className="text-muted-foreground">({r.segmentAdjustmentPercent.toFixed(2)}%)</span></td>
-                    <td className="p-2 text-right">{brMoney(r.paymentMarkupPerUnit)} <span className="text-muted-foreground">({r.paymentMethodMarkupPercent.toFixed(2)}%)</span></td>
-                    <td className="p-2 text-right font-semibold">{brMoney(r.normalizedPrice)}</td>
-                    <td className="p-2 text-right font-semibold">{brMoney(r.subtotal)}</td>
-                    <td className="p-2 text-right">{brMoney(netSubtotal)}</td>
-                    {commodityNetPrice && commodityNetPrice > 0 && (
-                      <>
-                        <td className="p-2 text-right font-mono">
-                          {unitParity !== null ? `${unitParity.toFixed(4)} sc` : '—'}
-                        </td>
-                        <td className="p-2 text-right font-mono font-semibold">
-                          {subtotalParity !== null ? `${subtotalParity.toLocaleString('pt-BR')} sc` : '—'}
-                        </td>
-                      </>
-                    )}
-                  </tr>
-                );
-              })}
+              {rows.map((r) => (
+                <tr key={r.productId} className="border-t">
+                  <td className="p-2">
+                    <div className="font-medium">{r.productName}</div>
+                    <div className="text-muted-foreground">{r.ref || r.code} · {r.quantity} {r.unitType}</div>
+                  </td>
+                  <td className="p-2">{r.channelSegment} / {r.segmentName}</td>
+                  <td className="p-2">{r.sourceField} ({r.listCurrency})</td>
+                  <td className="p-2">{r.fxSourceUsed} · {r.pricingPlaza || '—'}</td>
+                  <td className="p-2 text-right">{brMoney(r.priceAfterFx, 'BRL')}</td>
+                  <td className="p-2 text-right">{brMoney(r.interestPerUnit, 'BRL')} <span className="text-muted-foreground">({r.interestMultiplier.toFixed(4)})</span></td>
+                  <td className="p-2 text-right">{brMoney(r.marginPerUnit, 'BRL')} <span className="text-muted-foreground">({r.marginPercent.toFixed(2)}%)</span></td>
+                  <td className="p-2 text-right">{brMoney(r.segmentAdjPerUnit, 'BRL')} <span className="text-muted-foreground">({r.segmentAdjustmentPercent.toFixed(2)}%)</span></td>
+                  <td className="p-2 text-right">{brMoney(r.paymentMarkupPerUnit, 'BRL')} <span className="text-muted-foreground">({r.paymentMethodMarkupPercent.toFixed(2)}%)</span></td>
+                  <td className="p-2 text-right font-semibold">{brMoney(r.normalizedPrice, 'BRL')}</td>
+                  <td className="p-2 text-right font-semibold">{brMoney(r.subtotal, 'BRL')}</td>
+                  <td className="p-2 text-right">{Number(r.feesOkenPercent || 0).toFixed(2)}%</td>
+                  <td className="p-2 text-right">{brMoney(r.g2nComboDiscountAllocated, 'BRL')}</td>
+                  <td className="p-2 text-right">{brMoney(r.g2nBarterDiscountAllocated, 'BRL')}</td>
+                  <td className="p-2 text-right">{brMoney(r.g2nDirectIncentiveAllocated, 'BRL')}</td>
+                  <td className="p-2 text-right">{brMoney(r.g2nNetRevenueAllocated, 'BRL')}</td>
+                  <td className="p-2 text-right">{r.parityCommodity ? `${r.parityCommodity} ${brMoney(r.parityPricePerSaca || 0, 'BRL')}/sc` : '—'}</td>
+                </tr>
+              ))}
             </tbody>
           </table>
         </div>

@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect, useCallback } from 'react';
+import { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import { useParams, useNavigate, useSearchParams, Link } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '@/contexts/AuthContext';
@@ -407,6 +407,12 @@ export default function OperationStepperPage() {
     const selected = dueDateOptions.find(o => o.value === String(dueMonths));
     return selected?.date || null;
   }, [dueDateOptions, dueMonths]);
+  const hasDueDateConfigIssue = !!selectedCampaignId && dueDateOptions.length === 0;
+
+  useEffect(() => {
+    if (!hasDueDateConfigIssue) return;
+    toast.error('Campanha sem vencimentos configurados. Ajuste a campanha para continuar.');
+  }, [hasDueDateConfigIssue]);
 
   const segmentOptions = useMemo(() => {
     if (simResult?.segmentOptions?.length) return simResult.segmentOptions.map(s => ({ value: s.value, label: s.label }));
@@ -482,9 +488,59 @@ export default function OperationStepperPage() {
     return Array.from(eligibleCitySet).some(v => /^\d{6,8}$/.test(String(v)));
   }, [eligibleCitySet, hasCityFilter]);
 
+  const selectedDeliveryLocationId = useMemo(() => {
+    const match = deliveryLocations.find((loc: any) => loc.warehouse_name === freightOrigin);
+    return match?.id || undefined;
+  }, [deliveryLocations, freightOrigin]);
+
+  const lastSimulationKeyRef = useRef<string>('');
+  const simulationKey = useMemo(() => {
+    const selectionKey = Array.from(selectedProducts.entries())
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([productId, dosePerHectare]) => ({
+        productId,
+        dosePerHectare,
+        overrideQuantity: quantityMode === 'livre' ? (freeQuantities.get(productId) || null) : null,
+      }));
+
+    return JSON.stringify({
+      selectedCampaignId,
+      area,
+      segment,
+      channelEnum,
+      dueMonths,
+      selectedDueDate,
+      selectedPaymentMethod,
+      selectedCommodity,
+      port,
+      freightOrigin,
+      selectedDeliveryLocationId,
+      hasContract,
+      userPrice,
+      showInsurance,
+      selectedBuyerId,
+      contractPriceType,
+      performanceIndex,
+      clientState,
+      selectedCityName,
+      clientCityCode,
+      usesIbgeCityEligibility,
+      clientType,
+      clientDocument,
+      quantityMode,
+      selectionKey,
+    });
+  }, [selectedCampaignId, selectedProducts, area, segment, channelEnum, dueMonths, selectedDueDate, selectedPaymentMethod,
+      selectedCommodity, port, freightOrigin, selectedDeliveryLocationId, hasContract, userPrice, showInsurance,
+      selectedBuyerId, contractPriceType, performanceIndex, clientState, selectedCityName,
+      clientCityCode, usesIbgeCityEligibility, clientType, clientDocument, quantityMode, freeQuantities]);
+
   // ─── Trigger simulation on input changes (server-authoritative) ───
   useEffect(() => {
-    if (!selectedCampaignId || selectedProducts.size === 0 || !dueMonths) return;
+    if (!selectedCampaignId || selectedProducts.size === 0 || !dueMonths || hasDueDateConfigIssue) return;
+    if (lastSimulationKeyRef.current === simulationKey) return;
+    lastSimulationKeyRef.current = simulationKey;
+
     const inputSelections = Array.from(selectedProducts.entries()).map(([id, dose]) => ({
       productId: id, dosePerHectare: dose, areaHectares: area,
       overrideQuantity: quantityMode === 'livre' ? (freeQuantities.get(id) || undefined) : undefined,
@@ -493,7 +549,7 @@ export default function OperationStepperPage() {
       campaignId: selectedCampaignId, selections: inputSelections, segmentName: segment || channelEnum, channelSegment: channelEnum, dueMonths, dueDate: selectedDueDate || undefined,
       paymentMethodId: selectedPaymentMethod || undefined,
       commodityCode: selectedCommodity || undefined,
-      port: port || undefined, freightOrigin: freightOrigin || undefined,
+      port: port || undefined, freightOrigin: freightOrigin || undefined, deliveryLocationId: selectedDeliveryLocationId,
       hasContract, userOverridePrice: hasContract ? userPrice : undefined,
       showInsurance, barterDiscountPercent: 0,
       buyerId: selectedBuyerId && selectedBuyerId !== '__other__' ? selectedBuyerId : undefined,
@@ -503,11 +559,12 @@ export default function OperationStepperPage() {
         city: (usesIbgeCityEligibility ? clientCityCode : selectedCityName) || undefined,
         clientType, clientDocument: clientDocument || undefined, segment,
       },
-    }, 250);
+    });
   }, [selectedCampaignId, selectedProducts, area, segment, channelEnum, dueMonths, selectedDueDate, selectedPaymentMethod,
-      selectedCommodity, port, freightOrigin, hasContract, userPrice, showInsurance,
+      selectedCommodity, port, freightOrigin, selectedDeliveryLocationId, hasContract, userPrice, showInsurance,
       selectedBuyerId, contractPriceType, performanceIndex, clientState, selectedCityName,
-      clientCityCode, usesIbgeCityEligibility, clientType, clientDocument, quantityMode, freeQuantities]);
+      clientCityCode, usesIbgeCityEligibility, clientType, clientDocument, quantityMode, freeQuantities,
+      simulationKey, hasDueDateConfigIssue, selectedDeliveryLocationId]);
 
   // ─── Eligibility from backend result ───
   const eligibility = simResult?.eligibility ?? null;
@@ -799,7 +856,7 @@ export default function OperationStepperPage() {
   // ─── Step validation ───
   const canProceed = (stepId: string): boolean => {
     switch (stepId) {
-      case 'context': return !!selectedCampaignId && !!clientName && !eligibility?.blocked;
+      case 'context': return !!selectedCampaignId && !!clientName && !eligibility?.blocked && !hasDueDateConfigIssue;
       case 'order': return selectedProducts.size > 0;
       case 'simulation': return grossToNet.grossRevenue > 0;
       case 'payment': return true;
@@ -815,7 +872,7 @@ export default function OperationStepperPage() {
 
   // Montantes do pedido usam a moeda de saída informada pelo motor (server-authoritative)
   const moneyCurrency = simResult?.moneyCurrency || 'BRL';
-  const formatCurrency = (v: number | null | undefined) => (v ?? 0).toLocaleString('pt-BR', { style: 'currency', currency: moneyCurrency });
+  const formatCurrency = (v: number) => v.toLocaleString('pt-BR', { style: 'currency', currency: moneyCurrency });
   const currentStepDef = visibleSteps[currentStep];
 
   if (loadingCampaigns) return <div className="p-6"><Skeleton className="h-64 w-full" /></div>;
@@ -969,10 +1026,11 @@ export default function OperationStepperPage() {
                 </div>
                 <div className="glass-card p-4">
                   <label className="stat-label">Vencimento</label>
-                  <Select value={String(dueMonths)} onValueChange={v => setDueMonths(Number(v))}>
-                    <SelectTrigger className="mt-1 bg-muted border-border text-foreground"><SelectValue /></SelectTrigger>
+                  <Select value={String(dueMonths)} onValueChange={v => setDueMonths(Number(v))} disabled={dueDateOptions.length === 0}>
+                    <SelectTrigger className="mt-1 bg-muted border-border text-foreground"><SelectValue placeholder={dueDateOptions.length === 0 ? 'Sem vencimentos configurados' : undefined} /></SelectTrigger>
                     <SelectContent>{dueDateOptions.map(o => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}</SelectContent>
                   </Select>
+                  {dueDateOptions.length === 0 && <p className="text-[11px] text-destructive mt-2">Campanha sem vencimentos configurados.</p>}
                 </div>
               </div>
               {/* Eligibility flags */}

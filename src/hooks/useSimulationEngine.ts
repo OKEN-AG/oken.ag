@@ -45,6 +45,7 @@ export interface PricingDebugRow {
   g2nComboDiscountAllocated: number; g2nBarterDiscountAllocated: number;
   g2nDirectIncentiveAllocated: number; g2nNetRevenueAllocated: number;
   parityCommodity: string | null; parityPricePerSaca: number | null;
+  fxSourceUsed: 'products' | 'barter'; pricingPlaza: string | null;
 }
 
 export interface GrossToNetResult {
@@ -138,6 +139,7 @@ export interface SimulateInput {
   commodityCode?: string;
   port?: string;
   freightOrigin?: string;
+  deliveryLocationId?: string;
   hasContract?: boolean;
   userOverridePrice?: number;
   showInsurance?: boolean;

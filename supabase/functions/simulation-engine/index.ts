@@ -63,6 +63,7 @@ interface PricingDebugRow {
   g2nComboDiscountAllocated: number; g2nBarterDiscountAllocated: number;
   g2nDirectIncentiveAllocated: number; g2nNetRevenueAllocated: number;
   parityCommodity: string | null; parityPricePerSaca: number | null;
+  fxSourceUsed: 'products' | 'barter'; pricingPlaza: string | null;
 }
 
 interface GrossToNetResult {
@@ -240,8 +241,11 @@ function calculatePricing(
     ? (product.price_term || product.price_per_unit)
     : (resolvedSourceField === 'price_cash' ? (product.price_cash || product.price_per_unit) : product.price_per_unit);
 
-  const listCurrency = ((campaign.currency || forcedCurrency || product.currency || 'BRL') as string).toUpperCase() as 'BRL' | 'USD';
-  const exchangeRateProducts = Number(campaign.exchange_rate_products || 1);
+  const listCurrency = (forcedCurrency || product.currency || 'BRL') as 'BRL' | 'USD';
+  const useBarterFx = priceListFormat.includes('indicativa') || priceListFormat.includes('barter');
+  const exchangeRateProducts = useBarterFx
+    ? Number(campaign.exchange_rate_barter || campaign.exchange_rate_products || 1)
+    : Number(campaign.exchange_rate_products || 1);
   const priceAfterFx = listCurrency === 'USD' ? sourceValue * exchangeRateProducts : sourceValue;
 
   const isTermPrice = resolvedSourceField === 'price_term';
@@ -316,6 +320,8 @@ function calculatePricing(
       g2nNetRevenueAllocated: 0,
       parityCommodity: null,
       parityPricePerSaca: null,
+      fxSourceUsed: useBarterFx ? 'barter' : 'products',
+      pricingPlaza: null,
     },
   };
 }
@@ -550,7 +556,7 @@ serve(async (req: Request) => {
         const {
           campaignId, selections: inputSelections, segmentName, channelSegment, dueMonths, dueDate,
           paymentMethodId, commodityCode, port: portName,
-          freightOrigin, hasContract: hasExistingContract, userOverridePrice,
+          freightOrigin, deliveryLocationId, hasContract: hasExistingContract, userOverridePrice,
           showInsurance, clientContext, barterDiscountPercent,
           buyerId, contractPriceType: cpt, performanceIndex: pi,
         } = body;
@@ -566,13 +572,14 @@ serve(async (req: Request) => {
         if (cErr || !campaign) throw new Error('Campaign not found');
 
         // 2. Fetch related data in parallel
-        const [marginsRes, segmentsRes, pmRes, combosRes, cpRes, frRes, buyersRes, valRes, clientsRes] = await Promise.all([
+        const [marginsRes, segmentsRes, pmRes, combosRes, cpRes, frRes, dlRes, buyersRes, valRes, clientsRes] = await Promise.all([
           supabase.from('channel_margins').select('*').eq('campaign_id', campaignId),
           supabase.from('campaign_segments').select('*').eq('campaign_id', campaignId).eq('active', true),
           supabase.from('campaign_payment_methods').select('*').eq('campaign_id', campaignId).eq('active', true),
           supabase.from('combos').select('id, name, discount_percent, combo_products(product_id, min_dose_per_ha, max_dose_per_ha, products(ref))').eq('campaign_id', campaignId),
           supabase.from('commodity_pricing').select('*').eq('campaign_id', campaignId),
           supabase.from('freight_reducers').select('*').eq('campaign_id', campaignId),
+          supabase.from('campaign_delivery_locations').select('*').eq('campaign_id', campaignId),
           supabase.from('campaign_buyers').select('*').eq('campaign_id', campaignId),
           supabase.from('campaign_commodity_valorizations').select('*').eq('campaign_id', campaignId),
           supabase.from('campaign_clients').select('document').eq('campaign_id', campaignId),
@@ -667,7 +674,7 @@ serve(async (req: Request) => {
 
         // 8. Eligibility
         const whitelist = (clientsRes.data || []).map((c: any) => c.document);
-        const eligibility = checkEligibility(campaign, { ...clientContext, whitelist });
+        const eligibility = checkEligibility(campaign, { ...clientContext, orderAmount: grossToNet.grossRevenue, whitelist });
 
         // 9. Parity (if barter)
         let parityResult: ParityResultType | null = null;
@@ -686,8 +693,13 @@ serve(async (req: Request) => {
           if (!commodityPricingRow.peso_saca_kg) throw new Error('commodity_pricing.peso_saca_kg is not configured');
           if (!commodityPricingRow.exchange_rate_bolsa) throw new Error('commodity_pricing.exchange_rate_bolsa is not configured');
 
-          const freightReducer = freightOrigin
-            ? (frRes.data || []).find((fr: any) => fr.origin === freightOrigin)
+          const deliveryLocation = deliveryLocationId
+            ? (dlRes.data || []).find((dl: any) => dl.id === deliveryLocationId)
+            : null;
+
+          const freightOriginResolved = freightOrigin || deliveryLocation?.city || '';
+          const freightReducer = freightOriginResolved
+            ? (frRes.data || []).find((fr: any) => fr.origin === freightOriginResolved || fr.origin === deliveryLocation?.city)
             : null;
 
           const buyer = buyerId ? (buyersRes.data || []).find((b: any) => b.id === buyerId) : null;
@@ -733,6 +745,13 @@ serve(async (req: Request) => {
         }
 
         if (parityResult) {
+          const deliveryLocation = deliveryLocationId
+            ? (dlRes.data || []).find((dl: any) => dl.id === deliveryLocationId)
+            : null;
+          const plaza = deliveryLocation ? `${deliveryLocation.city}/${deliveryLocation.state}` : null;
+          for (const row of pricingDebugRowsAllocated) {
+            row.parityPricePerSaca = parityResult.commodityPricePerUnit;
+            row.pricingPlaza = plaza;
           for (const row of pricingDebugRowsAllocated) {
             row.parityPricePerSaca = parityResult.commodityPricePerUnit;
           }
@@ -759,6 +778,7 @@ serve(async (req: Request) => {
           activatedDiscount,
           complementaryDiscount,
           discountProgress: maxDiscount > 0 ? (activatedDiscount / maxDiscount) * 100 : 0,
+          moneyCurrency: (campaign.currency || 'BRL').toUpperCase(),
           moneyCurrency: 'BRL',
           campaignConfig: {
             currency: campaign.currency,
