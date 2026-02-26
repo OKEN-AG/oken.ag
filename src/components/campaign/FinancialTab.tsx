@@ -115,7 +115,7 @@ export default function FinancialTab({ form, onFieldChange, paymentMethods, onPa
                   <TableHead>Meio de Pagamento</TableHead>
                   <TableHead className="w-20 text-center">Ativo</TableHead>
                   <TableHead className="w-36">Ágio/Deságio %</TableHead>
-                  <TableHead className="w-36">Juros a.a. %</TableHead>
+                  <TableHead className="w-36">Juros a.m. %</TableHead>
                   <TableHead className="w-12"></TableHead>
                 </TableRow>
               </TableHeader>
