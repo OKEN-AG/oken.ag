@@ -13,7 +13,7 @@ import { toast } from 'sonner';
 import { getAllMunicipios } from '@/data/municipios';
 import GeneralTab, { type ClientRow } from '@/components/campaign/GeneralTab';
 import FinancialTab, { type PaymentMethodRow, type DueDateRow } from '@/components/campaign/FinancialTab';
-import EligibilityTab, { type SegmentRow } from '@/components/campaign/EligibilityTab';
+import EligibilityTab, { type SegmentRow, type ChannelMarginRow } from '@/components/campaign/EligibilityTab';
 import ProductsTab from '@/components/campaign/ProductsTab';
 import CombosTab from '@/components/campaign/CombosTab';
 import CommoditiesTab from '@/components/campaign/CommoditiesTab';
@@ -106,6 +106,7 @@ export default function CampaignFormPage() {
   const [clients, setClients] = useState<ClientRow[]>([]);
   const [paymentMethods, setPaymentMethods] = useState<PaymentMethodRow[]>([]);
   const [segments, setSegments] = useState<SegmentRow[]>([]);
+  const [channelMargins, setChannelMargins] = useState<ChannelMarginRow[]>([]);
   const [dueDates, setDueDates] = useState<DueDateRow[]>([]);
   const [selectedCities, setSelectedCities] = useState<string[]>([]);
   const { options: commodityOptions } = useCommodityOptions();
@@ -148,12 +149,12 @@ export default function CampaignFormPage() {
   }, [existing]);
 
   const loadSubData = async (campaignId: string) => {
-      // Bug #23: Remove (supabase as any) - use typed client
-      const [clientsRes, methodsRes, segmentsRes, datesRes] = await Promise.all([
+      const [clientsRes, methodsRes, segmentsRes, datesRes, marginsRes] = await Promise.all([
       supabase.from('campaign_clients').select('*').eq('campaign_id', campaignId),
       supabase.from('campaign_payment_methods').select('*').eq('campaign_id', campaignId),
       supabase.from('campaign_segments').select('*').eq('campaign_id', campaignId),
       supabase.from('campaign_due_dates').select('*').eq('campaign_id', campaignId),
+      supabase.from('channel_margins').select('*').eq('campaign_id', campaignId),
     ]);
     if (clientsRes.data) setClients(clientsRes.data.map((c: any) => ({ document: formatCpfCnpj(c.document || ''), name: c.name })));
     if (methodsRes.data) setPaymentMethods(methodsRes.data.map((m: any) => ({
@@ -166,6 +167,10 @@ export default function CampaignFormPage() {
     })));
     if (datesRes.data) setDueDates(datesRes.data.map((d: any) => ({
       region_type: d.region_type, region_value: d.region_value, due_date: d.due_date,
+    })));
+    if (marginsRes.data) setChannelMargins(marginsRes.data.map((m: any) => ({
+      segment: m.segment,
+      margin_percent: Number(m.margin_percent),
     })));
   };
 
@@ -189,7 +194,6 @@ export default function CampaignFormPage() {
       toast.warning('Algumas commodities removidas não estão mais ativas no MasterData.');
     }
 
-    // Block saving an active campaign without required fields
     if (form.active) {
       const errors: string[] = [];
       if (!form.start_date || !form.end_date) errors.push('Vigência (início e fim) deve ser definida');
@@ -207,7 +211,6 @@ export default function CampaignFormPage() {
       const selectedMunicipios = allMunicipios.filter(m => selectedCities.includes(m.ibge));
       const states = [...new Set(selectedMunicipios.map(m => m.uf))];
       const mesos = [...new Set(selectedMunicipios.map(m => m.mesoName))];
-      // Bug #19: Use user-selected price_list_format, only fallback if truly empty
       const priceFormat = form.price_list_format;
 
       const campaignData: any = {
@@ -256,12 +259,12 @@ export default function CampaignFormPage() {
       }
 
       // Save sub-tables
-      // Bug #23: Remove (supabase as any)
       await Promise.all([
         supabase.from('campaign_clients').delete().eq('campaign_id', campaignId!),
         supabase.from('campaign_payment_methods').delete().eq('campaign_id', campaignId!),
         supabase.from('campaign_segments').delete().eq('campaign_id', campaignId!),
         supabase.from('campaign_due_dates').delete().eq('campaign_id', campaignId!),
+        supabase.from('channel_margins').delete().eq('campaign_id', campaignId!),
       ]);
 
       const inserts = [];
@@ -276,6 +279,9 @@ export default function CampaignFormPage() {
       );
       if (dueDates.length > 0) inserts.push(
         supabase.from('campaign_due_dates').insert(dueDates.map(d => ({ ...d, campaign_id: campaignId! })))
+      );
+      if (channelMargins.length > 0) inserts.push(
+        supabase.from('channel_margins').insert(channelMargins.map(m => ({ ...m, campaign_id: campaignId! })))
       );
       await Promise.all(inserts);
 
@@ -292,6 +298,7 @@ export default function CampaignFormPage() {
       queryClient.invalidateQueries({ queryKey: ['campaign-due-dates-sim', cid] });
       queryClient.invalidateQueries({ queryKey: ['campaign-segments-sim', cid] });
       queryClient.invalidateQueries({ queryKey: ['campaign-payment-methods-sim', cid] });
+      queryClient.invalidateQueries({ queryKey: ['channel_margins', cid] });
       queryClient.invalidateQueries({ queryKey: ['operation-stats'] });
 
       navigate('/admin/campanhas');
@@ -340,12 +347,6 @@ export default function CampaignFormPage() {
             onClientsChange={setClients}
             onValidateActivation={() => {
               const errors: string[] = [];
-              // Check products linked
-              if (!isNew) {
-                // We'll validate via campaignId existence — products are in a separate tab
-                // Can't easily check async here, so skip for new campaigns
-              }
-              // Check eligibility: at least 1 city/state
               if (selectedCities.length === 0) errors.push('Defina pelo menos 1 cidade/estado na aba Elegibilidade');
               return errors;
             }}
@@ -372,6 +373,8 @@ export default function CampaignFormPage() {
             onSelectedCitiesChange={setSelectedCities}
             segments={segments}
             onSegmentsChange={setSegments}
+            channelMargins={channelMargins}
+            onChannelMarginsChange={setChannelMargins}
             clientType={form.client_type}
             onClientTypeChange={v => onFieldChange('client_type', v)}
             minOrderAmount={form.min_order_amount}
@@ -391,9 +394,7 @@ export default function CampaignFormPage() {
                     checked={form.active_modules.includes(mod.value)}
                     onCheckedChange={checked => {
                       if (checked) {
-                        // Dependency validation for modules
                         if (mod.value === 'barter' && !isNew) {
-                          // Check if commodity_pricing exists
                           supabase.from('commodity_pricing').select('id').eq('campaign_id', id!).limit(1).then(({ data }) => {
                             if (!data || data.length === 0) {
                               toast.warning('Atenção: módulo Barter requer pelo menos 1 commodity configurada na aba Commodities.');

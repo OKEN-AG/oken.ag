@@ -546,7 +546,7 @@ serve(async (req: Request) => {
     const { data: { user }, error: authError } = await supabase.auth.getUser();
     if (authError || !user) return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 
-    let result: Record<string, unknown>;
+    let result: Record<string, unknown> | EligibilityResult;
 
     switch (endpoint) {
       // ═══════════════════════════════════════════
@@ -752,6 +752,8 @@ serve(async (req: Request) => {
           for (const row of pricingDebugRowsAllocated) {
             row.parityPricePerSaca = parityResult.commodityPricePerUnit;
             row.pricingPlaza = plaza;
+          for (const row of pricingDebugRowsAllocated) {
+            row.parityPricePerSaca = parityResult.commodityPricePerUnit;
           }
         }
 
@@ -777,6 +779,7 @@ serve(async (req: Request) => {
           complementaryDiscount,
           discountProgress: maxDiscount > 0 ? (activatedDiscount / maxDiscount) * 100 : 0,
           moneyCurrency: (campaign.currency || 'BRL').toUpperCase(),
+          moneyCurrency: 'BRL',
           campaignConfig: {
             currency: campaign.currency,
             target: campaign.target,
