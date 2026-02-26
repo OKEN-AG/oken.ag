@@ -804,7 +804,7 @@ export default function OperationStepperPage() {
 
   // Montantes do pedido usam a moeda de saída informada pelo motor (server-authoritative)
   const moneyCurrency = simResult?.moneyCurrency || 'BRL';
-  const formatCurrency = (v: number) => v.toLocaleString('pt-BR', { style: 'currency', currency: moneyCurrency });
+  const formatCurrency = (v: number | null | undefined) => (v ?? 0).toLocaleString('pt-BR', { style: 'currency', currency: moneyCurrency });
   const currentStepDef = visibleSteps[currentStep];
 
   if (loadingCampaigns) return <div className="p-6"><Skeleton className="h-64 w-full" /></div>;
