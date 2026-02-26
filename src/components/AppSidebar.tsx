@@ -1,7 +1,7 @@
 import { NavLink, useLocation } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import {
-  LayoutDashboard, Settings, ShoppingCart, BarChart3,
+  LayoutDashboard, ShoppingCart, BarChart3,
   ChevronLeft, ChevronRight, LogOut,
   FolderCog, Users, Database, ReceiptText } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
@@ -13,7 +13,6 @@ import logoIcon from '@/assets/logo-icon.png';
 
 const navItems: { to: string; icon: any; label: string; module?: JourneyModule }[] = [
   { to: '/', icon: LayoutDashboard, label: 'Dashboard' },
-  { to: '/campanha', icon: Settings, label: 'Campanha' },
   { to: '/operacao/novo', icon: ShoppingCart, label: 'Nova Operação' },
   { to: '/monitoramento', icon: BarChart3, label: 'Monitoramento' },
 ];
