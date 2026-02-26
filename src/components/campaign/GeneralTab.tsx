@@ -13,6 +13,9 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { Calendar } from '@/components/ui/calendar';
 import { format } from 'date-fns';
 import { cn } from '@/lib/utils';
+import { useCommodityOptions } from '@/hooks/useCommoditiesMasterData';
+import { normalizeCommodityCode } from '@/lib/commodity';
+import { formatCpfCnpj } from '@/lib/ptbr';
 
 export type ClientRow = { document: string; name: string };
 
@@ -22,12 +25,6 @@ const TARGETS = [
   { value: 'venda_indireta_consumidor', label: 'Venda Indireta ao Consumidor' },
 ];
 
-const COMMODITIES = [
-  { value: 'soja', label: 'Soja' },
-  { value: 'milho', label: 'Milho' },
-  { value: 'cafe', label: 'Café' },
-  { value: 'algodao', label: 'Algodão' },
-];
 
 const CAMPAIGN_TYPES = [
   { value: 'vendas', label: 'Vendas' },
@@ -87,10 +84,11 @@ export default function GeneralTab({ form, onFieldChange, clients, onClientsChan
   const [pasteMode, setPasteMode] = useState(false);
   const [pasteText, setPasteText] = useState('');
   const fileRef = useRef<HTMLInputElement>(null);
+  const { options: commodityOptions } = useCommodityOptions();
 
   const addClient = () => {
     if (!newDoc.trim() && !newName.trim()) return;
-    onClientsChange([...clients, { document: newDoc.trim(), name: newName.trim() }]);
+    onClientsChange([...clients, { document: formatCpfCnpj(newDoc.trim()), name: newName.trim() }]);
     setNewDoc('');
     setNewName('');
   };
@@ -101,7 +99,7 @@ export default function GeneralTab({ form, onFieldChange, clients, onClientsChan
     if (!pasteText.trim()) return;
     const lines = pasteText.trim().split('\n');
     const newClients = lines
-      .map(line => { const parts = line.split(/[;\t,]/).map(p => p.trim()); return { document: parts[0] || '', name: parts[1] || '' }; })
+      .map(line => { const parts = line.split(/[;\t,]/).map(p => p.trim()); return { document: formatCpfCnpj(parts[0] || ''), name: parts[1] || '' }; })
       .filter(c => c.document || c.name);
     onClientsChange([...clients, ...newClients]);
     setPasteText('');
@@ -116,7 +114,7 @@ export default function GeneralTab({ form, onFieldChange, clients, onClientsChan
       reader.onload = (ev) => {
         const text = ev.target?.result as string;
         const lines = text.trim().split('\n').slice(1);
-        const newClients = lines.map(line => { const parts = line.split(/[;\t,]/).map(p => p.trim()); return { document: parts[0] || '', name: parts[1] || '' }; }).filter(c => c.document || c.name);
+        const newClients = lines.map(line => { const parts = line.split(/[;\t,]/).map(p => p.trim()); return { document: formatCpfCnpj(parts[0] || ''), name: parts[1] || '' }; }).filter(c => c.document || c.name);
         onClientsChange([...clients, ...newClients]);
       };
       reader.readAsText(file);
@@ -127,7 +125,7 @@ export default function GeneralTab({ form, onFieldChange, clients, onClientsChan
         const workbook = XLSX.read(data, { type: 'array' });
         const sheet = workbook.Sheets[workbook.SheetNames[0]];
         const rows = XLSX.utils.sheet_to_json(sheet, { header: 1 }) as string[][];
-        const newClients = rows.slice(1).map(row => ({ document: String(row[0] || '').trim(), name: String(row[1] || '').trim() })).filter(c => c.document || c.name);
+        const newClients = rows.slice(1).map(row => ({ document: formatCpfCnpj(String(row[0] || '').trim()), name: String(row[1] || '').trim() })).filter(c => c.document || c.name);
         onClientsChange([...clients, ...newClients]);
       };
       reader.readAsArrayBuffer(file);
@@ -136,8 +134,14 @@ export default function GeneralTab({ form, onFieldChange, clients, onClientsChan
   };
 
   const toggleCommodity = (value: string) => {
-    const current = form.commodities || [];
-    onFieldChange('commodities', current.includes(value) ? current.filter(c => c !== value) : [...current, value]);
+    const normalizedValue = normalizeCommodityCode(value);
+    const current = (form.commodities || []).map(normalizeCommodityCode);
+    onFieldChange(
+      'commodities',
+      current.includes(normalizedValue)
+        ? current.filter(c => c !== normalizedValue)
+        : [...current, normalizedValue],
+    );
   };
 
   return (
@@ -221,12 +225,15 @@ export default function GeneralTab({ form, onFieldChange, clients, onClientsChan
         <div className="space-y-2">
           <Label>Commodities</Label>
           <div className="flex gap-4 flex-wrap">
-            {COMMODITIES.map(c => (
+            {commodityOptions.map(c => (
               <label key={c.value} className="flex items-center gap-2 text-sm">
-                <Checkbox checked={(form.commodities || []).includes(c.value)} onCheckedChange={() => toggleCommodity(c.value)} />
+                <Checkbox checked={(form.commodities || []).map(normalizeCommodityCode).includes(normalizeCommodityCode(c.value))} onCheckedChange={() => toggleCommodity(c.value)} />
                 {c.label}
               </label>
             ))}
+            {commodityOptions.length === 0 && (
+              <p className="text-xs text-muted-foreground">Nenhuma commodity ativa cadastrada no MasterData.</p>
+            )}
           </div>
         </div>
         <div className="space-y-2 pt-6">
@@ -278,7 +285,7 @@ export default function GeneralTab({ form, onFieldChange, clients, onClientsChan
         )}
 
         <div className="flex gap-2">
-          <Input placeholder="CPF/CNPJ" value={newDoc} onChange={e => setNewDoc(e.target.value)} className="max-w-[200px]" onKeyDown={e => e.key === 'Enter' && (e.preventDefault(), addClient())} />
+          <Input placeholder="CPF/CNPJ" value={newDoc} onChange={e => setNewDoc(formatCpfCnpj(e.target.value))} className="max-w-[200px]" onKeyDown={e => e.key === 'Enter' && (e.preventDefault(), addClient())} />
           <Input placeholder="Nome" value={newName} onChange={e => setNewName(e.target.value)} className="flex-1" onKeyDown={e => e.key === 'Enter' && (e.preventDefault(), addClient())} />
           <Button variant="outline" size="icon" onClick={addClient}><Plus className="w-4 h-4" /></Button>
         </div>

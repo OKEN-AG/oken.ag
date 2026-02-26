@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback } from 'react';
+import { useState, useRef } from 'react';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
@@ -9,6 +9,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { useProducts, useCreateProduct, useDeleteProduct, useUpdateProduct, useCampaignProducts, useLinkProductToCampaign, useUnlinkProductFromCampaign } from '@/hooks/useProducts';
 import { toast } from 'sonner';
 import * as XLSX from 'xlsx';
+import { parseLocaleNumber, splitFlexibleLine, normalizeText, normalizeRef } from '@/lib/import-utils';
 
 type Props = { campaignId?: string };
 
@@ -77,42 +78,99 @@ export default function ProductsTab({ campaignId }: Props) {
   const parseRows = (text: string) => {
     const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
     const rows: any[] = [];
+
     for (const line of lines) {
-      const parts = line.split(/\t|;/).map(s => s.trim());
+      const parts = splitFlexibleLine(line);
       if (parts.length < 5) continue;
-      // Skip header lines
-      if (parts[0]?.toUpperCase() === '#' || parts[0]?.toUpperCase() === 'CÓDIGO') continue;
-      const num = (s: string) => Number(s.replace(',', '.').replace(/[^\d.-]/g, '')) || 0;
+
+      const p0 = normalizeText(parts[0] || '');
+      const p1 = normalizeText(parts[1] || '');
+      if (p0 === '#' || p0 === 'codigo' || p1 === 'produtos' || p1 === 'produto') continue;
+
+      const unitsPerBox = parts[5] ? parseLocaleNumber(parts[5]) : 12;
+      const kgOrLiters = parts[6] ? parseLocaleNumber(parts[6]) : 1;
+
       rows.push({
-        code: parts[0] || '',
-        name: parts[1] || '',
-        ref: parts[2] || '',
-        price_cash: num(parts[3]),
-        price_term: num(parts[4]),
-        units_per_box: parts[5] ? num(parts[5]) : 12,
+        code: String(parts[0] || '').trim(),
+        name: String(parts[1] || '').trim(),
+        ref: String(parts[2] || '').trim().toUpperCase(),
+        price_cash: parseLocaleNumber(parts[3]),
+        price_term: parseLocaleNumber(parts[4]),
+        units_per_box: unitsPerBox > 0 ? unitsPerBox : 12,
         unit_type: 'l',
-        dose_per_hectare: parts[6] ? num(parts[6]) : 1,
+        dose_per_hectare: kgOrLiters > 0 ? kgOrLiters : 1,
         category: 'Herbicida',
-        price_per_unit: num(parts[3]),
-        min_dose: 0.1, max_dose: 10,
-        boxes_per_pallet: 40, pallets_per_truck: 20,
-        currency: 'USD', price_type: 'vista', includes_margin: false,
+        price_per_unit: parseLocaleNumber(parts[3]),
+        min_dose: 0.1,
+        max_dose: 10,
+        boxes_per_pallet: 40,
+        pallets_per_truck: 20,
+        currency: 'USD',
+        price_type: 'vista',
+        includes_margin: false,
       });
     }
     return rows;
   };
 
   const importRows = async (rows: any[]) => {
-    if (!campaignId || rows.length === 0) { toast.error('Nenhum dado válido encontrado'); return; }
-    let count = 0;
+    if (!campaignId || rows.length === 0) {
+      toast.error('Nenhum dado válido encontrado');
+      return;
+    }
+
+    const productsByCode = new Map<string, any>();
+    const productsByRef = new Map<string, any>();
+    for (const p of allProducts || []) {
+      const code = normalizeText(p.code || '');
+      const ref = normalizeRef(p.ref || '');
+      if (code) productsByCode.set(code, p);
+      if (ref) productsByRef.set(ref, p);
+    }
+
+    const linkedIds = new Set(products.map((p: any) => p.id));
+
+    let createdCount = 0;
+    let updatedCount = 0;
+    let linkedCount = 0;
+    let skippedCount = 0;
+
     for (const row of rows) {
       try {
-        const created = await createMut.mutateAsync(row);
-        await linkMut.mutateAsync({ campaignId, productId: created.id });
-        count++;
-      } catch (e: any) { console.error(e); }
+        const codeKey = normalizeText(row.code || '');
+        const refKey = normalizeRef(row.ref || '');
+        const existing = (codeKey && productsByCode.get(codeKey)) || (refKey && productsByRef.get(refKey));
+
+        let productId: string | null = null;
+
+        if (existing?.id) {
+          productId = existing.id;
+          await updateMut.mutateAsync({ id: existing.id, ...row });
+          updatedCount++;
+        } else {
+          const created = await createMut.mutateAsync(row);
+          productId = created.id;
+          createdCount++;
+        }
+
+        if (productId && !linkedIds.has(productId)) {
+          try {
+            await linkMut.mutateAsync({ campaignId, productId });
+            linkedIds.add(productId);
+            linkedCount++;
+          } catch {
+            // already linked or constraint issue; keep import flow
+          }
+        }
+      } catch (e) {
+        console.error(e);
+        skippedCount++;
+      }
     }
-    toast.success(`${count} produtos importados`);
+
+    toast.success(
+      `Importação concluída: ${createdCount} criados, ${updatedCount} atualizados, ${linkedCount} vinculados${skippedCount > 0 ? `, ${skippedCount} ignorados` : ''}.`,
+    );
   };
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {

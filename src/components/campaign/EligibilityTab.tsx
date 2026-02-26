@@ -8,6 +8,7 @@ import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Plus, Trash2, ChevronDown, ChevronRight } from 'lucide-react';
 import { getAllMunicipios, getUFs, getMesosByUF, getMunicipiosByMeso } from '@/data/municipios';
+import { parsePtBrNumber, formatPtBrCurrency } from '@/lib/ptbr';
 
 export type SegmentRow = {
   segment_name: string;
@@ -147,13 +148,14 @@ export default function EligibilityTab({
         <div className="space-y-2">
           <Label className="text-base font-semibold">Montante Mínimo de Pedido ({currency})</Label>
           <Input
-            type="number"
-            step="0.01"
+            type="text"
+            inputMode="decimal"
             value={minOrderAmount}
-            onChange={e => onMinOrderAmountChange(Number(e.target.value))}
-            placeholder="0.00"
+            onChange={e => onMinOrderAmountChange(parsePtBrNumber(e.target.value))}
+            placeholder="0,00"
             className="max-w-xs"
           />
+          <p className="text-xs text-muted-foreground">Valor formatado: {formatPtBrCurrency(minOrderAmount, currency === 'USD' ? 'USD' : 'BRL')}</p>
         </div>
       </div>
 
@@ -254,7 +256,7 @@ export default function EligibilityTab({
                       <Switch checked={s.active} onCheckedChange={v => updateSegment(i, 'active', v)} />
                     </TableCell>
                     <TableCell>
-                      <Input type="number" step="0.1" value={s.price_adjustment_percent} onChange={e => updateSegment(i, 'price_adjustment_percent', Number(e.target.value))} className="h-8" />
+                      <Input type="text" inputMode="decimal" value={s.price_adjustment_percent} onChange={e => updateSegment(i, 'price_adjustment_percent', parsePtBrNumber(e.target.value))} className="h-8" />
                     </TableCell>
                     <TableCell>
                       <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => onSegmentsChange(segments.filter((_, j) => j !== i))}>
