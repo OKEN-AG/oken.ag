@@ -4,7 +4,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '@/contexts/AuthContext';
 import { useActiveCampaigns, useCampaignData } from '@/hooks/useActiveCampaign';
 import { useCommodityOptions } from '@/hooks/useCommoditiesMasterData';
-import { DEFAULT_COMMODITY_FALLBACK, normalizeCommodityCode } from '@/lib/commodity';
+import { normalizeCommodityCode } from '@/lib/commodity';
 import { useOperation, useOperationItems, useOperationDocuments, useCreateOperation, useCreateOperationItems, useCreateOperationLog, useReplaceOperationItems, useUpdateOperation } from '@/hooks/useOperations';
 import { calculateAgronomicSelection } from '@/engines/agronomic';
 import { applyComboCascadeWithLedger, getSuggestedDoseForRef, getMaxPossibleDiscount, getActivatedDiscount, getComplementaryDiscount } from '@/engines/combo-cascade';
@@ -206,7 +206,7 @@ export default function OperationStepperPage() {
   // ─── Payment step state ───
   const [dueMonths, setDueMonths] = useState(12);
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState('');
-  const [selectedCommodity, setSelectedCommodity] = useState(normalizeCommodityCode(DEFAULT_COMMODITY_FALLBACK[0]));
+  const [selectedCommodity, setSelectedCommodity] = useState('');
 
   // ─── Barter step state ───
   const [port, setPort] = useState('');
@@ -337,7 +337,7 @@ export default function OperationStepperPage() {
     if (activeModules.length === 0) return true;
     return activeModules.includes(s.module);
   });
-  const { options: commodityOptions } = useCommodityOptions((rawCampaign?.commodities || []) as string[], [...DEFAULT_COMMODITY_FALLBACK]);
+  const { options: commodityOptions } = useCommodityOptions((rawCampaign?.commodities || []) as string[]);
 
   useEffect(() => {
     if (!selectedPaymentMethod && paymentMethods?.length) {
@@ -569,7 +569,7 @@ export default function OperationStepperPage() {
     } as CommodityPricing;
   }, [rawCommodityPricing, selectedCommodity, commodityPricing]);
 
-  const pricing = selectedCommodityPricing || { commodity: 'soja', exchange: 'CBOT', contract: 'K', exchangePrice: 0, optionCost: 0, exchangeRateBolsa: 0, exchangeRateOption: 0, basisByPort: {}, securityDeltaMarket: 0, securityDeltaFreight: 0, stopLoss: 0, bushelsPerTon: 36.744, pesoSacaKg: 60 } as CommodityPricing;
+  const pricing = selectedCommodityPricing || { commodity: (selectedCommodity || 'soja'), exchange: 'CBOT', contract: 'K', exchangePrice: 0, optionCost: 0, exchangeRateBolsa: 0, exchangeRateOption: 0, basisByPort: {}, securityDeltaMarket: 0, securityDeltaFreight: 0, stopLoss: 0, bushelsPerTon: 36.744, pesoSacaKg: 60 } as CommodityPricing;
   const ports = Object.keys(pricing.basisByPort);
 
   useEffect(() => { if (ports.length && !port) setPort(ports[0]); }, [ports, port]);

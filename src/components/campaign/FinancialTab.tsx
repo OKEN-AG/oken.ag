@@ -206,7 +206,7 @@ export default function FinancialTab({ form, onFieldChange, paymentMethods, onPa
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div className="space-y-2">
             <Label>Aforo (%)</Label>
-            <Input type="text" inputMode="decimal" value={(form as any).aforo_percent ?? 130} onChange={e => onFieldChange('aforo_percent', parsePtBrNumber(e.target.value))} />
+            <Input type="text" inputMode="decimal" value={(form as any).aforo_percent ?? ''} onChange={e => onFieldChange('aforo_percent', parsePtBrNumber(e.target.value))} />
             <p className="text-[10px] text-muted-foreground">Percentual de sobrecolateralização exigido. Ex: 130% significa que o cliente precisa entregar garantias equivalentes a 130% do valor da operação.</p>
           </div>
         </div>
@@ -218,7 +218,7 @@ export default function FinancialTab({ form, onFieldChange, paymentMethods, onPa
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div className="space-y-2">
             <Label>Custo Padrão Frete (R$/km)</Label>
-            <Input type="text" inputMode="decimal" value={(form as any).default_freight_cost_per_km ?? 0.11} onChange={e => onFieldChange('default_freight_cost_per_km', parsePtBrNumber(e.target.value))} />
+            <Input type="text" inputMode="decimal" value={(form as any).default_freight_cost_per_km ?? ''} onChange={e => onFieldChange('default_freight_cost_per_km', parsePtBrNumber(e.target.value))} />
             <p className="text-[10px] text-muted-foreground">Usado como fallback quando não há redutor logístico configurado.</p>
           </div>
         </div>

@@ -6,6 +6,20 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+type RuntimeConfig = {
+  calculationVersionDefault: string;
+  minimumCommodityPrice: number;
+  snapshotTypeInput: string;
+  snapshotTypeDebt: string;
+};
+
+const defaultRuntimeConfig: RuntimeConfig = {
+  calculationVersionDefault: 'v1',
+  minimumCommodityPrice: 0.01,
+  snapshotTypeInput: 'memory_input',
+  snapshotTypeDebt: 'memory_debt',
+};
+
 /**
  * CALCULATION ENGINE - Edge Function
  * Centralizes critical calculations server-side for integrity.
@@ -114,6 +128,17 @@ serve(async (req: Request) => {
       });
     }
 
+    const { data: runtimeRow } = await supabase
+      .from('engine_runtime_config')
+      .select('value_json')
+      .eq('key', 'calculate_engine')
+      .maybeSingle();
+
+    const runtimeConfig: RuntimeConfig = {
+      ...defaultRuntimeConfig,
+      ...(runtimeRow?.value_json || {}),
+    };
+
     let result: Record<string, unknown>;
 
     switch (path) {
@@ -207,7 +232,7 @@ serve(async (req: Request) => {
           freightCost *= (1 + (pricing.security_delta_freight || 0) / 100);
         }
 
-        const commodityNetPrice = userOverridePrice || Math.max(afterMarketDelta - freightCost, 0.01);
+        const commodityNetPrice = userOverridePrice || Math.max(afterMarketDelta - freightCost, Number(runtimeConfig.minimumCommodityPrice || defaultRuntimeConfig.minimumCommodityPrice));
         const quantitySacas = totalAmountBRL / commodityNetPrice;
         const referencePrice = grossAmountBRL
           ? grossAmountBRL / quantitySacas
@@ -307,15 +332,15 @@ serve(async (req: Request) => {
           walletMerchant,
           montantePagoMerchant,
           revenueOken,
-          calculationVersion: 'v1',
+          calculationVersion: body.calculationVersion || runtimeConfig.calculationVersionDefault,
         };
 
         if (body.operationId) {
           await supabase.from('order_pricing_snapshots').insert({
             operation_id: body.operationId,
-            snapshot_type: 'memory_input',
+            snapshot_type: runtimeConfig.snapshotTypeInput,
             snapshot: {
-              version: 'v1',
+              version: body.calculationVersion || runtimeConfig.calculationVersionDefault,
               ...buildFormulaMetadata('insumo'),
               input: body,
               output: result,
@@ -327,7 +352,7 @@ serve(async (req: Request) => {
           await supabase.from('operation_calculation_inputs').upsert({
             operation_id: body.operationId,
             scenario_type: 'insumo',
-            calculation_version: 'v1',
+            calculation_version: body.calculationVersion || runtimeConfig.calculationVersionDefault,
             juros_cet_aa: Number(body.jurosCetAa),
             fee_oken_pct: Number(body.feeOkenPct),
             incentivo_pct: Number(body.incentivoPct),
@@ -358,7 +383,7 @@ serve(async (req: Request) => {
             operation_id: body.operationId,
             user_id: user.id,
             action: 'server_input_memory_calculated',
-            details: { version: 'v1', scenario: 'insumo' },
+            details: { version: body.calculationVersion || runtimeConfig.calculationVersionDefault, scenario: 'insumo' },
           });
         }
         break;
@@ -428,15 +453,15 @@ serve(async (req: Request) => {
           walletDealer,
           montantePagoDealer,
           revenueOken,
-          calculationVersion: 'v1',
+          calculationVersion: body.calculationVersion || runtimeConfig.calculationVersionDefault,
         };
 
         if (body.operationId) {
           await supabase.from('order_pricing_snapshots').insert({
             operation_id: body.operationId,
-            snapshot_type: 'memory_debt',
+            snapshot_type: runtimeConfig.snapshotTypeDebt,
             snapshot: {
-              version: 'v1',
+              version: body.calculationVersion || runtimeConfig.calculationVersionDefault,
               ...buildFormulaMetadata('divida'),
               input: body,
               output: result,
@@ -448,7 +473,7 @@ serve(async (req: Request) => {
           await supabase.from('operation_calculation_inputs').upsert({
             operation_id: body.operationId,
             scenario_type: 'divida',
-            calculation_version: 'v1',
+            calculation_version: body.calculationVersion || runtimeConfig.calculationVersionDefault,
             juros_cet_aa: Number(body.jurosCetAa),
             fee_oken_pct: Number(body.feeOkenPct),
             incentivo_pct: Number(body.incentivoPct),
@@ -477,7 +502,7 @@ serve(async (req: Request) => {
             operation_id: body.operationId,
             user_id: user.id,
             action: 'server_debt_memory_calculated',
-            details: { version: 'v1', scenario: 'divida' },
+            details: { version: body.calculationVersion || runtimeConfig.calculationVersionDefault, scenario: 'divida' },
           });
         }
         break;

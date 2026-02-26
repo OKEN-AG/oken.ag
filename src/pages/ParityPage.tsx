@@ -3,7 +3,7 @@ import { motion } from 'framer-motion';
 import { useLocation } from 'react-router-dom';
 import { useActiveCampaigns, useCampaignData } from '@/hooks/useActiveCampaign';
 import { useCommodityOptions } from '@/hooks/useCommoditiesMasterData';
-import { DEFAULT_COMMODITY_FALLBACK, normalizeCommodityCode, toCommodityLabel } from '@/lib/commodity';
+import { normalizeCommodityCode, toCommodityLabel } from '@/lib/commodity';
 import { useOperations, useUpdateOperation, useCreateOperationLog } from '@/hooks/useOperations';
 import { useAuth } from '@/contexts/AuthContext';
 import { useRealtimePricing } from '@/hooks/useRealtimePricing';
@@ -53,7 +53,7 @@ export default function ParityPage() {
   }, [stateOperationId, selectedOperationId]);
 
   const selectedOp = operations?.find(op => op.id === selectedOperationId);
-  const [selectedCommodity, setSelectedCommodity] = useState<string>(normalizeCommodityCode(DEFAULT_COMMODITY_FALLBACK[0]));
+  const [selectedCommodity, setSelectedCommodity] = useState<string>('');
 
   const { commodityPricing: commodityPricingAll, freightReducers, rawCommodityPricing, deliveryLocations, rawCampaign, isLoading } = useCampaignData(selectedCampaignId || undefined);
   
@@ -100,7 +100,7 @@ export default function ParityPage() {
     },
   });
 
-  const { options: commodityOptions } = useCommodityOptions((rawCampaign?.commodities || []) as string[], [...DEFAULT_COMMODITY_FALLBACK]);
+  const { options: commodityOptions } = useCommodityOptions((rawCampaign?.commodities || []) as string[]);
 
   useEffect(() => {
     if (!commodityOptions.length) return;
@@ -115,7 +115,7 @@ export default function ParityPage() {
 
   const hasCommodityData = !!commodityPricing;
   const pricing: CommodityPricing = commodityPricing || {
-    commodity: 'soja', exchange: 'CBOT', contract: 'K', exchangePrice: 0,
+    commodity: (selectedCommodity || 'soja'), exchange: 'CBOT', contract: 'K', exchangePrice: 0,
     optionCost: 0, exchangeRateBolsa: 0, exchangeRateOption: 0,
     basisByPort: {}, securityDeltaMarket: 0, securityDeltaFreight: 0,
     stopLoss: 0, bushelsPerTon: 36.744, pesoSacaKg: 60,
@@ -168,7 +168,7 @@ export default function ParityPage() {
         const autoTotal = autoDistanceKm * freightReducer.costPerKm + (freightReducer.adjustment || 0);
         return { ...freightReducer, distanceKm: autoDistanceKm, totalReducer: autoTotal };
       }
-      const campaignFreightCostPerKm = (rawCampaign as any)?.default_freight_cost_per_km || 0.11;
+      const campaignFreightCostPerKm = (rawCampaign as any)?.default_freight_cost_per_km ?? 0;
       return {
         origin: 'Auto',
         destination: port,

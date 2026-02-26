@@ -63,8 +63,6 @@ export function calculateInputMemory(p: InputMemoryParams) {
   const descontoImpostosEfetivo = p.temImposto ? p.descontoImpostosPct : 0;
   const precoLiquido = p.precoBrutoCommodity * (1 + descontoImpostosEfetivo);
   const periodoAteRepasseAnos = yearsBetween(p.dataRepasse, p.dataPagamento);
-  const periodoAteRepasseAnos = yearsBetween(p.dataEntrega, p.dataPagamento);
-  
   const precoEntregaAjustado = pv(p.rendimentoAntecipacaoAa, periodoAteRepasseAnos, precoLiquido);
 
   const paridadeRealSacas = valorPontaComFee / precoEntregaAjustado;
@@ -116,8 +114,6 @@ export function calculateCommodityDebtMemory(p: CommodityDebtMemoryParams) {
   const descontoImpostosEfetivo = p.temImposto ? p.descontoImpostosPct : 0;
   const precoLiquido = p.precoBrutoCommodity * (1 + descontoImpostosEfetivo);
   const periodoAteRepasseAnos = yearsBetween(p.dataRepasse, p.dataPagamento);
-  const periodoAteRepasseAnos = yearsBetween(p.dataEntrega, p.dataPagamento);
-  
   const precoEntregaAjustado = pv(p.rendimentoAntecipacaoAa, periodoAteRepasseAnos, precoLiquido);
 
   const paridadeRealSacas = valorPontaComFee / precoEntregaAjustado;

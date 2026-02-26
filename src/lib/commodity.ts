@@ -1,5 +1,3 @@
-export const DEFAULT_COMMODITY_FALLBACK = ['soja', 'milho', 'cafe', 'algodao'] as const;
-
 export function normalizeCommodityCode(value?: string | null): string {
   return String(value || '').trim().toLowerCase();
 }
