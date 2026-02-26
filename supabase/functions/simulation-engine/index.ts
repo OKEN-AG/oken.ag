@@ -224,6 +224,7 @@ function calculatePricing(
   product: ProductRow, campaign: any, margins: any[], channelSegment: string,
   segmentName: string, dueMonths: number, quantity: number,
   opts: { paymentMethodMarkup: number; segmentAdjustmentPercent: number; paymentMethodAnnualRate: number; boxes: number; pallets: number; useBarterFx: boolean }
+  opts: { paymentMethodMarkup: number; segmentAdjustmentPercent: number; paymentMethodAnnualRate: number; boxes: number; pallets: number }
 ): { pricing: PricingResultItem; debug: PricingDebugRow } {
   const priceListFormat = String(campaign.price_list_format || '').toLowerCase();
   const forceTerm = priceListFormat.includes('prazo');
@@ -245,6 +246,7 @@ function calculatePricing(
 
   const listCurrency = (forcedCurrency || product.currency || 'BRL') as 'BRL' | 'USD';
   const useBarterFx = opts.useBarterFx || priceListFormat.includes('indicativa') || priceListFormat.includes('barter');
+  const useBarterFx = priceListFormat.includes('indicativa') || priceListFormat.includes('barter');
   const exchangeRateProducts = useBarterFx
     ? Number(campaign.exchange_rate_barter || campaign.exchange_rate_products || 1)
     : Number(campaign.exchange_rate_products || 1);
@@ -540,7 +542,7 @@ serve(async (req: Request) => {
     const { data: { user }, error: authError } = await supabase.auth.getUser();
     if (authError || !user) return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 
-    let result: Record<string, unknown>;
+    let result: Record<string, unknown> | EligibilityResult;
 
     switch (endpoint) {
       // ═══════════════════════════════════════════
@@ -772,6 +774,11 @@ serve(async (req: Request) => {
           row.g2nNetRevenueAllocated = grossToNet.netRevenue * share;
         }
 
+          for (const row of pricingDebugRowsAllocated) {
+            row.parityPricePerSaca = parityResult.commodityPricePerUnit;
+          }
+        }
+
         // 10. Combo suggestions
         const maxDiscount = comboDefinitions.filter((c: any) => !/^COMPLEMENTAR/i.test(c.name)).reduce((max: number, c: any) => Math.max(max, c.discount_percent), 0);
         const activatedDiscount = comboCascade.activations.filter(a => a.applied && !a.isComplementary).reduce((max, a) => Math.max(max, a.discountPercent), 0);
@@ -794,6 +801,7 @@ serve(async (req: Request) => {
           complementaryDiscount,
           discountProgress: maxDiscount > 0 ? (activatedDiscount / maxDiscount) * 100 : 0,
           moneyCurrency: (campaign.currency || 'BRL').toUpperCase(),
+          moneyCurrency: 'BRL',
           campaignConfig: {
             currency: campaign.currency,
             target: campaign.target,
