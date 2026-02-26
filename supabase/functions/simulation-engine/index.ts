@@ -59,6 +59,10 @@ interface PricingDebugRow {
   segmentName: string; segmentAdjustmentPercent: number; segmentAdjPerUnit: number; priceWithSegAdj: number;
   paymentMethodMarkupPercent: number; paymentMarkupPerUnit: number;
   normalizedPrice: number; subtotal: number;
+  feesOkenPercent: number;
+  g2nComboDiscountAllocated: number; g2nBarterDiscountAllocated: number;
+  g2nDirectIncentiveAllocated: number; g2nNetRevenueAllocated: number;
+  parityCommodity: string | null; parityPricePerSaca: number | null;
 }
 
 interface GrossToNetResult {
@@ -305,6 +309,13 @@ function calculatePricing(
       paymentMarkupPerUnit: priceWithSegAdj * pmMarkup,
       normalizedPrice,
       subtotal: normalizedPrice * quantity,
+      feesOkenPercent: 0,
+      g2nComboDiscountAllocated: 0,
+      g2nBarterDiscountAllocated: 0,
+      g2nDirectIncentiveAllocated: 0,
+      g2nNetRevenueAllocated: 0,
+      parityCommodity: null,
+      parityPricePerSaca: null,
     },
   };
 }
@@ -630,10 +641,29 @@ serve(async (req: Request) => {
         });
 
         const pricingResults: PricingResultItem[] = pricingDetails.map(pr => pr.pricing);
-        const pricingDebugRows: PricingDebugRow[] = pricingDetails.map(pr => pr.debug);
 
         // 7. Gross-to-Net
         const grossToNet = calculateGrossToNet(pricingResults, comboCascade.activations, barterDiscountPercent || 0, campaign, agronomicSelections);
+
+        const pricingDebugRows: PricingDebugRow[] = pricingDetails.map(pr => pr.debug);
+        const grossRevenueSafe = grossToNet.grossRevenue > 0 ? grossToNet.grossRevenue : 1;
+        const incentiveType = String(campaign.global_incentive_type || '');
+        const incentiveTotal = (campaign.global_incentive_1 || 0) + (campaign.global_incentive_2 || 0) + (campaign.global_incentive_3 || 0);
+        const feePercent = incentiveType === 'credito_liberacao' || incentiveType === 'credito_liquidacao' ? incentiveTotal : 0;
+
+        const pricingDebugRowsAllocated: PricingDebugRow[] = pricingDebugRows.map((row) => {
+          const share = Math.max(0, row.subtotal / grossRevenueSafe);
+          return {
+            ...row,
+            feesOkenPercent: feePercent,
+            g2nComboDiscountAllocated: grossToNet.comboDiscount * share,
+            g2nBarterDiscountAllocated: grossToNet.barterDiscount * share,
+            g2nDirectIncentiveAllocated: grossToNet.directIncentiveDiscount * share,
+            g2nNetRevenueAllocated: grossToNet.netRevenue * share,
+            parityCommodity: commodityCode || null,
+            parityPricePerSaca: null,
+          };
+        });
 
         // 8. Eligibility
         const whitelist = (clientsRes.data || []).map((c: any) => c.document);
@@ -702,6 +732,12 @@ serve(async (req: Request) => {
           }
         }
 
+        if (parityResult) {
+          for (const row of pricingDebugRowsAllocated) {
+            row.parityPricePerSaca = parityResult.commodityPricePerUnit;
+          }
+        }
+
         // 10. Combo suggestions
         const maxDiscount = comboDefinitions.filter((c: any) => !/^COMPLEMENTAR/i.test(c.name)).reduce((max: number, c: any) => Math.max(max, c.discount_percent), 0);
         const activatedDiscount = comboCascade.activations.filter(a => a.applied && !a.isComplementary).reduce((max, a) => Math.max(max, a.discountPercent), 0);
@@ -712,7 +748,7 @@ serve(async (req: Request) => {
           comboActivations: comboCascade.activations,
           consumptionLedger: comboCascade.consumptionLedger,
           pricingResults,
-          pricingDebugRows,
+          pricingDebugRows: pricingDebugRowsAllocated,
           grossToNet,
           eligibility,
           parity: parityResult,

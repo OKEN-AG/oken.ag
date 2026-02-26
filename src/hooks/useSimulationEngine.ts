@@ -41,6 +41,10 @@ export interface PricingDebugRow {
   segmentName: string; segmentAdjustmentPercent: number; segmentAdjPerUnit: number; priceWithSegAdj: number;
   paymentMethodMarkupPercent: number; paymentMarkupPerUnit: number;
   normalizedPrice: number; subtotal: number;
+  feesOkenPercent: number;
+  g2nComboDiscountAllocated: number; g2nBarterDiscountAllocated: number;
+  g2nDirectIncentiveAllocated: number; g2nNetRevenueAllocated: number;
+  parityCommodity: string | null; parityPricePerSaca: number | null;
 }
 
 export interface GrossToNetResult {

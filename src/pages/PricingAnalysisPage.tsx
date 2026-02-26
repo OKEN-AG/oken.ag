@@ -4,6 +4,7 @@ import { useQuery } from '@tanstack/react-query';
 import { ArrowLeft } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
+import { PRICING_MEMORY_DICTIONARY } from '@/data/pricing-memory-dictionary';
 
 type PricingDebugRow = {
   productId: string;
@@ -36,6 +37,13 @@ type PricingDebugRow = {
   paymentMarkupPerUnit: number;
   normalizedPrice: number;
   subtotal: number;
+  feesOkenPercent: number;
+  g2nComboDiscountAllocated: number;
+  g2nBarterDiscountAllocated: number;
+  g2nDirectIncentiveAllocated: number;
+  g2nNetRevenueAllocated: number;
+  parityCommodity: string | null;
+  parityPricePerSaca: number | null;
 };
 
 const brMoney = (v: number, c: 'BRL' | 'USD') => Number(v || 0).toLocaleString('pt-BR', { style: 'currency', currency: c });
@@ -60,6 +68,10 @@ export default function PricingAnalysisPage() {
   });
 
   const rows = useMemo(() => ((data?.snapshot as any)?.pricingDebugRows || []) as PricingDebugRow[], [data]);
+  const dictionaryByModule = useMemo(() => PRICING_MEMORY_DICTIONARY.reduce((acc, item) => {
+    acc[item.module] = (acc[item.module] || 0) + 1;
+    return acc;
+  }, {} as Record<string, number>), []);
 
   return (
     <div className="p-6 space-y-4">
@@ -71,6 +83,12 @@ export default function PricingAnalysisPage() {
         <Button asChild variant="outline" size="sm">
           <Link to={`/operacao/${id}`}><ArrowLeft className="w-4 h-4 mr-1" /> Voltar</Link>
         </Button>
+      </div>
+
+      <div className="flex flex-wrap gap-2 text-[11px]">
+        {Object.entries(dictionaryByModule).map(([module, count]) => (
+          <span key={module} className="px-2 py-1 rounded bg-muted">{module}: {count} campos</span>
+        ))}
       </div>
 
       {isLoading ? <div className="text-sm text-muted-foreground">Carregando...</div> : null}
@@ -93,6 +111,12 @@ export default function PricingAnalysisPage() {
                 <th className="p-2 text-right">Markup PM</th>
                 <th className="p-2 text-right">Preço Final</th>
                 <th className="p-2 text-right">Subtotal</th>
+                <th className="p-2 text-right">Fee %</th>
+                <th className="p-2 text-right">G2N Combo</th>
+                <th className="p-2 text-right">G2N Barter</th>
+                <th className="p-2 text-right">G2N Incentivo</th>
+                <th className="p-2 text-right">G2N Net</th>
+                <th className="p-2 text-right">Parity</th>
               </tr>
             </thead>
             <tbody>
@@ -111,6 +135,12 @@ export default function PricingAnalysisPage() {
                   <td className="p-2 text-right">{brMoney(r.paymentMarkupPerUnit, 'BRL')} <span className="text-muted-foreground">({r.paymentMethodMarkupPercent.toFixed(2)}%)</span></td>
                   <td className="p-2 text-right font-semibold">{brMoney(r.normalizedPrice, 'BRL')}</td>
                   <td className="p-2 text-right font-semibold">{brMoney(r.subtotal, 'BRL')}</td>
+                  <td className="p-2 text-right">{Number(r.feesOkenPercent || 0).toFixed(2)}%</td>
+                  <td className="p-2 text-right">{brMoney(r.g2nComboDiscountAllocated, 'BRL')}</td>
+                  <td className="p-2 text-right">{brMoney(r.g2nBarterDiscountAllocated, 'BRL')}</td>
+                  <td className="p-2 text-right">{brMoney(r.g2nDirectIncentiveAllocated, 'BRL')}</td>
+                  <td className="p-2 text-right">{brMoney(r.g2nNetRevenueAllocated, 'BRL')}</td>
+                  <td className="p-2 text-right">{r.parityCommodity ? `${r.parityCommodity} ${brMoney(r.parityPricePerSaca || 0, 'BRL')}/sc` : '—'}</td>
                 </tr>
               ))}
             </tbody>
