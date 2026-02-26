@@ -819,7 +819,7 @@ export default function OperationStepperPage() {
       if (isNewOperation) {
         const op = await createOperation.mutateAsync({
           campaign_id: selectedCampaignId, user_id: user.id, client_name: clientName || 'Sem nome',
-          client_document: clientDocument || undefined, channel: channelEnum, distributor_id: selectedDistributorId || undefined, channel_segment_name: channelSegmentName || undefined, commercial_segment_name: segment || undefined, city: clientCity || undefined,
+          client_document: clientDocument || undefined, channel: channelEnum, distributor_id: selectedDistributorId || undefined, city: clientCity || undefined,
           state: clientState || undefined, due_months: dueMonths, area_hectares: area,
           gross_revenue: grossToNet.grossRevenue, combo_discount: grossToNet.comboDiscount,
           net_revenue: grossToNet.netRevenue, financial_revenue: grossToNet.financialRevenue,
@@ -850,8 +850,7 @@ export default function OperationStepperPage() {
             client_document: clientDocument || undefined,
             channel: channelEnum,
             distributor_id: selectedDistributorId || undefined,
-            channel_segment_name: channelSegmentName || undefined,
-            commercial_segment_name: segment || undefined,
+            
             city: clientCity,
             state: clientState,
             due_months: dueMonths,
