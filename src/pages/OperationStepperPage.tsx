@@ -1,5 +1,5 @@
-import { useState, useMemo, useEffect, useCallback } from 'react';
-import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
+import { useState, useMemo, useEffect, useCallback, useRef } from 'react';
+import { useParams, useNavigate, useSearchParams, Link } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '@/contexts/AuthContext';
 import { useActiveCampaigns, useCampaignData } from '@/hooks/useActiveCampaign';
@@ -66,39 +66,64 @@ function getComboRecommendations(
   products: Product[],
   area: number
 ): { productName: string; ref: string; action: string; productId?: string; suggestedDose?: number; suggestedQty?: number }[] {
-  const recs: { productName: string; ref: string; action: string; productId?: string; suggestedDose?: number; suggestedQty?: number }[] = [];
+  const recommendations: { productName: string; ref: string; action: string; productId?: string; suggestedDose?: number; suggestedQty?: number }[] = [];
   const selectedRefs = new Set(selections.map(s => (s.ref || '').toUpperCase().trim()));
+  const productsByRef = new Map(products.map(p => [String(p.ref || '').toUpperCase().trim(), p]));
+  const selectionsByRef = new Map(selections.map(sel => [String(sel.ref || '').toUpperCase().trim(), sel]));
 
-  for (const combo of combos) {
+  const prioritizedCombos = [...combos]
+    .sort((a, b) => (b.discountPercent - a.discountPercent) || (b.products.length - a.products.length))
+    .slice(0, 30);
+
+  for (const combo of prioritizedCombos) {
+    if (recommendations.length >= 5) break;
+
     const missing = combo.products.filter((cp: any) => !selectedRefs.has((cp.ref || '').toUpperCase().trim()));
     if (missing.length > 0 && missing.length <= 2) {
       for (const mp of missing) {
-        const prod = products.find(p => (p.ref || '').toUpperCase() === (mp.ref || '').toUpperCase());
-        if (prod) {
-          const suggestedDose = (mp.minDosePerHa + mp.maxDosePerHa) / 2;
-          const suggestedQty = Math.ceil(area * suggestedDose);
-          recs.push({
-            productName: prod.name, ref: mp.ref, productId: prod.id,
-            suggestedDose, suggestedQty,
-            action: `Incluir ${prod.name} (${suggestedDose.toFixed(2)}/${prod.unitType}${(prod.pricingBasis || 'por_hectare') === 'por_hectare' ? '/ha' : ''} ≈ ${suggestedQty} ${prod.unitType}) → combo "${combo.name}" (+${combo.discountPercent}%)`
-          });
-        }
+        if (recommendations.length >= 5) break;
+        const ref = (mp.ref || '').toUpperCase().trim();
+        const prod = productsByRef.get(ref);
+        if (!prod) continue;
+
+        const suggestedDose = (mp.minDosePerHa + mp.maxDosePerHa) / 2;
+        const suggestedQty = Math.ceil(area * suggestedDose);
+        recommendations.push({
+          productName: prod.name,
+          ref: mp.ref,
+          productId: prod.id,
+          suggestedDose,
+          suggestedQty,
+          action: `Incluir ${prod.name} (${suggestedDose.toFixed(2)}/${prod.unitType}${(prod.pricingBasis || 'por_hectare') === 'por_hectare' ? '/ha' : ''} ≈ ${suggestedQty} ${prod.unitType}) → combo "${combo.name}" (+${combo.discountPercent}%)`
+        });
       }
     }
+
     for (const cp of combo.products) {
-      const sel = selections.find(s => (s.ref || '').toUpperCase().trim() === (cp.ref || '').toUpperCase().trim());
+      if (recommendations.length >= 5) break;
+      const ref = (cp.ref || '').toUpperCase().trim();
+      const sel = selectionsByRef.get(ref);
       if (sel && sel.dosePerHectare < cp.minDosePerHa) {
         const suggestedQty = Math.ceil(area * cp.minDosePerHa);
-        recs.push({
-          productName: sel.product.name, ref: cp.ref, productId: sel.productId,
-          suggestedDose: cp.minDosePerHa, suggestedQty,
+        recommendations.push({
+          productName: sel.product.name,
+          ref: cp.ref,
+          productId: sel.productId,
+          suggestedDose: cp.minDosePerHa,
+          suggestedQty,
           action: `Ajustar ${sel.product.name} para ${cp.minDosePerHa}${(sel.product.pricingBasis || 'por_hectare') === 'por_hectare' ? '/ha' : ''} (≈ ${suggestedQty} ${sel.product.unitType}) → combo "${combo.name}"`
         });
       }
     }
   }
+
   const seen = new Set<string>();
-  return recs.filter(r => { if (seen.has(r.ref)) return false; seen.add(r.ref); return true; }).slice(0, 5);
+  return recommendations.filter(rec => {
+    const key = (rec.ref || '').toUpperCase().trim();
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  }).slice(0, 5);
 }
 
 // ─── Due date precedence: municipio/cidade > mesorregiao > estado > regiao > default ───
@@ -189,8 +214,12 @@ export default function OperationStepperPage() {
   const [clientPhone, setClientPhone] = useState('');
   const [clientIE, setClientIE] = useState('');
   const [deliveryAddress, setDeliveryAddress] = useState('');
-   const [segment, setSegment] = useState<string>(''); // segment_name (nome comercial do segmento)
-   const [channelEnum, setChannelEnum] = useState<ChannelSegment>('distribuidor'); // canal operacional (enum para margem)
+  const [selectedDistributorId, setSelectedDistributorId] = useState('');
+  const [channelSegmentName, setChannelSegmentName] = useState('');
+  const [channelMarginPercent, setChannelMarginPercent] = useState(0);
+  const [channelAdjustmentPercent, setChannelAdjustmentPercent] = useState(0);
+  const [segment, setSegment] = useState<string>(''); // segmento comercial
+  const [channelEnum, setChannelEnum] = useState<ChannelSegment>('distribuidor'); // compat legado para telas antigas
   const [area, setArea] = useState(500);
   const [quantityMode, setQuantityMode] = useState<'dose' | 'livre'>('dose'); // dose/ha or free quantity
   const [freeQuantities, setFreeQuantities] = useState<Map<string, number>>(new Map());
@@ -237,8 +266,10 @@ export default function OperationStepperPage() {
         const cityMatch = getAllMunicipios().find(m => m.uf === existingOp.state && normalizeKey(m.name) === normalizeKey(existingOp.city || ''));
         setClientCityCode(cityMatch?.ibge || '');
       }
-      setSegment(existingOp.channel || '');
       setChannelEnum((existingOp.channel || 'distribuidor') as ChannelSegment);
+      setSelectedDistributorId((existingOp as any).distributor_id || '');
+      setChannelSegmentName((existingOp as any).channel_segment_name || '');
+      setSegment((existingOp as any).commercial_segment_name || '');
       setArea(existingOp.area_hectares || 500);
       if (existingOp.commodity) setSelectedCommodity(existingOp.commodity);
       if (existingOp.due_months) setDueMonths(existingOp.due_months);
@@ -299,6 +330,24 @@ export default function OperationStepperPage() {
     },
   });
 
+  const { data: campaignDistributors } = useQuery({
+    queryKey: ['campaign-distributors', selectedCampaignId],
+    enabled: !!selectedCampaignId,
+    queryFn: async () => {
+      const { data } = await (supabase as any).from('campaign_distributors').select('*').eq('campaign_id', selectedCampaignId).eq('active', true);
+      return (data || []) as any[];
+    },
+  });
+
+  const { data: channelSegmentsConfig } = useQuery({
+    queryKey: ['campaign-channel-segments', selectedCampaignId],
+    enabled: !!selectedCampaignId,
+    queryFn: async () => {
+      const { data } = await (supabase as any).from('campaign_channel_segments').select('*').eq('campaign_id', selectedCampaignId).eq('active', true);
+      return (data || []) as any[];
+    },
+  });
+
   // ─── Derived data ───
   const segmentAdjustmentPercent = useMemo(() => {
     const match = campaignSegments?.find(s => s.active && s.segment_name.toLowerCase() === segment.toLowerCase());
@@ -352,6 +401,21 @@ export default function OperationStepperPage() {
 
   const paymentMethodMarkup = selectedPM?.markup_percent || 0;
 
+  useEffect(() => {
+    if (!campaignDistributors?.length) return;
+    if (!selectedDistributorId) setSelectedDistributorId(campaignDistributors[0].id);
+  }, [campaignDistributors, selectedDistributorId]);
+
+  useEffect(() => {
+    if (!selectedDistributorId || !campaignDistributors?.length) return;
+    const dist = campaignDistributors.find((d: any) => d.id === selectedDistributorId);
+    const chName = dist?.channel_segment_name || '';
+    setChannelSegmentName(chName);
+    const cfg = (channelSegmentsConfig || []).find((c: any) => String(c.channel_segment_name).toLowerCase() === String(chName).toLowerCase());
+    setChannelMarginPercent(Number(cfg?.margin_percent || 0));
+    setChannelAdjustmentPercent(Number(cfg?.price_adjustment_percent || 0));
+  }, [selectedDistributorId, campaignDistributors, channelSegmentsConfig]);
+
   // Due dates with precedence
   const filteredDueDates = useMemo(() => getDueDatesWithPrecedence(dueDates || [], clientCity, undefined, clientState, undefined), [dueDates, clientCity, clientState]);
 
@@ -382,6 +446,12 @@ export default function OperationStepperPage() {
     const selected = dueDateOptions.find(o => o.value === String(dueMonths));
     return selected?.date || null;
   }, [dueDateOptions, dueMonths]);
+  const hasDueDateConfigIssue = !!selectedCampaignId && dueDateOptions.length === 0;
+
+  useEffect(() => {
+    if (!hasDueDateConfigIssue) return;
+    toast.error('Campanha sem vencimentos configurados. Ajuste a campanha para continuar.');
+  }, [hasDueDateConfigIssue]);
 
   const segmentOptions = useMemo(() => {
     if (simResult?.segmentOptions?.length) return simResult.segmentOptions.map(s => ({ value: s.value, label: s.label }));
@@ -457,18 +527,68 @@ export default function OperationStepperPage() {
     return Array.from(eligibleCitySet).some(v => /^\d{6,8}$/.test(String(v)));
   }, [eligibleCitySet, hasCityFilter]);
 
+  const selectedDeliveryLocationId = useMemo(() => {
+    const match = deliveryLocations.find((loc: any) => loc.warehouse_name === freightOrigin);
+    return match?.id || undefined;
+  }, [deliveryLocations, freightOrigin]);
+
+  const lastSimulationKeyRef = useRef<string>('');
+  const simulationKey = useMemo(() => {
+    const selectionKey = Array.from(selectedProducts.entries())
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([productId, dosePerHectare]) => ({
+        productId,
+        dosePerHectare,
+        overrideQuantity: quantityMode === 'livre' ? (freeQuantities.get(productId) || null) : null,
+      }));
+
+    return JSON.stringify({
+      selectedCampaignId,
+      area,
+      segment,
+      channelEnum,
+      dueMonths,
+      selectedDueDate,
+      selectedPaymentMethod,
+      selectedCommodity,
+      port,
+      freightOrigin,
+      selectedDeliveryLocationId,
+      hasContract,
+      userPrice,
+      showInsurance,
+      selectedBuyerId,
+      contractPriceType,
+      performanceIndex,
+      clientState,
+      selectedCityName,
+      clientCityCode,
+      usesIbgeCityEligibility,
+      clientType,
+      clientDocument,
+      quantityMode,
+      selectionKey,
+    });
+  }, [selectedCampaignId, selectedProducts, area, segment, channelEnum, dueMonths, selectedDueDate, selectedPaymentMethod,
+      selectedCommodity, port, freightOrigin, selectedDeliveryLocationId, hasContract, userPrice, showInsurance,
+      selectedBuyerId, contractPriceType, performanceIndex, clientState, selectedCityName,
+      clientCityCode, usesIbgeCityEligibility, clientType, clientDocument, quantityMode, freeQuantities, selectedDistributorId, channelSegmentName]);
+
   // ─── Trigger simulation on input changes (server-authoritative) ───
   useEffect(() => {
-    if (!selectedCampaignId || selectedProducts.size === 0 || !dueMonths) return;
+    if (!selectedCampaignId || selectedProducts.size === 0 || !dueMonths || hasDueDateConfigIssue || !segment || !selectedDistributorId) return;
+    if (lastSimulationKeyRef.current === simulationKey) return;
+    lastSimulationKeyRef.current = simulationKey;
+
     const inputSelections = Array.from(selectedProducts.entries()).map(([id, dose]) => ({
       productId: id, dosePerHectare: dose, areaHectares: area,
       overrideQuantity: quantityMode === 'livre' ? (freeQuantities.get(id) || undefined) : undefined,
     }));
     simulateDebounced({
-      campaignId: selectedCampaignId, selections: inputSelections, segment: segment || channelEnum, dueMonths,
+      campaignId: selectedCampaignId, selections: inputSelections, distributorId: selectedDistributorId || undefined, channelSegmentName: channelSegmentName || undefined, commercialSegmentName: segment, segmentName: segment, channelSegment: channelEnum, dueMonths, dueDate: selectedDueDate || undefined,
       paymentMethodId: selectedPaymentMethod || undefined,
       commodityCode: selectedCommodity || undefined,
-      port: port || undefined, freightOrigin: freightOrigin || undefined,
+      port: port || undefined, freightOrigin: freightOrigin || undefined, deliveryLocationId: selectedDeliveryLocationId,
       hasContract, userOverridePrice: hasContract ? userPrice : undefined,
       showInsurance, barterDiscountPercent: 0,
       buyerId: selectedBuyerId && selectedBuyerId !== '__other__' ? selectedBuyerId : undefined,
@@ -479,10 +599,11 @@ export default function OperationStepperPage() {
         clientType, clientDocument: clientDocument || undefined, segment,
       },
     });
-  }, [selectedCampaignId, selectedProducts, area, segment, channelEnum, dueMonths, selectedPaymentMethod,
-      selectedCommodity, port, freightOrigin, hasContract, userPrice, showInsurance,
+  }, [selectedCampaignId, selectedProducts, area, segment, channelEnum, dueMonths, selectedDueDate, selectedPaymentMethod,
+      selectedCommodity, port, freightOrigin, selectedDeliveryLocationId, hasContract, userPrice, showInsurance,
       selectedBuyerId, contractPriceType, performanceIndex, clientState, selectedCityName,
-      clientCityCode, usesIbgeCityEligibility, clientType, clientDocument, quantityMode, freeQuantities]);
+      clientCityCode, usesIbgeCityEligibility, clientType, clientDocument, quantityMode, freeQuantities,
+      simulationKey, hasDueDateConfigIssue, selectedDeliveryLocationId]);
 
   // ─── Eligibility from backend result ───
   const eligibility = simResult?.eligibility ?? null;
@@ -687,7 +808,7 @@ export default function OperationStepperPage() {
       if (isNewOperation) {
         const op = await createOperation.mutateAsync({
           campaign_id: selectedCampaignId, user_id: user.id, client_name: clientName || 'Sem nome',
-          client_document: clientDocument || undefined, channel: channelEnum, city: clientCity || undefined,
+          client_document: clientDocument || undefined, channel: channelEnum, distributor_id: selectedDistributorId || undefined, channel_segment_name: channelSegmentName || undefined, commercial_segment_name: segment || undefined, city: clientCity || undefined,
           state: clientState || undefined, due_months: dueMonths, area_hectares: area,
           gross_revenue: grossToNet.grossRevenue, combo_discount: grossToNet.comboDiscount,
           net_revenue: grossToNet.netRevenue, financial_revenue: grossToNet.financialRevenue,
@@ -717,6 +838,9 @@ export default function OperationStepperPage() {
             client_name: clientName,
             client_document: clientDocument || undefined,
             channel: channelEnum,
+            distributor_id: selectedDistributorId || undefined,
+            channel_segment_name: channelSegmentName || undefined,
+            commercial_segment_name: segment || undefined,
             city: clientCity,
             state: clientState,
             due_months: dueMonths,
@@ -764,7 +888,7 @@ export default function OperationStepperPage() {
   // ─── Step validation ───
   const canProceed = (stepId: string): boolean => {
     switch (stepId) {
-      case 'context': return !!selectedCampaignId && !!clientName && !eligibility?.blocked;
+      case 'context': return !!selectedCampaignId && !!clientName && !!selectedDistributorId && !eligibility?.blocked && !hasDueDateConfigIssue;
       case 'order': return selectedProducts.size > 0;
       case 'simulation': return grossToNet.grossRevenue > 0;
       case 'payment': return true;
@@ -778,8 +902,9 @@ export default function OperationStepperPage() {
   const goNext = () => { if (currentStep < visibleSteps.length - 1 && canProceed(visibleSteps[currentStep].id)) setCurrentStep(currentStep + 1); };
   const goPrev = () => { if (currentStep > 0) setCurrentStep(currentStep - 1); };
 
-  // Montantes do pedido (gross/net/margem/juros) são SEMPRE em BRL pois o motor já converte USD→BRL
-  const formatCurrency = (v: number) => v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+  // Montantes do pedido usam a moeda de saída informada pelo motor (server-authoritative)
+  const moneyCurrency = simResult?.moneyCurrency || 'BRL';
+  const formatCurrency = (v: number) => v.toLocaleString('pt-BR', { style: 'currency', currency: moneyCurrency });
   const currentStepDef = visibleSteps[currentStep];
 
   if (loadingCampaigns) return <div className="p-6"><Skeleton className="h-64 w-full" /></div>;
@@ -797,6 +922,11 @@ export default function OperationStepperPage() {
             {existingOp && <span className="ml-2 engine-badge bg-primary/10 text-primary">{existingOp.status}</span>}
           </p>
         </div>
+        {!isNewOperation && operationId && (
+          <Button asChild variant="outline" size="sm">
+            <Link to={`/operacao/${operationId}/analise-precos`}>Análise de cálculo</Link>
+          </Button>
+        )}
       </div>
 
       {/* Stepper bar */}
@@ -901,9 +1031,17 @@ export default function OperationStepperPage() {
               </div>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div className="glass-card p-4">
-                  <label className="stat-label">Canal</label>
-                  <Select value={segment} onValueChange={v => setSegment(v)}>
-                    <SelectTrigger className="mt-1 bg-muted border-border text-foreground"><SelectValue /></SelectTrigger>
+                  <label className="stat-label">Distribuidor / Canal</label>
+                  <Select value={selectedDistributorId} onValueChange={setSelectedDistributorId}>
+                    <SelectTrigger className="mt-1 bg-muted border-border text-foreground"><SelectValue placeholder="Selecione..." /></SelectTrigger>
+                    <SelectContent>{(campaignDistributors || []).map((d: any) => <SelectItem key={d.id} value={d.id}>{d.short_name || d.full_name} ({d.cnpj})</SelectItem>)}</SelectContent>
+                  </Select>
+                  <p className="text-[11px] text-muted-foreground mt-2">Segmento canal: {channelSegmentName || '—'} · Margem: {channelMarginPercent}% · Ajuste: {channelAdjustmentPercent}%</p>
+                </div>
+                <div className="glass-card p-4">
+                  <label className="stat-label">Segmento Comercial</label>
+                  <Select value={segment} onValueChange={setSegment}>
+                    <SelectTrigger className="mt-1 bg-muted border-border text-foreground"><SelectValue placeholder="Selecione..." /></SelectTrigger>
                     <SelectContent>{segmentOptions.map(o => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}</SelectContent>
                   </Select>
                 </div>
@@ -922,10 +1060,11 @@ export default function OperationStepperPage() {
                 </div>
                 <div className="glass-card p-4">
                   <label className="stat-label">Vencimento</label>
-                  <Select value={String(dueMonths)} onValueChange={v => setDueMonths(Number(v))}>
-                    <SelectTrigger className="mt-1 bg-muted border-border text-foreground"><SelectValue /></SelectTrigger>
+                  <Select value={String(dueMonths)} onValueChange={v => setDueMonths(Number(v))} disabled={dueDateOptions.length === 0}>
+                    <SelectTrigger className="mt-1 bg-muted border-border text-foreground"><SelectValue placeholder={dueDateOptions.length === 0 ? 'Sem vencimentos configurados' : undefined} /></SelectTrigger>
                     <SelectContent>{dueDateOptions.map(o => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}</SelectContent>
                   </Select>
+                  {dueDateOptions.length === 0 && <p className="text-[11px] text-destructive mt-2">Campanha sem vencimentos configurados.</p>}
                 </div>
               </div>
               {/* Eligibility flags */}

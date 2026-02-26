@@ -1,0 +1,146 @@
+export type PricingMemoryField = {
+  field_id: string;
+  sheet: string;
+  cell: string;
+  module: 'Pricing' | 'Credit' | 'Parity' | 'Fees' | 'G2N' | 'OfferBuilder';
+  data_type: 'number' | 'percent' | 'string' | 'boolean' | 'date';
+  io: 'input' | 'output';
+  unit: string;
+  source_of_truth: string;
+  formula?: string;
+  dependencies?: string[];
+  validation?: Record<string, unknown>;
+  ui_label: string;
+  help_text: string;
+  audit_tag: string;
+};
+
+export const PRICING_MEMORY_DICTIONARY: PricingMemoryField[] = [
+  {
+    field_id: 'insumo.preco_fornecedor',
+    sheet: 'Memória de Cálculo Insumo',
+    cell: 'D4',
+    module: 'Pricing',
+    data_type: 'number',
+    io: 'input',
+    unit: 'BRL_total_pedido',
+    source_of_truth: 'backend.price_list_item OR operation_input',
+    ui_label: 'Preço Fornecedor',
+    help_text: 'Valor base do insumo antes de margem/descontos.',
+    validation: { min: 0, required: true },
+    audit_tag: 'P1.base_supplier_price',
+  },
+  {
+    field_id: 'insumo.markup_margem_impostos',
+    sheet: 'Memória de Cálculo Insumo',
+    cell: 'D5',
+    module: 'Pricing',
+    data_type: 'percent',
+    io: 'input',
+    unit: 'fraction',
+    source_of_truth: 'backend.channel_margins OR offer_builder.rule',
+    ui_label: 'Markup (margem + impostos)',
+    help_text: 'Percentual aplicado sobre o preço base do fornecedor.',
+    validation: { min: -1, max: 5, required: true },
+    audit_tag: 'P2.markup_margin_tax',
+  },
+  {
+    field_id: 'insumo.desconto_promocional',
+    sheet: 'Memória de Cálculo Insumo',
+    cell: 'D6',
+    module: 'OfferBuilder',
+    data_type: 'percent',
+    io: 'input',
+    unit: 'fraction',
+    source_of_truth: 'backend.offer_rules',
+    ui_label: 'Desconto',
+    help_text: 'Desconto promocional aplicado ao valor final (guardrails por alçada).',
+    validation: { min: 0, max: 1, required: true },
+    audit_tag: 'O1.discount_percent',
+  },
+  {
+    field_id: 'insumo.valor_presente_credito_concedido',
+    sheet: 'Memória de Cálculo Insumo',
+    cell: 'D7',
+    module: 'Pricing',
+    data_type: 'number',
+    io: 'output',
+    unit: 'BRL_total_pedido',
+    source_of_truth: 'backend.simulation_engine',
+    formula: 'D4 * (1 + D5 - D6)',
+    dependencies: ['insumo.preco_fornecedor', 'insumo.markup_margem_impostos', 'insumo.desconto_promocional'],
+    ui_label: 'Valor Presente - Crédito a ser Concedido',
+    help_text: 'Preço presente do crédito concedido após markup e desconto.',
+    validation: { min: 0 },
+    audit_tag: 'P3.present_value_credit',
+  },
+  {
+    field_id: 'credito.juros_cet_aa',
+    sheet: 'Memória de Cálculo Insumo',
+    cell: 'D8',
+    module: 'Credit',
+    data_type: 'percent',
+    io: 'input',
+    unit: 'aa_fraction',
+    source_of_truth: 'backend.credit_line OR campaign.interest_rate_policy',
+    ui_label: 'Juros (linha de crédito CET)',
+    help_text: 'Taxa anual equivalente (CET) aplicada ao prazo.',
+    validation: { min: 0, max: 5, required: true },
+    audit_tag: 'C1.cet_rate_aa',
+  },
+  {
+    field_id: 'fees.oken_fee_percent',
+    sheet: 'Memória de Cálculo Insumo',
+    cell: 'D12',
+    module: 'Fees',
+    data_type: 'percent',
+    io: 'input',
+    unit: 'fraction',
+    source_of_truth: 'backend.fee_policy',
+    ui_label: 'Fee/Custo Oken',
+    help_text: 'Taxa cobrada pela operação (originação/infra).',
+    validation: { min: 0, max: 1 },
+    audit_tag: 'F1.oken_fee',
+  },
+  {
+    field_id: 'g2n.combo_discount_allocated',
+    sheet: 'Memória de Cálculo Insumo',
+    cell: 'D30',
+    module: 'G2N',
+    data_type: 'number',
+    io: 'output',
+    unit: 'BRL_total_pedido',
+    source_of_truth: 'backend.simulation_engine',
+    ui_label: 'Combo Discount (alocado por produto)',
+    help_text: 'Parcela do desconto de combo alocada no produto pela participação no subtotal.',
+    audit_tag: 'G1.combo_discount_alloc',
+  },
+  {
+    field_id: 'g2n.barter_discount_allocated',
+    sheet: 'Memória de Cálculo Insumo',
+    cell: 'D31',
+    module: 'G2N',
+    data_type: 'number',
+    io: 'output',
+    unit: 'BRL_total_pedido',
+    source_of_truth: 'backend.simulation_engine',
+    ui_label: 'Barter Discount (alocado por produto)',
+    help_text: 'Parcela do desconto barter alocada no produto pela participação no subtotal.',
+    audit_tag: 'G2.barter_discount_alloc',
+  },
+  {
+    field_id: 'barter.preco_liquido',
+    sheet: 'Memória de Cálculo Insumo',
+    cell: 'D23',
+    module: 'Parity',
+    data_type: 'number',
+    io: 'output',
+    unit: 'BRL_per_saca',
+    source_of_truth: 'backend.simulation_engine',
+    formula: 'D20 * (1 + D22)',
+    dependencies: ['barter.preco_bruto', 'barter.desconto_impostos'],
+    ui_label: 'Preço (líquido)',
+    help_text: 'Preço líquido por saca após ajuste tributário.',
+    audit_tag: 'B7.net_price',
+  },
+];
