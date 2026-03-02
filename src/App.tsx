@@ -104,6 +104,13 @@ const App = () => (
                     <Route path="/admin/pedidos" element={<OrdersListPage />} />
                     <Route path="/compradores" element={<BuyerPortalPage />} />
                     <Route path="/investidores" element={<InvestorPortalPage />} />
+                    {Object.values(portalRoutesByProfile).map(({ path, capability, element }) => (
+                      <Route
+                        key={path}
+                        path={path}
+                        element={<CapabilityRoute capability={capability}>{element}</CapabilityRoute>}
+                      />
+                    ))}
                     <Route path="*" element={<NotFound />} />
                   </Routes>
                 </AppLayout>
