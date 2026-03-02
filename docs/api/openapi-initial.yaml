@@ -1,0 +1,572 @@
+openapi: 3.0.3
+info:
+  title: Oken API
+  version: 0.1.0
+  license:
+    name: Proprietary
+  description: |
+    Especificação inicial para os domínios parties, programs, deals, evidence e events.
+    Inclui padronização de autenticação, headers operacionais, paginação por cursor,
+    filtros multi-tenant e versão inicial de webhooks assinados com política de retry.
+servers:
+  - url: https://api.sandbox.oken.ag/v1
+    description: Sandbox
+  - url: https://api.oken.ag/v1
+    description: Production
+tags:
+  - name: Parties
+    description: Cadastro e consulta de participantes.
+  - name: Programs
+    description: Programas comerciais e vigência.
+  - name: Deals
+    description: Negócios/contratos operacionais.
+  - name: Evidence
+    description: Evidências documentais e de compliance.
+  - name: Events
+    description: Trilha de eventos de domínio.
+  - name: Webhooks
+    description: Assinaturas e entrega de eventos externos.
+security:
+  - OAuth2ClientCredentials:
+      - parties:read
+      - programs:read
+      - deals:read
+      - evidence:read
+      - events:read
+  - ApiKeyAuth: []
+paths:
+  /parties:
+    get:
+      tags: [Parties]
+      summary: Lista partes (empresas, produtores, revendas)
+      operationId: listParties
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+        - $ref: '#/components/parameters/TenantId'
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/StatusFilter'
+        - $ref: '#/components/parameters/UpdatedFrom'
+        - $ref: '#/components/parameters/UpdatedTo'
+      responses:
+        '200':
+          description: Lista paginada
+          headers:
+            x-correlation-id:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedParties'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+    post:
+      tags: [Parties]
+      summary: Cria uma nova parte
+      operationId: createParty
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PartyCreateInput'
+      responses:
+        '201':
+          description: Recurso criado
+          headers:
+            x-correlation-id:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Party'
+        '409':
+          description: Conflito de idempotência
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /programs:
+    get:
+      tags: [Programs]
+      summary: Lista programas comerciais
+      operationId: listPrograms
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+        - $ref: '#/components/parameters/TenantId'
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/StatusFilter'
+        - $ref: '#/components/parameters/DateFrom'
+        - $ref: '#/components/parameters/DateTo'
+      responses:
+        '200':
+          description: Lista paginada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedPrograms'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+  /deals:
+    get:
+      tags: [Deals]
+      summary: Lista operações/negociações
+      operationId: listDeals
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+        - $ref: '#/components/parameters/TenantId'
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/StatusFilter'
+        - $ref: '#/components/parameters/DateFrom'
+        - $ref: '#/components/parameters/DateTo'
+      responses:
+        '200':
+          description: Lista paginada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedDeals'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+    post:
+      tags: [Deals]
+      summary: Cria um deal
+      operationId: createDeal
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DealCreateInput'
+      responses:
+        '201':
+          description: Deal criado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Deal'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+  /evidence:
+    get:
+      tags: [Evidence]
+      summary: Lista evidências de compliance
+      operationId: listEvidence
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+        - $ref: '#/components/parameters/TenantId'
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/StatusFilter'
+        - $ref: '#/components/parameters/DateFrom'
+        - $ref: '#/components/parameters/DateTo'
+      responses:
+        '200':
+          description: Lista paginada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedEvidence'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+    post:
+      tags: [Evidence]
+      summary: Registra uma evidência
+      operationId: createEvidence
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EvidenceCreateInput'
+      responses:
+        '201':
+          description: Evidência criada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Evidence'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+  /events:
+    get:
+      tags: [Events]
+      summary: Lista eventos de domínio (audit trail)
+      operationId: listEvents
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+        - $ref: '#/components/parameters/TenantId'
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+        - name: aggregate_type
+          in: query
+          schema:
+            type: string
+            enum: [party, program, deal, evidence]
+        - name: aggregate_id
+          in: query
+          schema:
+            type: string
+            format: uuid
+        - $ref: '#/components/parameters/DateFrom'
+        - $ref: '#/components/parameters/DateTo'
+      responses:
+        '200':
+          description: Lista paginada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedEvents'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+  /webhooks/subscriptions:
+    post:
+      tags: [Webhooks]
+      summary: Cria assinatura de webhook
+      operationId: createWebhookSubscription
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WebhookSubscriptionCreateInput'
+      responses:
+        '201':
+          description: Assinatura criada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WebhookSubscription'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+components:
+  securitySchemes:
+    OAuth2ClientCredentials:
+      type: oauth2
+      description: Fluxo client_credentials para integrações server-to-server.
+      flows:
+        clientCredentials:
+          tokenUrl: https://auth.oken.ag/oauth/token
+          scopes:
+            parties:read: Leitura de partes
+            programs:read: Leitura de programas
+            deals:read: Leitura de deals
+            evidence:read: Leitura de evidências
+            events:read: Leitura de eventos
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: x-api-key
+  headers:
+    CorrelationId:
+      description: Identificador único para rastreio distribuído.
+      schema:
+        type: string
+        format: uuid
+  parameters:
+    CorrelationId:
+      name: x-correlation-id
+      in: header
+      required: true
+      schema:
+        type: string
+        format: uuid
+      description: UUID gerado pelo cliente para rastreabilidade end-to-end.
+    IdempotencyKey:
+      name: idempotency-key
+      in: header
+      required: true
+      schema:
+        type: string
+        maxLength: 128
+      description: Chave única por tentativa lógica de criação (TTL recomendado de 24h).
+    TenantId:
+      name: tenant_id
+      in: query
+      required: true
+      schema:
+        type: string
+        format: uuid
+      description: Escopo multi-tenant.
+    Cursor:
+      name: cursor
+      in: query
+      schema:
+        type: string
+      description: Cursor opaco retornado em page_info.next_cursor.
+    Limit:
+      name: limit
+      in: query
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 200
+        default: 50
+    StatusFilter:
+      name: status
+      in: query
+      schema:
+        type: string
+      description: Filtro por status da entidade.
+    DateFrom:
+      name: date_from
+      in: query
+      schema:
+        type: string
+        format: date-time
+    DateTo:
+      name: date_to
+      in: query
+      schema:
+        type: string
+        format: date-time
+    UpdatedFrom:
+      name: updated_from
+      in: query
+      schema:
+        type: string
+        format: date-time
+    UpdatedTo:
+      name: updated_to
+      in: query
+      schema:
+        type: string
+        format: date-time
+  responses:
+    BadRequest:
+      description: Requisição inválida
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+  schemas:
+    PageInfo:
+      type: object
+      required: [has_next_page]
+      properties:
+        next_cursor:
+          type: string
+          nullable: true
+        has_next_page:
+          type: boolean
+    Error:
+      type: object
+      properties:
+        code:
+          type: string
+        message:
+          type: string
+        correlation_id:
+          type: string
+          format: uuid
+    Party:
+      type: object
+      required: [id, tenant_id, name, type, status, created_at, updated_at]
+      properties:
+        id: { type: string, format: uuid }
+        tenant_id: { type: string, format: uuid }
+        name: { type: string }
+        document_number: { type: string }
+        type:
+          type: string
+          enum: [producer, reseller, buyer, carrier]
+        status:
+          type: string
+          enum: [active, inactive, blocked]
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    PartyCreateInput:
+      type: object
+      required: [tenant_id, name, type]
+      properties:
+        tenant_id: { type: string, format: uuid }
+        name: { type: string }
+        document_number: { type: string }
+        type:
+          type: string
+          enum: [producer, reseller, buyer, carrier]
+    Program:
+      type: object
+      required: [id, tenant_id, name, status, starts_at, ends_at]
+      properties:
+        id: { type: string, format: uuid }
+        tenant_id: { type: string, format: uuid }
+        name: { type: string }
+        status:
+          type: string
+          enum: [draft, active, suspended, closed]
+        starts_at: { type: string, format: date-time }
+        ends_at: { type: string, format: date-time }
+    Deal:
+      type: object
+      required: [id, tenant_id, program_id, party_id, status, volume, created_at]
+      properties:
+        id: { type: string, format: uuid }
+        tenant_id: { type: string, format: uuid }
+        program_id: { type: string, format: uuid }
+        party_id: { type: string, format: uuid }
+        status:
+          type: string
+          enum: [pending, approved, settled, canceled]
+        volume: { type: number, format: double }
+        commodity: { type: string }
+        created_at: { type: string, format: date-time }
+    DealCreateInput:
+      type: object
+      required: [tenant_id, program_id, party_id, volume, commodity]
+      properties:
+        tenant_id: { type: string, format: uuid }
+        program_id: { type: string, format: uuid }
+        party_id: { type: string, format: uuid }
+        volume: { type: number, format: double }
+        commodity: { type: string }
+    Evidence:
+      type: object
+      required: [id, tenant_id, deal_id, type, status, created_at]
+      properties:
+        id: { type: string, format: uuid }
+        tenant_id: { type: string, format: uuid }
+        deal_id: { type: string, format: uuid }
+        type:
+          type: string
+          enum: [invoice, contract, shipping_document, photo]
+        status:
+          type: string
+          enum: [pending_review, approved, rejected]
+        uri: { type: string, format: uri }
+        created_at: { type: string, format: date-time }
+    EvidenceCreateInput:
+      type: object
+      required: [tenant_id, deal_id, type, uri]
+      properties:
+        tenant_id: { type: string, format: uuid }
+        deal_id: { type: string, format: uuid }
+        type:
+          type: string
+          enum: [invoice, contract, shipping_document, photo]
+        uri: { type: string, format: uri }
+    Event:
+      type: object
+      required: [id, tenant_id, type, aggregate_type, aggregate_id, occurred_at]
+      properties:
+        id: { type: string, format: uuid }
+        tenant_id: { type: string, format: uuid }
+        type: { type: string, example: deal.approved }
+        aggregate_type:
+          type: string
+          enum: [party, program, deal, evidence]
+        aggregate_id: { type: string, format: uuid }
+        payload:
+          type: object
+          additionalProperties: true
+        occurred_at: { type: string, format: date-time }
+    WebhookSubscriptionCreateInput:
+      type: object
+      required: [tenant_id, endpoint_url, secret, event_types]
+      properties:
+        tenant_id: { type: string, format: uuid }
+        endpoint_url: { type: string, format: uri }
+        secret:
+          type: string
+          description: Segredo compartilhado para assinatura HMAC-SHA256.
+          minLength: 32
+        event_types:
+          type: array
+          items:
+            type: string
+            example: deal.*
+    WebhookSubscription:
+      allOf:
+        - $ref: '#/components/schemas/WebhookSubscriptionCreateInput'
+        - type: object
+          required: [id, status, created_at, retry_policy]
+          properties:
+            id: { type: string, format: uuid }
+            status:
+              type: string
+              enum: [active, paused]
+            created_at: { type: string, format: date-time }
+            retry_policy:
+              $ref: '#/components/schemas/WebhookRetryPolicy'
+    WebhookRetryPolicy:
+      type: object
+      description: Política inicial de retry para entregas de webhook.
+      properties:
+        strategy:
+          type: string
+          enum: [exponential_backoff_with_jitter]
+        max_attempts:
+          type: integer
+          default: 8
+        first_retry_delay_seconds:
+          type: integer
+          default: 30
+        max_delay_seconds:
+          type: integer
+          default: 3600
+        timeout_seconds:
+          type: integer
+          default: 10
+    PaginatedParties:
+      type: object
+      properties:
+        data:
+          type: array
+          items: { $ref: '#/components/schemas/Party' }
+        page_info: { $ref: '#/components/schemas/PageInfo' }
+    PaginatedPrograms:
+      type: object
+      properties:
+        data:
+          type: array
+          items: { $ref: '#/components/schemas/Program' }
+        page_info: { $ref: '#/components/schemas/PageInfo' }
+    PaginatedDeals:
+      type: object
+      properties:
+        data:
+          type: array
+          items: { $ref: '#/components/schemas/Deal' }
+        page_info: { $ref: '#/components/schemas/PageInfo' }
+    PaginatedEvidence:
+      type: object
+      properties:
+        data:
+          type: array
+          items: { $ref: '#/components/schemas/Evidence' }
+        page_info: { $ref: '#/components/schemas/PageInfo' }
+    PaginatedEvents:
+      type: object
+      properties:
+        data:
+          type: array
+          items: { $ref: '#/components/schemas/Event' }
+        page_info: { $ref: '#/components/schemas/PageInfo' }
+x-oken-webhooks:
+  signing:
+    algorithm: HMAC-SHA256
+    signature_header: x-oken-signature
+    format: t=<unix_timestamp>,v1=<hex_signature>
+    payload_to_sign: "{timestamp}.{raw_body}"
+  delivery:
+    success_http_codes: [200, 201, 202, 204]
+    retryable_http_codes: [408, 409, 425, 429, 500, 502, 503, 504]
+    retry_policy:
+      strategy: exponential_backoff_with_jitter
+      max_attempts: 8
+      first_retry_delay_seconds: 30
+      max_delay_seconds: 3600

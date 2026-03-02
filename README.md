@@ -71,3 +71,9 @@ Yes, you can!
 To connect a domain, navigate to Project > Settings > Domains and click Connect Domain.
 
 Read more here: [Setting up a custom domain](https://docs.lovable.dev/features/custom-domain#custom-domain)
+
+## API specs (initial draft)
+
+- OpenAPI 3.0: `docs/api/openapi-initial.yaml`
+- Sandbox guide: `docs/api/sandbox/end-to-end.md`
+- Payload examples: `docs/api/sandbox/examples/`
