@@ -18,6 +18,7 @@ export interface InputMemoryParams {
   dataRepasse: string;
   rendimentoAntecipacaoAa: number;
   feeMerchantPct: number;
+  creditContext?: CreditSelectionContext;
 }
 
 export interface CommodityDebtMemoryParams {
@@ -38,6 +39,124 @@ export interface CommodityDebtMemoryParams {
   dataRepasse: string;
   rendimentoAntecipacaoAa: number;
   feeDealerPct: number;
+  creditContext?: CreditSelectionContext;
+}
+
+export interface CreditLine {
+  id: string;
+  name: string;
+  fundingCostAa: number;
+  spreadAa: number;
+  priority?: number;
+  maxShare?: number;
+  active?: boolean;
+}
+
+export interface CreditLineRequirement {
+  creditLineId: string;
+  riskLevels?: string[];
+  profiles?: string[];
+  operationTypes?: string[];
+}
+
+export interface CreditSelectionContext {
+  riskLevel?: string;
+  profile?: string;
+  operationType?: string;
+  lines?: CreditLine[];
+  requirements?: CreditLineRequirement[];
+}
+
+export interface SelectedCreditSource {
+  creditLineId: string;
+  creditLineName: string;
+  share: number;
+  fundingCostAa: number;
+  spreadAa: number;
+  cetAa: number;
+}
+
+function matchesRequirement(value: string | undefined, allowed: string[] | undefined): boolean {
+  if (!allowed || allowed.length === 0) return true;
+  if (!value) return false;
+  return allowed.includes(value);
+}
+
+export function selectCreditSources(context?: CreditSelectionContext): SelectedCreditSource[] {
+  if (!context?.lines?.length) return [];
+
+  const requirementsByLine = new Map<string, CreditLineRequirement[]>(
+    (context.requirements || []).reduce<Array<[string, CreditLineRequirement[]]>>((acc, req) => {
+      const current = acc.find(([lineId]) => lineId === req.creditLineId);
+      if (current) {
+        current[1].push(req);
+      } else {
+        acc.push([req.creditLineId, [req]]);
+      }
+      return acc;
+    }, []),
+  );
+
+  const eligible = context.lines
+    .filter((line) => line.active !== false)
+    .filter((line) => {
+      const reqs = requirementsByLine.get(line.id) || [];
+      if (reqs.length === 0) return true;
+      return reqs.some((req) => (
+        matchesRequirement(context.riskLevel, req.riskLevels)
+        && matchesRequirement(context.profile, req.profiles)
+        && matchesRequirement(context.operationType, req.operationTypes)
+      ));
+    })
+    .sort((a, b) => (a.priority || 999) - (b.priority || 999));
+
+  if (eligible.length === 0) return [];
+
+  let remaining = 1;
+  const selected: SelectedCreditSource[] = [];
+  for (const line of eligible) {
+    if (remaining <= 0) break;
+    const configuredShare = line.maxShare == null ? 1 : Math.max(0, Math.min(1, line.maxShare));
+    const share = Math.min(configuredShare, remaining);
+    if (share <= 0) continue;
+    remaining -= share;
+    selected.push({
+      creditLineId: line.id,
+      creditLineName: line.name,
+      share,
+      fundingCostAa: line.fundingCostAa,
+      spreadAa: line.spreadAa,
+      cetAa: line.fundingCostAa + line.spreadAa,
+    });
+  }
+
+  if (selected.length > 0 && remaining > 0) {
+    selected[selected.length - 1].share += remaining;
+  }
+
+  return selected;
+}
+
+function resolveCetAa(baseCetAa: number, context?: CreditSelectionContext) {
+  const selectedSources = selectCreditSources(context);
+  if (selectedSources.length === 0) {
+    return {
+      effectiveCetAa: baseCetAa,
+      selectedSources,
+      weightedFundingCostAa: 0,
+      weightedSpreadAa: baseCetAa,
+    };
+  }
+
+  const weightedFundingCostAa = selectedSources.reduce((sum, source) => sum + source.fundingCostAa * source.share, 0);
+  const weightedSpreadAa = selectedSources.reduce((sum, source) => sum + source.spreadAa * source.share, 0);
+
+  return {
+    effectiveCetAa: weightedFundingCostAa + weightedSpreadAa,
+    selectedSources,
+    weightedFundingCostAa,
+    weightedSpreadAa,
+  };
 }
 
 function yearsBetween(startISO: string, endISO: string): number {
@@ -55,9 +174,10 @@ function pv(rate: number, years: number, fvValue: number): number {
 }
 
 export function calculateInputMemory(p: InputMemoryParams) {
+  const creditComposition = resolveCetAa(p.jurosCetAa, p.creditContext);
   const valorPresenteCredito = p.precoFornecedor * (1 + p.markupPct - p.descontoPct);
   const periodoJurosAnos = yearsBetween(p.dataConcessao, p.vencimento);
-  const valorPontaSemFee = fv(p.jurosCetAa, periodoJurosAnos, valorPresenteCredito) * (1 - p.incentivoPct);
+  const valorPontaSemFee = fv(creditComposition.effectiveCetAa, periodoJurosAnos, valorPresenteCredito) * (1 - p.incentivoPct);
   const valorPontaComFee = valorPontaSemFee * (1 + p.feeOkenPct);
 
   const descontoImpostosEfetivo = p.temImposto ? p.descontoImpostosPct : 0;
@@ -68,7 +188,7 @@ export function calculateInputMemory(p: InputMemoryParams) {
   const paridadeRealSacas = valorPontaComFee / precoEntregaAjustado;
 
   const montanteInsumoReferencia = fv(
-    p.jurosCetAa,
+    creditComposition.effectiveCetAa,
     periodoJurosAnos,
     p.precoFornecedor * (1 + p.markupPct + p.feeOkenPct)
   );
@@ -103,12 +223,14 @@ export function calculateInputMemory(p: InputMemoryParams) {
     walletMerchant,
     montantePagoMerchant,
     revenueOken,
+    creditComposition,
   };
 }
 
 export function calculateCommodityDebtMemory(p: CommodityDebtMemoryParams) {
+  const creditComposition = resolveCetAa(p.jurosCetAa, p.creditContext);
   const periodoJurosAnos = yearsBetween(p.dataConcessao, p.vencimento);
-  const valorPontaSemFee = fv(p.jurosCetAa, periodoJurosAnos, p.valorDividaPv) * (1 - p.incentivoPct);
+  const valorPontaSemFee = fv(creditComposition.effectiveCetAa, periodoJurosAnos, p.valorDividaPv) * (1 - p.incentivoPct);
   const valorPontaComFee = valorPontaSemFee * (1 + p.feeOkenPct);
 
   const descontoImpostosEfetivo = p.temImposto ? p.descontoImpostosPct : 0;
@@ -117,7 +239,7 @@ export function calculateCommodityDebtMemory(p: CommodityDebtMemoryParams) {
   const precoEntregaAjustado = pv(p.rendimentoAntecipacaoAa, periodoAteRepasseAnos, precoLiquido);
 
   const paridadeRealSacas = valorPontaComFee / precoEntregaAjustado;
-  const montanteInsumoReferencia = fv(p.jurosCetAa, periodoJurosAnos, p.valorDividaPv);
+  const montanteInsumoReferencia = fv(creditComposition.effectiveCetAa, periodoJurosAnos, p.valorDividaPv);
 
   const precoValorizado = montanteInsumoReferencia / paridadeRealSacas;
   const valorizacaoNominal = precoValorizado - precoLiquido;
@@ -149,5 +271,6 @@ export function calculateCommodityDebtMemory(p: CommodityDebtMemoryParams) {
     walletDealer,
     montantePagoDealer,
     revenueOken,
+    creditComposition,
   };
 }
