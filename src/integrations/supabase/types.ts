@@ -947,6 +947,39 @@ export type Database = {
           },
         ]
       }
+      document_templates: {
+        Row: {
+          active: boolean
+          created_at: string
+          doc_type: string
+          id: string
+          template_body: Json
+          template_name: string
+          updated_at: string
+          variables: string[] | null
+        }
+        Insert: {
+          active?: boolean
+          created_at?: string
+          doc_type: string
+          id?: string
+          template_body?: Json
+          template_name: string
+          updated_at?: string
+          variables?: string[] | null
+        }
+        Update: {
+          active?: boolean
+          created_at?: string
+          doc_type?: string
+          id?: string
+          template_body?: Json
+          template_name?: string
+          updated_at?: string
+          variables?: string[] | null
+        }
+        Relationships: []
+      }
       freight_reducers: {
         Row: {
           adjustment: number | null
@@ -1347,6 +1380,65 @@ export type Database = {
             columns: ["distributor_id"]
             isOneToOne: false
             referencedRelation: "campaign_distributors"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      order_installments: {
+        Row: {
+          amortization_method: string
+          balance_amount: number
+          cet_operation_annual: number | null
+          cet_payment_method_annual: number | null
+          created_at: string
+          id: string
+          installment_number: number
+          interest_amount: number
+          order_id: string
+          payment_amount: number
+          payment_method: string | null
+          principal_amount: number
+          total_cost_operation: number | null
+          total_cost_payment_method: number | null
+        }
+        Insert: {
+          amortization_method?: string
+          balance_amount?: number
+          cet_operation_annual?: number | null
+          cet_payment_method_annual?: number | null
+          created_at?: string
+          id?: string
+          installment_number: number
+          interest_amount?: number
+          order_id: string
+          payment_amount?: number
+          payment_method?: string | null
+          principal_amount?: number
+          total_cost_operation?: number | null
+          total_cost_payment_method?: number | null
+        }
+        Update: {
+          amortization_method?: string
+          balance_amount?: number
+          cet_operation_annual?: number | null
+          cet_payment_method_annual?: number | null
+          created_at?: string
+          id?: string
+          installment_number?: number
+          interest_amount?: number
+          order_id?: string
+          payment_amount?: number
+          payment_method?: string | null
+          principal_amount?: number
+          total_cost_operation?: number | null
+          total_cost_payment_method?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "order_installments_order_id_fkey"
+            columns: ["order_id"]
+            isOneToOne: false
+            referencedRelation: "operations"
             referencedColumns: ["id"]
           },
         ]

@@ -17,7 +17,7 @@ describe('OperationStepperFlow smoke', () => {
   });
 
   it('renders PaymentStep when active', () => {
-    render(<PaymentStep isActive={true} paymentMethods={[]} selectedPaymentMethod="" selectedPM={null} onPaymentMethodChange={noop} grossToNet={emptyGrossToNet} simLoading={false} formatCurrency={fmt} />);
+    render(<PaymentStep isActive={true} paymentMethods={[]} selectedPaymentMethod="" selectedPM={null} onPaymentMethodChange={noop} grossToNet={emptyGrossToNet} simLoading={false} formatCurrency={fmt} dueMonths={12} monthlyRate={1.5} />);
     expect(screen.getByText('Meio de Pagamento')).toBeTruthy();
   });
 

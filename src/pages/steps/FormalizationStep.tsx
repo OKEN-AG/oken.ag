@@ -1,13 +1,16 @@
+import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import { NumericInput } from '@/components/NumericInput';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import TrainTrack from '@/components/TrainTrack';
 import {
   Train, ArrowRight, PenLine, ShieldCheck, Lock, Check, FileText,
-  CheckCircle, AlertTriangle, Clock,
+  CheckCircle, AlertTriangle, Clock, Eye,
 } from 'lucide-react';
 import { statusConfig, allDocTypes } from './constants';
 import type { DocumentType } from '@/types/barter';
+import { generateDocumentHtml, defaultTemplates, type DocumentData } from '@/lib/document-generator';
 
 interface FormalizationStepProps {
   isActive: boolean;
@@ -25,6 +28,7 @@ interface FormalizationStepProps {
   netRevenue: number;
   quantitySacas: number;
   formatCurrency: (v: number) => string;
+  documentData?: DocumentData;
 }
 
 export function FormalizationStep({
@@ -32,8 +36,16 @@ export function FormalizationStep({
   docMap, emitting, onDocAction, onCessaoNotify,
   performanceIndex, onPerformanceIndexChange, aforoPercent,
   netRevenue, quantitySacas, formatCurrency,
+  documentData,
 }: FormalizationStepProps) {
+  const [previewDocType, setPreviewDocType] = useState<string | null>(null);
+
   if (!isActive) return null;
+
+  const previewHtml = previewDocType
+    ? generateDocumentHtml(defaultTemplates[previewDocType] || defaultTemplates.pedido, documentData || {})
+    : '';
+
   return (
     <div className="space-y-4">
       {!isNewOperation && wagonStages.length > 0 && (
@@ -70,6 +82,7 @@ export function FormalizationStep({
                     const status = (existing?.status as keyof typeof statusConfig) || 'pendente';
                     const config = statusConfig[status];
                     const Icon = config.icon;
+                    const hasTemplate = !!defaultTemplates[doc.type];
                     return (
                       <div key={doc.type} className="glass-card p-4">
                         <div className="flex items-center justify-between mb-2">
@@ -80,6 +93,11 @@ export function FormalizationStep({
                           {status === 'pendente' && <Button size="sm" variant="outline" className="flex-1 text-xs" disabled={emitting === doc.type} onClick={() => onDocAction(doc.type, 'emit')}>{emitting === doc.type ? '...' : 'Emitir'}</Button>}
                           {status === 'emitido' && <Button size="sm" variant="outline" className="flex-1 text-xs" disabled={emitting === doc.type} onClick={() => onDocAction(doc.type, 'sign')}><PenLine className="w-3 h-3 mr-1" />Assinar</Button>}
                           {status === 'assinado' && <Button size="sm" variant="outline" className="flex-1 text-xs" disabled={emitting === doc.type} onClick={() => onDocAction(doc.type, 'validate')}><ShieldCheck className="w-3 h-3 mr-1" />Validar</Button>}
+                          {hasTemplate && (
+                            <Button size="sm" variant="ghost" className="text-xs px-2" onClick={() => setPreviewDocType(doc.type)} title="Visualizar documento">
+                              <Eye className="w-3.5 h-3.5" />
+                            </Button>
+                          )}
                           {doc.type === 'cessao_credito' && existing && (status === 'emitido' || status === 'assinado') && (
                             (() => {
                               const docData = (existing as any).data || {};
@@ -135,6 +153,20 @@ export function FormalizationStep({
           </div>
         </div>
       )}
+
+      {/* Document Preview Dialog */}
+      <Dialog open={!!previewDocType} onOpenChange={open => !open && setPreviewDocType(null)}>
+        <DialogContent className="max-w-3xl max-h-[85vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <FileText className="w-5 h-5 text-primary" />
+              Pré-visualização: {allDocTypes.find(d => d.type === previewDocType)?.label || previewDocType}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="border border-border rounded-lg bg-background p-4" dangerouslySetInnerHTML={{ __html: previewHtml }} />
+          <p className="text-xs text-muted-foreground text-center mt-2">Esta é uma pré-visualização. O documento final será gerado no momento da emissão.</p>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
