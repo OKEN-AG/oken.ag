@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://oken.ag/schemas/events/finance-settlement-completed.v1.schema.json",
+  "title": "finance.settlement.completed.v1",
+  "type": "object",
+  "required": ["event_id", "occurred_at", "schema_version", "payload"],
+  "properties": {
+    "event_id": { "type": "string", "format": "uuid" },
+    "occurred_at": { "type": "string", "format": "date-time" },
+    "schema_version": { "const": "1.0.0" },
+    "payload": {
+      "type": "object",
+      "required": ["settlement_id", "tenant_id", "status"],
+      "properties": {
+        "settlement_id": { "type": "string", "format": "uuid" },
+        "tenant_id": { "type": "string", "format": "uuid" },
+        "status": { "type": "string", "enum": ["completed"] }
+      }
+    }
+  }
+}
