@@ -1,0 +1,13 @@
+{
+  "endpoint": "POST /v1/accounting/entries",
+  "request": {
+    "tenant_id": "11111111-1111-1111-1111-111111111111",
+    "debit_account": "1.1.01",
+    "credit_account": "2.1.09",
+    "amount": 50000.0
+  },
+  "response": {
+    "id": "acc_001",
+    "posted_at": "2026-06-30T10:10:00Z"
+  }
+}

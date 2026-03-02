@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://oken.ag/schemas/core/investor-order.schema.json",
+  "title": "Investor Order",
+  "description": "Ordem de investimento vinculada a oferta/deal.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["entity", "version", "id", "tenantId", "investorId", "offerId", "status", "amount", "allocatedAmount", "settledAmount", "createdAt", "updatedAt"],
+  "properties": {
+    "entity": { "const": "investor_order" },
+    "version": { "type": "string", "pattern": "^\\d+\\.\\d+\\.\\d+$", "default": "1.0.0" },
+    "id": { "type": "string", "format": "uuid" },
+    "tenantId": { "type": "string", "format": "uuid" },
+    "investorId": { "type": "string", "format": "uuid" },
+    "offerId": { "type": "string", "format": "uuid" },
+    "status": { "type": "string", "enum": ["draft", "submitted", "allocated", "partially_settled", "settled", "canceled"] },
+    "amount": { "type": "number", "minimum": 0 },
+    "allocatedAmount": { "type": "number", "minimum": 0 },
+    "settledAmount": { "type": "number", "minimum": 0 },
+    "createdAt": { "type": "string", "format": "date-time" },
+    "updatedAt": { "type": "string", "format": "date-time" }
+  }
+}

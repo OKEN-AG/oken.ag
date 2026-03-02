@@ -1,0 +1,14 @@
+{
+  "method": "POST",
+  "url": "/v1/campaigns",
+  "headers": {
+    "authorization": "Bearer <access_token>",
+    "x-api-key": "sbx_xxxxxxxxx",
+    "x-correlation-id": "8f9ec4e7-ea38-4e34-b553-fe6aa2e517fb",
+    "idempotency-key": "camp-2026-03-02-0001"
+  },
+  "body": {
+    "tenant_id": "d65f895d-428a-4b2d-99d7-4cf8e98dd8dd",
+    "name": "Safra Milho 2026"
+  }
+}

@@ -37,6 +37,13 @@ Cascas de produto/regulação (plataforma 88, gestão/fundos, securitização) s
 ### 2.2 Programa e operação econômica
 - `programs`: campanha/linha/safra com versionamento.
 - `deals`: caso econômico em formação e ciclo operacional.
+- `instruments`: títulos/contratos financeiros derivados de deals/programs.
+- `collaterals`: garantias vinculadas ao deal e às partes relacionadas.
+- `pools`: agrupadores de captação/alocação para ofertas e ordens.
+- `offers`: ofertas primárias/secundárias vinculadas a pool, instrumento e deal.
+- `investor_orders`: ordens dos investidores com status de alocação.
+- `positions`: posições por instrumento/parte ao longo do lifecycle.
+- `cash_accounts`: contas de caixa para liquidação, reconciliação e controle de saldo.
 
 ### 2.3 Evidência, snapshot e rastreabilidade
 - `evidences`: documento, hash, assinatura, laudo, oráculo.
@@ -79,10 +86,12 @@ Hoje o sistema opera com foco em campanhas/operações e snapshots de cálculo.
 
 ## 5) Próximas entregas (Fase 2)
 
-1. Expandir core para `cash_accounts`, `positions`, `investor_orders`, `accounting_entries`, `tax_events`.
+1. Expandir core para `accounting_entries`, `tax_events` e liquidação regulatória avançada.
 2. Catálogo oficial de eventos com schema registry (`docs/schemas/events/*`).
 3. APIs internas por domínio (`/parties`, `/programs`, `/deals`, `/evidence`, `/events`).
 4. Case management com SLA, approvals e exception handling.
+
+> Detalhamento funcional da esteira e dos portais por perfil: `docs/architecture/CASE_MANAGEMENT_INTERFACES.md`.
 
 
 

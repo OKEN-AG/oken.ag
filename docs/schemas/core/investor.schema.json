@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://oken.ag/schemas/core/investor.schema.json",
+  "title": "Investor",
+  "description": "Cadastro canônico de investidor e seu wrapper regulatório.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["entity", "version", "id", "tenantId", "partyId", "wrapper", "status", "createdAt", "updatedAt"],
+  "properties": {
+    "entity": { "const": "investor" },
+    "version": { "type": "string", "pattern": "^\\d+\\.\\d+\\.\\d+$", "default": "1.0.0" },
+    "id": { "type": "string", "format": "uuid" },
+    "tenantId": { "type": "string", "format": "uuid" },
+    "partyId": { "type": "string", "format": "uuid" },
+    "wrapper": { "type": "string", "enum": ["platform_88", "fund_management", "securitization"] },
+    "status": { "type": "string", "enum": ["prospect", "onboarding", "active", "suspended", "offboarded"] },
+    "onboardingCompletedAt": { "type": "string", "format": "date-time" },
+    "createdAt": { "type": "string", "format": "date-time" },
+    "updatedAt": { "type": "string", "format": "date-time" }
+  }
+}

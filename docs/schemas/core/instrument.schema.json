@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://oken.ag/schemas/core/instrument.schema.json",
+  "title": "Instrument",
+  "description": "Instrumento financeiro do core vinculado ao ciclo de negócio.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["entity", "version", "id", "tenantId", "status", "instrumentType", "currency", "createdAt"],
+  "properties": {
+    "entity": { "const": "instrument" },
+    "version": { "type": "string", "pattern": "^\\d+\\.\\d+\\.\\d+$", "default": "1.0.0" },
+    "id": { "type": "string", "minLength": 1 },
+    "tenantId": { "type": "string", "minLength": 1 },
+    "dealId": { "type": "string", "minLength": 1 },
+    "programId": { "type": "string", "minLength": 1 },
+    "organizationId": { "type": "string", "minLength": 1 },
+    "issuerPartyId": { "type": "string", "minLength": 1 },
+    "status": { "type": "string", "enum": ["draft", "active", "matured", "cancelled"] },
+    "instrumentType": { "type": "string", "minLength": 1 },
+    "code": { "type": "string" },
+    "externalRef": { "type": "string" },
+    "notionalAmount": { "type": "number", "minimum": 0 },
+    "currency": { "type": "string", "minLength": 3, "maxLength": 3 },
+    "maturityDate": { "type": "string", "format": "date" },
+    "idempotencyKey": { "type": "string" },
+    "createdAt": { "type": "string", "format": "date-time" },
+    "updatedAt": { "type": "string", "format": "date-time" }
+  }
+}

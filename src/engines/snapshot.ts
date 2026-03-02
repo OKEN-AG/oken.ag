@@ -3,7 +3,13 @@ import type {
   AgronomicSelection, ComboActivation, PricingResult, GrossToNet, ParityResult,
   ChannelSegment, GuaranteeCoverage, ContractPriceType, CessionChain
 } from '@/types/barter';
-import type { EligibilityResult } from './eligibility';
+
+export interface EligibilityResult {
+  eligible: boolean;
+  blocked: boolean;
+  flags: Record<string, boolean>;
+  warnings: string[];
+}
 
 /**
  * SNAPSHOT / VARIABLE RESOLVER ENGINE

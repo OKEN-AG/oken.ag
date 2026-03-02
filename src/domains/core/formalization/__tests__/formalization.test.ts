@@ -1,9 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import {
+  appendAcceptanceTrail,
+  canTransitionDocumentState,
   ClauseLibrary,
+  createDocumentFromImmutableSnapshot,
   DraftVersioningService,
-  TemplateRegistry,
+  getNextDocumentStates,
   normalizeDocumentState,
+  TemplateRegistry,
   validateMinimumDocumentRule,
 } from '@/domains/core/formalization';
 
@@ -11,7 +15,14 @@ describe('formalization core', () => {
   it('normaliza estados legados para canônicos', () => {
     expect(normalizeDocumentState('emitido')).toBe('draft');
     expect(normalizeDocumentState('validado')).toBe('aprovado');
+    expect(normalizeDocumentState('substituído')).toBe('substituido');
     expect(normalizeDocumentState('desconhecido')).toBe('pendente');
+  });
+
+  it('expõe máquina de estados documental', () => {
+    expect(canTransitionDocumentState('draft', 'aprovado')).toBe(true);
+    expect(canTransitionDocumentState('draft', 'registrado')).toBe(false);
+    expect(getNextDocumentStates('assinado')).toEqual(['registrado', 'substituido', 'cancelado']);
   });
 
   it('versiona minutas sequencialmente', () => {
@@ -68,6 +79,49 @@ describe('formalization core', () => {
     expect(clauses.listByTag('registro')).toHaveLength(1);
   });
 
+  it('gera documento apenas com snapshot imutável do deal', () => {
+    const snapshot = { dealId: 'deal-1', amount: 10 };
+    const document = createDocumentFromImmutableSnapshot({
+      id: 'doc-1',
+      dealId: 'deal-1',
+      templateVersion: {
+        id: 'tplv-1',
+        templateId: 'tpl-1',
+        version: 1,
+        body: '{{amount}}',
+        clauses: [],
+        createdAt: new Date().toISOString(),
+        createdBy: 'user-1',
+      },
+      snapshotId: 'snap-1',
+      dealSnapshot: snapshot,
+      renderedContent: 'Contrato deal-1 amount=10',
+    });
+
+    snapshot.amount = 20;
+
+    expect(document.snapshotHash).not.toBe('');
+    expect(document.contentHash).not.toBe('');
+    expect(document.snapshotHash).not.toEqual(document.contentHash);
+  });
+
+  it('registra trilha de aceite para auditoria', () => {
+    const workflow = appendAcceptanceTrail(
+      {
+        documentId: 'doc-1',
+        state: 'pending',
+        steps: [
+          { signerId: 'u1', role: 'emitente' },
+          { signerId: 'u2', role: 'tomador' },
+        ],
+      },
+      { signerId: 'u1', role: 'emitente', acceptedAt: new Date().toISOString(), evidenceHash: 'hash-1' },
+    );
+
+    expect(workflow.state).toBe('in_progress');
+    expect(workflow.steps[0].evidenceHash).toBe('hash-1');
+  });
+
   it('bloqueia desembolso quando regra mínima não for atendida', () => {
     const result = validateMinimumDocumentRule(
       [
@@ -82,5 +136,43 @@ describe('formalization core', () => {
 
     expect(result.canDisburse).toBe(false);
     expect(result.missing).toEqual(['cpr']);
+  });
+
+  it('valida transições permitidas da máquina de estados', () => {
+    expect(canTransitionDocumentState('draft', 'aprovado')).toBe(true);
+    expect(canTransitionDocumentState('aprovado', 'registrado')).toBe(false);
+  });
+
+  it('gera documento com payload congelado a partir de core snapshot', () => {
+    const snapshot = {
+      id: 'snap-1',
+      payload: { operationId: 'op-1', amount: 10 },
+      payloadHash: 'hash-1',
+      createdAt: new Date().toISOString(),
+    };
+
+    const draft = generateDocumentFromSnapshot(snapshot, {
+      id: 'tv-1',
+      body: 'template body',
+      versionNumber: 1,
+    });
+
+    expect(draft.snapshotId).toBe('snap-1');
+    expect(draft.payloadFrozen).toEqual(snapshot.payload);
+    expect(draft.contentHash).toBe('hash-1');
+  });
+
+  it('expõe document_done para gate de desembolso', () => {
+    const required = [
+      { docType: 'termo_barter', minimumState: 'assinado' as const },
+      { docType: 'cpr', minimumState: 'assinado' as const },
+    ];
+
+    const existing = [
+      { doc_type: 'termo_barter', status: 'assinado' },
+      { doc_type: 'cpr', status: 'assinado' },
+    ];
+
+    expect(isDocumentDone(required, existing)).toBe(true);
   });
 });

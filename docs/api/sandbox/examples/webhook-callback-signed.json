@@ -1,0 +1,18 @@
+{
+  "headers": {
+    "x-oken-delivery-id": "98e90e6a-cb18-4f01-b5d4-1277df4e10a7",
+    "x-oken-timestamp": "1735689600",
+    "x-oken-signature": "t=1735689600,v1=5f17eaad643e3fd0d4e66fbc3f018ab18ffebf53c68d74ec9f526f7fd94f71f2"
+  },
+  "body": {
+    "id": "evt_01JX9A9FVMK9MP0W1K7SMA7K5K",
+    "type": "payment.settled",
+    "occurred_at": "2026-03-02T14:16:00Z",
+    "tenant_id": "d65f895d-428a-4b2d-99d7-4cf8e98dd8dd",
+    "data": {
+      "payment_id": "b6fd5316-3b20-4205-a528-c44571f678a4",
+      "order_id": "83ec5e7b-c560-4a31-a5e6-4e2a0dcf2f20",
+      "status": "settled"
+    }
+  }
+}
