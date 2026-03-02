@@ -19,6 +19,7 @@ import CommoditiesMasterDataPage from "@/pages/admin/CommoditiesMasterDataPage";
 import LegacyRouteRedirectPage from "@/pages/LegacyRouteRedirectPage";
 import OrdersListPage from "@/pages/admin/OrdersListPage";
 import PricingAnalysisPage from "@/pages/PricingAnalysisPage";
+import InvestorPortalPage from "@/pages/investors/InvestorPortalPage";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -39,6 +40,14 @@ const App = () => (
         <AuthProvider>
           <Routes>
             <Route path="/auth" element={<AuthPage />} />
+            <Route
+              path="/portal/investidores"
+              element={
+                <ProtectedRoute>
+                  <InvestorPortalPage />
+                </ProtectedRoute>
+              }
+            />
             <Route path="/*" element={
               <ProtectedRoute>
                 <AppLayout>

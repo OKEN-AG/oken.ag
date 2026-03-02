@@ -22,6 +22,7 @@ const adminItems = [
   { to: '/admin/commodities-masterdata', icon: Database, label: 'Commodities MasterData' },
   { to: '/admin/pedidos', icon: ReceiptText, label: 'Pedidos / Operações' },
   { to: '/compradores', icon: Users, label: 'Portal Comprador' },
+  { to: '/portal/investidores', icon: Users, label: 'Portal Investidor' },
 ];
 
 export default function AppSidebar() {
