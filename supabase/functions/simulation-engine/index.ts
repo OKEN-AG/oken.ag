@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.4";
+import { resolvePolicy, recordPolicyDecisionAudit } from "../_shared/policy.ts";
 
 // ─── CORS ───
 function getCorsHeaders(req: Request) {
@@ -542,6 +543,9 @@ serve(async (req: Request) => {
     const { data: { user }, error: authError } = await supabase.auth.getUser();
     if (authError || !user) return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 
+    const tenantId = (body?.tenantId || user.user_metadata?.tenant_id || null) as string | null;
+    const simulationPolicy = await resolvePolicy(supabase, 'simulation_engine', tenantId);
+
     let result: Record<string, unknown> | EligibilityResult;
 
     switch (endpoint) {
@@ -814,7 +818,7 @@ serve(async (req: Request) => {
             currency: campaign.currency,
             target: campaign.target,
             activeModules: campaign.active_modules || [],
-            aforoPercent: campaign.aforo_percent,
+            aforoPercent: Number(campaign.aforo_percent || simulationPolicy.policyPayload.defaultAforoPercent || 130),
             priceListFormat: campaign.price_list_format,
             commodities: campaign.commodities,
             contractPriceTypes: campaign.contract_price_types || ['fixo', 'a_fixar'],
@@ -911,7 +915,7 @@ serve(async (req: Request) => {
         const base = validGuarantees.reduce((s: number, g: any) => s + (g.estimated_value || 0), 0);
         const avgIP = validGuarantees.length > 0 ? validGuarantees.reduce((s: number, g: any) => s + (g.ip_at_evaluation || 1), 0) / validGuarantees.length : 1;
         const effective = base * avgIP;
-        const required = (operation.gross_revenue || 0) * ((campaign?.aforo_percent || 130) / 100);
+        const required = (operation.gross_revenue || 0) * ((campaign?.aforo_percent || Number(simulationPolicy.policyPayload.defaultAforoPercent || 130)) / 100);
 
         result = {
           operationStatus: operation.status,
@@ -1033,6 +1037,18 @@ serve(async (req: Request) => {
       default:
         return new Response(JSON.stringify({ error: 'Unknown endpoint' }), { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
+
+    await recordPolicyDecisionAudit(supabase, {
+      tenantId,
+      domainRef: 'simulation_engine',
+      domainId: body?.operationId || null,
+      policyKey: 'simulation_engine',
+      resolvedPolicy: simulationPolicy,
+      appliedRule: String(endpoint || 'unknown'),
+      decisionInputs: body || {},
+      decisionOutput: result || {},
+      rationale: 'Simulation executed with server-resolved policy',
+    });
 
     return new Response(JSON.stringify(result), { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
   } catch (error: unknown) {
