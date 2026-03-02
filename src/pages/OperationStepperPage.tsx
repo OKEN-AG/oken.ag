@@ -896,6 +896,74 @@ export default function OperationStepperPage() {
     finally { setEmitting(null); }
   };
 
+  const handleDocumentUpload = async (docType: DocumentType, file: File) => {
+    if (!operationId || !user) return;
+    const existing = existingDocs?.find(d => d.doc_type === docType);
+    const metadata = {
+      file_name: file.name,
+      file_size: file.size,
+      mime_type: file.type,
+      uploaded_at: new Date().toISOString(),
+      uploaded_by: user.id,
+      hash: `${file.name}-${file.size}-${file.lastModified}`,
+      signers: [],
+      timestamps: { upload: new Date().toISOString() },
+      operation_id: operationId,
+    };
+
+    if (existing) {
+      await supabase.from('operation_documents').update({ data: { ...((existing as any).data || {}), ...metadata } } as any).eq('id', existing.id);
+    } else {
+      await supabase.from('operation_documents').insert({
+        operation_id: operationId,
+        doc_type: docType,
+        status: 'pendente',
+        data: metadata,
+      } as any);
+    }
+
+    await supabase.from('operation_logs').insert({
+      operation_id: operationId,
+      user_id: user.id,
+      action: `documento_upload_${docType}`,
+      details: metadata,
+    });
+    toast.success(`Upload registrado para ${docType}`);
+    refetchDocs();
+  };
+
+  const handleDocumentReview = async (docType: DocumentType, decision: 'approved' | 'rejected', reason?: string) => {
+    if (!operationId || !user) return;
+    const existing = existingDocs?.find(d => d.doc_type === docType);
+    if (!existing) return;
+    const review = {
+      review_status: decision,
+      review_reason: reason || null,
+      reviewed_at: new Date().toISOString(),
+      reviewed_by: user.id,
+    };
+    await supabase.from('operation_documents').update({ data: { ...((existing as any).data || {}), ...review } } as any).eq('id', existing.id);
+    await supabase.from('operation_logs').insert({
+      operation_id: operationId,
+      user_id: user.id,
+      action: `documento_${decision}_${docType}`,
+      details: review,
+    });
+    toast.success(`Documento ${decision === 'approved' ? 'aprovado' : 'reprovado'}`);
+    refetchDocs();
+  };
+
+  const handleCounterpartyAcceptance = async () => {
+    if (!operationId || !user) return;
+    await supabase.from('operation_logs').insert({
+      operation_id: operationId,
+      user_id: user.id,
+      action: 'contraparte_aceite_registrado',
+      details: { accepted_at: new Date().toISOString() },
+    });
+    toast.success('Aceite da contraparte registrado');
+  };
+
   const handleAdvanceStatus = async () => {
     if (!operationId || !nextStatus || !user) return;
     if (['formalizado', 'garantido', 'faturado', 'monitorando', 'liquidado'].includes(nextStatus)) {
@@ -1396,6 +1464,13 @@ export default function OperationStepperPage() {
             netRevenue={grossToNet.netRevenue}
             quantitySacas={parity.quantitySacas}
             formatCurrency={formatCurrency}
+            operationStatus={existingOp?.status}
+            paymentMode={resolvePaymentMethod(selectedPM?.method_name)}
+            operationId={operationId}
+            snapshotId={simResult?.snapshotId || null}
+            onDocumentUpload={handleDocumentUpload}
+            onDocumentReview={handleDocumentReview}
+            onCounterpartyAcceptance={handleCounterpartyAcceptance}
             documentData={{
               clientName, clientDocument, clientCity, clientState,
               counterparty: selectedBuyerId === '__other__' ? counterpartyOther : (buyers?.find((b: any) => b.id === selectedBuyerId)?.buyer_name || ''),
