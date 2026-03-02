@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://oken.ag/schemas/core/collateral.schema.json",
+  "title": "Collateral",
+  "description": "Garantia canônica associada a deal/instrument.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["entity", "version", "id", "tenantId", "programId", "dealId", "collateralRef", "collateralType", "status", "currency", "createdAt"],
+  "properties": {
+    "entity": { "const": "collateral" },
+    "version": { "type": "string", "pattern": "^\\d+\\.\\d+\\.\\d+$", "default": "1.0.0" },
+    "id": { "type": "string", "format": "uuid" },
+    "tenantId": { "type": "string", "format": "uuid" },
+    "programId": { "type": "string", "format": "uuid" },
+    "dealId": { "type": "string", "format": "uuid" },
+    "instrumentId": { "type": "string", "format": "uuid" },
+    "collateralRef": { "type": "string", "minLength": 1 },
+    "collateralType": { "type": "string", "minLength": 1 },
+    "status": { "type": "string", "enum": ["registered", "validated", "released", "foreclosed", "cancelled"] },
+    "appraisedValue": { "type": "number", "minimum": 0 },
+    "currency": { "type": "string", "minLength": 3, "maxLength": 3 },
+    "metadata": { "type": "object", "default": {} },
+    "createdAt": { "type": "string", "format": "date-time" },
+    "updatedAt": { "type": "string", "format": "date-time" }
+  }
+}

@@ -128,3 +128,23 @@ Para suportar operação paralela com legado sem perda de rastreabilidade:
 - `business_events` são emitidos com `snapshot_id` e `idempotency_key` determinística por operação/status/timestamp.
 - Logs de reconciliação ficam em `operation_deal_reconciliation_logs` para auditoria de divergências legado x core.
 - View `operations_deals_divergence_dashboard` publica o dashboard SQL de divergência para estabilização da migração.
+
+## 9) Expansão canônica de mercado de capitais (Fase 2.0)
+
+A fase 2.0 adiciona entidades financeiras centrais com relacionamento explícito a `programs` e `deals`:
+
+- `instruments`: definição do ativo e lifecycle de emissão.
+- `collaterals`: garantias vinculadas ao deal e opcionalmente ao instrumento.
+- `pools`: agrupadores para estratégia de oferta/alocação.
+- `offers`: janelas de distribuição com lifecycle de captação.
+- `investor_orders`: ordens com idempotência para processamento resiliente.
+- `positions`: posição consolidada por holder e instrumento.
+- `cash_accounts`: saldos e disponibilidade de caixa para liquidação.
+
+Decisões de desenho aplicadas nesta fase:
+
+1. Enums de status/lifecycle dedicados por entidade (`instrument_status`, `collateral_status`, `offer_status`, `order_status`, etc.).
+2. Índices padronizados por `(tenant_id, status, created_at DESC)` para consultas operacionais e políticas RLS tenant-aware.
+3. Constraints de idempotência para pontos de reprocessamento (`investor_orders`, `cash_accounts`).
+4. Publicação de schemas JSON em `docs/schemas/core/` para contratos de integração e evolução versionada.
+

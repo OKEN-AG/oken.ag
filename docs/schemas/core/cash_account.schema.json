@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://oken.ag/schemas/core/cash_account.schema.json",
+  "title": "CashAccount",
+  "description": "Conta de caixa para liquidação e controle de saldo por tenant.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["entity", "version", "id", "tenantId", "programId", "accountRef", "status", "currency", "balance", "availableBalance", "createdAt"],
+  "properties": {
+    "entity": { "const": "cash_account" },
+    "version": { "type": "string", "pattern": "^\\d+\\.\\d+\\.\\d+$", "default": "1.0.0" },
+    "id": { "type": "string", "format": "uuid" },
+    "tenantId": { "type": "string", "format": "uuid" },
+    "programId": { "type": "string", "format": "uuid" },
+    "dealId": { "type": "string", "format": "uuid" },
+    "ownerPartyId": { "type": "string", "format": "uuid" },
+    "accountRef": { "type": "string", "minLength": 1 },
+    "status": { "type": "string", "enum": ["active", "blocked", "closed"] },
+    "currency": { "type": "string", "minLength": 3, "maxLength": 3 },
+    "balance": { "type": "number", "minimum": 0 },
+    "availableBalance": { "type": "number", "minimum": 0 },
+    "idempotencyKey": { "type": "string", "minLength": 1 },
+    "metadata": { "type": "object", "default": {} },
+    "createdAt": { "type": "string", "format": "date-time" },
+    "updatedAt": { "type": "string", "format": "date-time" }
+  }
+}
