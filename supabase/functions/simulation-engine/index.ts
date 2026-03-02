@@ -1,6 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.4";
-import { resolvePolicy, recordPolicyDecisionAudit } from "../_shared/policy.ts";
+import { resolvePolicy, resolvePolicySetDomains, recordPolicyDecisionAudit } from "../_shared/policy.ts";
 import { calculateInsurance } from "../server/engines/insurance.ts";
 import { calculateFreightBreakdown } from "../server/engines/freight.ts";
 
@@ -548,6 +548,7 @@ serve(async (req: Request) => {
 
     const tenantId = (body?.tenantId || user.user_metadata?.tenant_id || null) as string | null;
     const simulationPolicy = await resolvePolicy(supabase, 'simulation_engine', tenantId);
+    const resolvedPolicySets = await resolvePolicySetDomains(supabase, tenantId, body?.campaignId || null);
 
     let result: Record<string, unknown>;
 
@@ -856,6 +857,7 @@ serve(async (req: Request) => {
         const complementaryDiscount = comboCascade.activations.filter(a => a.applied && a.isComplementary).reduce((sum, a) => sum + a.discountPercent, 0);
 
         result = {
+          policySetsUsed: resolvedPolicySets,
           selections: agronomicSelections,
           comboActivations: comboCascade.activations,
           consumptionLedger: comboCascade.consumptionLedger,
@@ -999,6 +1001,7 @@ serve(async (req: Request) => {
         const required = (operation.gross_revenue || 0) * ((campaign?.aforo_percent || Number(simulationPolicy.policyPayload.defaultAforoPercent || 130)) / 100);
 
         result = {
+          policySetsUsed: resolvedPolicySets,
           operationStatus: operation.status,
           wagonStages: stages,
           nextStatus,
@@ -1108,6 +1111,7 @@ serve(async (req: Request) => {
         const basisByPort = typeof cpRow.basis_by_port === 'string' ? JSON.parse(cpRow.basis_by_port) : (cpRow.basis_by_port || {});
 
         result = {
+          policySetsUsed: resolvedPolicySets,
           parity: parityCalc,
           insurance: insuranceCalc,
           commodityNetPrice: commodityNetPriceCalc,
@@ -1141,7 +1145,7 @@ serve(async (req: Request) => {
       await supabase.from('order_pricing_snapshots').insert({
         operation_id: body?.operationId || null,
         snapshot_type: 'decision',
-        snapshot: { endpoint: String(endpoint || 'unknown'), input: body || {}, output: result },
+        snapshot: { endpoint: String(endpoint || 'unknown'), input: body || {}, output: result, policySetsUsed: resolvedPolicySets },
         created_by: user?.id || null,
       }).then(() => {});
     }
