@@ -62,6 +62,7 @@ BEGIN
     true
   );
 
+  -- Leitura isolada entre tenants
   SELECT COUNT(*) INTO visible_count
   FROM public.organizations
   WHERE id = org_b;
@@ -78,6 +79,7 @@ BEGIN
     RAISE EXCEPTION 'Falha: tenant A não conseguiu ler seu próprio business_event';
   END IF;
 
+  -- Insert cruzado deve falhar
   BEGIN
     INSERT INTO public.organizations (tenant_id, organization_type, legal_name)
     VALUES (tenant_b, 'client', 'Org indevida');
@@ -101,6 +103,34 @@ BEGIN
       '{}'::jsonb
     );
     RAISE EXCEPTION 'Falha de isolamento: tenant A conseguiu inserir business_event tenant B';
+  EXCEPTION
+    WHEN insufficient_privilege THEN
+      NULL;
+  END;
+
+  -- Update cruzado deve falhar
+  BEGIN
+    UPDATE public.organizations
+    SET legal_name = 'Org B violada'
+    WHERE id = org_b;
+
+    IF FOUND THEN
+      RAISE EXCEPTION 'Falha de isolamento: tenant A conseguiu atualizar organization tenant B';
+    END IF;
+  EXCEPTION
+    WHEN insufficient_privilege THEN
+      NULL;
+  END;
+
+  BEGIN
+    UPDATE public.business_events
+    SET event_name = 'cross-tenant.update'
+    WHERE id = event_a
+      AND tenant_id = tenant_b;
+
+    IF FOUND THEN
+      RAISE EXCEPTION 'Falha de isolamento: update cruzado em business_events foi permitido';
+    END IF;
   EXCEPTION
     WHEN insufficient_privilege THEN
       NULL;
