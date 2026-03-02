@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
-import { Navigate } from 'react-router-dom';
+import { Navigate, useSearchParams } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { Mail, Lock, User, Loader } from 'lucide-react';
 import { Input } from '@/components/ui/input';
@@ -11,13 +11,17 @@ import logoLight from '@/assets/logo-light.png';
 
 export default function AuthPage() {
   const { user, loading } = useAuth();
+  const [searchParams] = useSearchParams();
+  const isRecoveryMode = searchParams.get('mode') === 'recovery';
   const [isSignUp, setIsSignUp] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [resetPassword, setResetPassword] = useState('');
   const [fullName, setFullName] = useState('');
+  const [showForgotPassword, setShowForgotPassword] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const { toast } = useToast();
-  const { signIn, signUp } = useAuth();
+  const { signIn, signUp, requestPasswordReset, updatePassword } = useAuth();
 
   if (loading) {
     return (
@@ -27,7 +31,7 @@ export default function AuthPage() {
     );
   }
 
-  if (user) return <Navigate to="/" replace />;
+  if (user && !isRecoveryMode) return <Navigate to="/" replace />;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -59,6 +63,36 @@ export default function AuthPage() {
     setSubmitting(false);
   };
 
+  const handleRequestReset = async () => {
+    if (!email) {
+      toast({ title: 'Informe um email', description: 'Digite um email válido para receber o link de recuperação.', variant: 'destructive' });
+      return;
+    }
+
+    setSubmitting(true);
+    const { error } = await requestPasswordReset(email);
+    if (error) {
+      toast({ title: 'Falha ao enviar recuperação', description: handleDatabaseError(error), variant: 'destructive' });
+    } else {
+      toast({ title: 'Email enviado', description: 'Se a conta existir, você receberá um link para redefinir sua senha.' });
+      setShowForgotPassword(false);
+    }
+    setSubmitting(false);
+  };
+
+  const handleRecoverySubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSubmitting(true);
+    const { error } = await updatePassword(resetPassword);
+    if (error) {
+      toast({ title: 'Erro ao redefinir senha', description: handleDatabaseError(error), variant: 'destructive' });
+    } else {
+      toast({ title: 'Senha atualizada', description: 'Sua senha foi redefinida com sucesso. Faça login para continuar.' });
+      window.location.href = '/auth';
+    }
+    setSubmitting(false);
+  };
+
   return (
     <div className="min-h-screen flex items-center justify-center bg-background p-4">
       <motion.div
@@ -72,10 +106,39 @@ export default function AuthPage() {
 
         <div className="glass-card p-6">
           <h2 className="text-lg font-semibold text-foreground mb-4">
-            {isSignUp ? 'Criar Conta' : 'Entrar'}
+            {isRecoveryMode ? 'Redefinir senha' : isSignUp ? 'Criar Conta' : 'Entrar'}
           </h2>
 
-          <form onSubmit={handleSubmit} className="space-y-4">
+          {isRecoveryMode ? (
+            <form onSubmit={handleRecoverySubmit} className="space-y-4">
+              <div>
+                <label className="stat-label">Nova senha</label>
+                <div className="relative mt-1">
+                  <Lock className="absolute left-3 top-2.5 w-4 h-4 text-muted-foreground" />
+                  <Input
+                    type="password"
+                    value={resetPassword}
+                    onChange={e => setResetPassword(e.target.value)}
+                    className="pl-10 bg-muted border-border text-foreground"
+                    placeholder="••••••••"
+                    required
+                    minLength={6}
+                  />
+                </div>
+              </div>
+
+              <Button
+                type="submit"
+                disabled={submitting}
+                className="w-full bg-primary text-primary-foreground hover:bg-primary/90"
+              >
+                {submitting ? <Loader className="w-4 h-4 animate-spin mr-2" /> : null}
+                Salvar nova senha
+              </Button>
+            </form>
+          ) : (
+          <>
+            <form onSubmit={handleSubmit} className="space-y-4">
             {isSignUp && (
               <div>
                 <label className="stat-label">Nome Completo</label>
@@ -134,14 +197,37 @@ export default function AuthPage() {
             </Button>
           </form>
 
-          <div className="mt-4 text-center">
+          <div className="mt-4 text-center space-y-2">
             <button
               onClick={() => setIsSignUp(!isSignUp)}
               className="text-sm text-muted-foreground hover:text-foreground transition-colors"
             >
               {isSignUp ? 'Já tem conta? Entrar' : 'Não tem conta? Cadastre-se'}
             </button>
-          </div>
+
+            {!isSignUp && (
+              <div>
+                {!showForgotPassword ? (
+                  <button
+                    onClick={() => setShowForgotPassword(true)}
+                    className="text-sm text-primary hover:underline"
+                    type="button"
+                  >
+                    Esqueci minha senha
+                  </button>
+                ) : (
+                  <div className="space-y-2">
+                    <p className="text-xs text-muted-foreground">Vamos enviar um link de recuperação para o email informado.</p>
+                    <Button type="button" onClick={handleRequestReset} disabled={submitting} variant="outline" className="w-full">
+                      Enviar link de recuperação
+                    </Button>
+                  </div>
+                )}
+              </div>
+            )}
+            </div>
+          </>
+          )}
         </div>
       </motion.div>
     </div>

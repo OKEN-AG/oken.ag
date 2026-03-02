@@ -3,6 +3,7 @@ import { User, Session } from '@supabase/supabase-js';
 import { supabase } from '@/integrations/supabase/client';
 import { Capability, UserProfile } from '@/types/authorization';
 import { PROFILE_CAPABILITIES } from '@/config/portals';
+import { APP_ROLE_TO_USER_PROFILE, AppRole } from '@/config/accessProfiles';
 
 interface AuthContextType {
   user: User | null;
@@ -14,6 +15,8 @@ interface AuthContextType {
   signUp: (email: string, password: string, fullName: string) => Promise<{ error: Error | null }>;
   signIn: (email: string, password: string) => Promise<{ error: Error | null }>;
   signOut: () => Promise<void>;
+  requestPasswordReset: (email: string) => Promise<{ error: Error | null }>;
+  updatePassword: (password: string) => Promise<{ error: Error | null }>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -45,19 +48,38 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
-  const profile = getProfileFromSession(session);
+  const [appRole, setAppRole] = useState<AppRole | null>(null);
+  const profile = appRole ? APP_ROLE_TO_USER_PROFILE[appRole] : getProfileFromSession(session);
   const capabilities = PROFILE_CAPABILITIES[profile] ?? [];
+
+  const loadCurrentRole = async (userId?: string) => {
+    if (!userId) {
+      setAppRole(null);
+      return;
+    }
+
+    const { data } = await supabase
+      .from('user_roles')
+      .select('role')
+      .eq('user_id', userId)
+      .limit(1)
+      .maybeSingle();
+
+    setAppRole((data?.role as AppRole | undefined) ?? null);
+  };
 
   useEffect(() => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setSession(session);
       setUser(session?.user ?? null);
+      void loadCurrentRole(session?.user?.id);
       setLoading(false);
     });
 
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session);
       setUser(session?.user ?? null);
+      void loadCurrentRole(session?.user?.id);
       setLoading(false);
     });
 
@@ -85,10 +107,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     await supabase.auth.signOut();
   };
 
+  const requestPasswordReset = async (email: string) => {
+    const { error } = await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: `${window.location.origin}/auth?mode=recovery`,
+    });
+    return { error: error as Error | null };
+  };
+
+  const updatePassword = async (password: string) => {
+    const { error } = await supabase.auth.updateUser({ password });
+    return { error: error as Error | null };
+  };
+
   const hasCapability = (capability: Capability) => capabilities.includes(capability);
 
   return (
-    <AuthContext.Provider value={{ user, session, profile, capabilities, hasCapability, loading, signUp, signIn, signOut }}>
+    <AuthContext.Provider value={{ user, session, profile, capabilities, hasCapability, loading, signUp, signIn, signOut, requestPasswordReset, updatePassword }}>
       {children}
     </AuthContext.Provider>
   );
