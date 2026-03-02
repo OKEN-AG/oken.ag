@@ -9,6 +9,7 @@ import AppLayout from "@/components/AppLayout";
 import Dashboard from "@/pages/Dashboard";
 
 import MonitoringPage from "@/pages/MonitoringPage";
+import SettlementOpsPage from "@/pages/SettlementOpsPage";
 import AuthPage from "@/pages/AuthPage";
 import NotFound from "./pages/NotFound";
 import CampaignsListPage from "@/pages/admin/CampaignsListPage";
@@ -49,6 +50,7 @@ const App = () => (
                     <Route path="/paridade" element={<LegacyRouteRedirectPage source="paridade" />} />
                     <Route path="/documentos" element={<LegacyRouteRedirectPage source="documentos" />} />
                     <Route path="/monitoramento" element={<MonitoringPage />} />
+                    <Route path="/liquidacao" element={<SettlementOpsPage />} />
                     <Route path="/operacao/novo" element={<OperationStepperPage />} />
                     <Route path="/operacao/:id" element={<OperationStepperPage />} />
                     <Route path="/operacao/:id/analise-precos" element={<PricingAnalysisPage />} />
