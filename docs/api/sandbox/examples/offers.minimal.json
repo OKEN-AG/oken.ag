@@ -1,0 +1,16 @@
+{
+  "endpoint": "GET /v1/offers",
+  "response": {
+    "data": [
+      {
+        "id": "off_001",
+        "product": "antecipacao",
+        "status": "active"
+      }
+    ],
+    "page_info": {
+      "next_cursor": null,
+      "has_next_page": false
+    }
+  }
+}

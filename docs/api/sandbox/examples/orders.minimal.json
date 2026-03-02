@@ -1,0 +1,12 @@
+{
+  "endpoint": "POST /v1/orders",
+  "request": {
+    "tenant_id": "11111111-1111-1111-1111-111111111111",
+    "offer_id": "66666666-6666-6666-6666-666666666666",
+    "amount": 50000.0
+  },
+  "response": {
+    "id": "ord_001",
+    "status": "created"
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "endpoint": "GET /v1/admin/tenants",
+  "response": {
+    "data": [
+      {
+        "id": "11111111-1111-1111-1111-111111111111",
+        "name": "Tenant Demo",
+        "status": "active"
+      }
+    ],
+    "page_info": {
+      "next_cursor": null,
+      "has_next_page": false
+    }
+  }
+}
