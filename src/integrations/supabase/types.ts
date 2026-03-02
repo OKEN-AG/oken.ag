@@ -1021,6 +1021,103 @@ export type Database = {
           },
         ]
       }
+      grain_deliveries: {
+        Row: {
+          commodity: string | null
+          created_at: string
+          delivered_at: string
+          delivered_quantity: number
+          delivery_location: string | null
+          expected_quantity: number
+          id: string
+          notes: string | null
+          operation_id: string
+          quality_discount_pct: number | null
+          unit_price: number
+        }
+        Insert: {
+          commodity?: string | null
+          created_at?: string
+          delivered_at?: string
+          delivered_quantity?: number
+          delivery_location?: string | null
+          expected_quantity?: number
+          id?: string
+          notes?: string | null
+          operation_id: string
+          quality_discount_pct?: number | null
+          unit_price?: number
+        }
+        Update: {
+          commodity?: string | null
+          created_at?: string
+          delivered_at?: string
+          delivered_quantity?: number
+          delivery_location?: string | null
+          expected_quantity?: number
+          id?: string
+          notes?: string | null
+          operation_id?: string
+          quality_discount_pct?: number | null
+          unit_price?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "grain_deliveries_operation_id_fkey"
+            columns: ["operation_id"]
+            isOneToOne: false
+            referencedRelation: "operations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      monitoring_alert_rules: {
+        Row: {
+          campaign_id: string | null
+          created_at: string
+          enabled: boolean
+          id: string
+          metric: string
+          name: string
+          operator: string
+          recipients: string[] | null
+          severity: string
+          threshold: number
+        }
+        Insert: {
+          campaign_id?: string | null
+          created_at?: string
+          enabled?: boolean
+          id?: string
+          metric?: string
+          name: string
+          operator?: string
+          recipients?: string[] | null
+          severity?: string
+          threshold?: number
+        }
+        Update: {
+          campaign_id?: string | null
+          created_at?: string
+          enabled?: boolean
+          id?: string
+          metric?: string
+          name?: string
+          operator?: string
+          recipients?: string[] | null
+          severity?: string
+          threshold?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "monitoring_alert_rules_campaign_id_fkey"
+            columns: ["campaign_id"]
+            isOneToOne: false
+            referencedRelation: "campaigns"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       operation_documents: {
         Row: {
           created_at: string
@@ -1660,6 +1757,57 @@ export type Database = {
           user_id?: string
         }
         Relationships: []
+      }
+      settlement_entries: {
+        Row: {
+          amount: number
+          created_at: string
+          currency: string
+          description: string | null
+          grain_delivery_id: string | null
+          id: string
+          kind: string
+          metadata: Json | null
+          operation_id: string
+        }
+        Insert: {
+          amount?: number
+          created_at?: string
+          currency?: string
+          description?: string | null
+          grain_delivery_id?: string | null
+          id?: string
+          kind?: string
+          metadata?: Json | null
+          operation_id: string
+        }
+        Update: {
+          amount?: number
+          created_at?: string
+          currency?: string
+          description?: string | null
+          grain_delivery_id?: string | null
+          id?: string
+          kind?: string
+          metadata?: Json | null
+          operation_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "settlement_entries_grain_delivery_id_fkey"
+            columns: ["grain_delivery_id"]
+            isOneToOne: false
+            referencedRelation: "grain_deliveries"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "settlement_entries_operation_id_fkey"
+            columns: ["operation_id"]
+            isOneToOne: false
+            referencedRelation: "operations"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       user_roles: {
         Row: {
