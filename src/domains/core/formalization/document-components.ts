@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto';
+// Web Crypto-based hash (browser-compatible)
 import type { CanonicalDocumentState } from './document-state';
 
 export interface TemplateRegistryEntry {
@@ -66,7 +66,15 @@ export interface RegistrationWorkflow {
 }
 
 export function hashPayload(payload: unknown): string {
-  return createHash('sha256').update(JSON.stringify(payload)).digest('hex');
+  // Synchronous simple hash for deterministic fingerprinting (not cryptographic security)
+  const str = JSON.stringify(payload);
+  let hash = 0;
+  for (let i = 0; i < str.length; i++) {
+    const char = str.charCodeAt(i);
+    hash = ((hash << 5) - hash) + char;
+    hash |= 0;
+  }
+  return Math.abs(hash).toString(16).padStart(8, '0');
 }
 
 export function createDocumentFromImmutableSnapshot(params: {
