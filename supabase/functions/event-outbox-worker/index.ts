@@ -15,7 +15,13 @@ type OutboxCandidate = {
     tenant_id: string | null;
     correlation_id: string | null;
     idempotency_key: string | null;
-  } | null;
+  } | {
+    payload: Record<string, unknown>;
+    event_name: string;
+    tenant_id: string | null;
+    correlation_id: string | null;
+    idempotency_key: string | null;
+  }[] | null;
 };
 
 const BATCH_SIZE = Number(Deno.env.get('OUTBOX_WORKER_BATCH_SIZE') ?? '50');
@@ -107,7 +113,11 @@ serve(async () => {
   let deadLettered = 0;
 
   for (const candidate of workset) {
-    if (!candidate.business_events) {
+    const businessEvent = Array.isArray(candidate.business_events)
+      ? candidate.business_events[0] ?? null
+      : candidate.business_events;
+
+    if (!businessEvent) {
       continue;
     }
 
@@ -133,11 +143,11 @@ serve(async () => {
 
       await publishToDestination(candidate.destination, {
         eventId: candidate.business_event_id,
-        eventName: candidate.business_events.event_name,
+        eventName: businessEvent.event_name,
         occurredAt: new Date().toISOString(),
-        correlationId: candidate.business_events.correlation_id,
-        idempotencyKey: candidate.business_events.idempotency_key,
-        payload: candidate.business_events.payload,
+        correlationId: businessEvent.correlation_id,
+        idempotencyKey: businessEvent.idempotency_key,
+        payload: businessEvent.payload,
       });
 
       const latencyMs = Math.round(performance.now() - startedAt);
