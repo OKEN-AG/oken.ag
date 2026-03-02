@@ -1,7 +1,7 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.4";
 import { resolvePolicy, recordPolicyDecisionAudit } from "../_shared/policy.ts";
-import { calculateFreightBreakdown } from "../server/engines/freight.ts";
+import { calculateInsurance } from "../server/engines/insurance.ts";
 
 // ─── CORS ───
 function getCorsHeaders(req: Request) {
@@ -524,54 +524,6 @@ function calculateParity(totalAmountBRL: number, commodityNetPrice: number, user
   };
 }
 
-// ─── BLACK-SCHOLES ───
-function normalCDF(x: number): number {
-  const a1 = 0.254829592, a2 = -0.284496736, a3 = 1.421413741, a4 = -1.453152027, a5 = 1.061405429, p = 0.3275911;
-  const sign = x < 0 ? -1 : 1;
-  x = Math.abs(x) / Math.sqrt(2);
-  const t = 1.0 / (1.0 + p * x);
-  const y = 1.0 - ((((a5 * t + a4) * t + a3) * t + a2) * t + a1) * t * Math.exp(-x * x);
-  return 0.5 * (1.0 + sign * y);
-}
-
-function blackScholes(spotPrice: number, strikePrice: number, timeYears: number, riskFreeRate: number, volatility: number): number {
-  if (timeYears <= 0 || spotPrice <= 0 || strikePrice <= 0) return 0;
-  const d1 = (Math.log(spotPrice / strikePrice) + (riskFreeRate + 0.5 * volatility * volatility) * timeYears) / (volatility * Math.sqrt(timeYears));
-  const d2 = d1 - volatility * Math.sqrt(timeYears);
-  return spotPrice * normalCDF(d1) - strikePrice * Math.exp(-riskFreeRate * timeYears) * normalCDF(d2);
-}
-
-async function persistDecisionSnapshot(supabase: any, payload: {
-  tenantId: string | null;
-  userId: string;
-  endpoint: string;
-  body: Record<string, unknown>;
-  result: Record<string, unknown> | EligibilityResult;
-}) {
-  const rationales: string[] = [];
-  const maybeFreight = (payload.result as any)?.freightBreakdown;
-  if (maybeFreight?.rationale && Array.isArray(maybeFreight.rationale)) {
-    rationales.push(...maybeFreight.rationale);
-  }
-
-  const snapshotPayload = {
-    endpoint: payload.endpoint,
-    decisionInputs: payload.body,
-    decisionOutput: payload.result,
-    rationales,
-    timestamp: new Date().toISOString(),
-  };
-
-  await supabase.from('core_snapshots').insert({
-    tenant_id: payload.tenantId,
-    snapshot_type: 'simulation_decision',
-    domain_ref: 'simulation_engine',
-    domain_id: payload.body?.operationId || null,
-    payload: snapshotPayload,
-    created_by: payload.userId,
-  });
-}
-
 // ═══════════════════════════════════════════════════════════════
 // MAIN HANDLER
 // ═══════════════════════════════════════════════════════════════
@@ -849,30 +801,31 @@ serve(async (req: Request) => {
 
           // Insurance
           if (showInsurance) {
-            if (!commodityPricingRow.volatility) throw new Error('commodity_pricing.volatility is not configured — required for insurance');
-            if (!commodityPricingRow.risk_free_rate) throw new Error('commodity_pricing.risk_free_rate is not configured — required for insurance');
-
-            const vol = commodityPricingRow.volatility / 100;
-            const rfr = commodityPricingRow.risk_free_rate;
-            const strikePercent = commodityPricingRow.strike_percent || 105;
-            const maturityDays = commodityPricingRow.option_maturity_days || 180;
-
             const spotPrice = commodityPricingRow.exchange_price * commodityPricingRow.exchange_rate_bolsa;
-            if (spotPrice <= 0) throw new Error('Spot price is 0. Check exchange_price and exchange_rate_bolsa in commodity_pricing.');
+            const insuranceMode = body.insuranceMode === 'simplified' ? 'simplified' : 'advanced';
 
-            const strike = spotPrice * (strikePercent / 100);
-            const timeYears = maturityDays / 365;
-            const premium = blackScholes(spotPrice, strike, timeYears, rfr, vol);
-            const additionalSacas = commodityNetPriceValue > 0 ? Math.ceil((premium / commodityNetPriceValue) * parityResult.quantitySacas) : 0;
-
-            insuranceResult = {
-              premiumPerSaca: premium,
-              additionalSacas,
-              totalSacas: parityResult.quantitySacas + additionalSacas,
-              volatility: commodityPricingRow.volatility,
-              strikePercent,
-              maturityDays,
-            };
+            insuranceResult = calculateInsurance(insuranceMode === 'simplified'
+              ? {
+                mode: 'simplified',
+                baseSacas: parityResult.quantitySacas,
+                commodityPricePerSaca: commodityNetPriceValue,
+                simplified: {
+                  additionalPremiumBRL: Number(body.insuranceAdditionalPremiumBRL || 0),
+                  additionalSacas: Number(body.insuranceAdditionalSacas || 0),
+                },
+              }
+              : {
+                mode: 'advanced',
+                baseSacas: parityResult.quantitySacas,
+                commodityPricePerSaca: commodityNetPriceValue,
+                advanced: {
+                  spotPrice,
+                  strikePercent: Number(commodityPricingRow.strike_percent || 105),
+                  volatilityPercent: commodityPricingRow.volatility,
+                  riskFreeRate: commodityPricingRow.risk_free_rate,
+                  maturityDays: commodityPricingRow.option_maturity_days,
+                },
+              });
           }
         }
 
@@ -1125,19 +1078,29 @@ serve(async (req: Request) => {
 
         let insuranceCalc: any = null;
         if (parShowInsurance) {
-          if (!cpRow.volatility) throw new Error('volatility not configured for insurance');
-          if (!cpRow.risk_free_rate) throw new Error('risk_free_rate not configured for insurance');
-          const vol = cpRow.volatility / 100;
-          const rfr = cpRow.risk_free_rate;
-          const strikePercent = (cpRow as any).strike_percent || 105;
-          const maturityDays = (cpRow as any).option_maturity_days || 180;
-          const spotPrice = cpRow.exchange_price * cpRow.exchange_rate_bolsa;
-          if (spotPrice <= 0) throw new Error('Spot price is 0');
-          const strike = spotPrice * (strikePercent / 100);
-          const timeYears = maturityDays / 365;
-          const premium = blackScholes(spotPrice, strike, timeYears, rfr, vol);
-          const additionalSacas = effectiveCommodityPriceCalc > 0 ? Math.ceil((premium / effectiveCommodityPriceCalc) * parityCalc.quantitySacas) : 0;
-          insuranceCalc = { premiumPerSaca: premium, additionalSacas, totalSacas: parityCalc.quantitySacas + additionalSacas, volatility: cpRow.volatility, strikePercent, maturityDays };
+          const insuranceMode = body.insuranceMode === 'simplified' ? 'simplified' : 'advanced';
+          insuranceCalc = calculateInsurance(insuranceMode === 'simplified'
+            ? {
+              mode: 'simplified',
+              baseSacas: parityCalc.quantitySacas,
+              commodityPricePerSaca: effectiveCommodityPriceCalc,
+              simplified: {
+                additionalPremiumBRL: Number(body.insuranceAdditionalPremiumBRL || 0),
+                additionalSacas: Number(body.insuranceAdditionalSacas || 0),
+              },
+            }
+            : {
+              mode: 'advanced',
+              baseSacas: parityCalc.quantitySacas,
+              commodityPricePerSaca: effectiveCommodityPriceCalc,
+              advanced: {
+                spotPrice: cpRow.exchange_price * cpRow.exchange_rate_bolsa,
+                strikePercent: (cpRow as any).strike_percent || 105,
+                volatilityPercent: cpRow.volatility,
+                riskFreeRate: cpRow.risk_free_rate,
+                maturityDays: (cpRow as any).option_maturity_days,
+              },
+            });
         }
 
         // Build ports list from basis_by_port
