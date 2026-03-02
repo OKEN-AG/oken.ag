@@ -50,14 +50,8 @@ export default function AppSidebar() {
   const { campaign } = useCampaignData(campaignId);
   const activeModules = campaign?.activeModules || [];
 
-  const visibleNavItems = navItems.filter(item => {
-    if (!item.module) return true;
-    if (activeModules.length === 0) return true;
-    return activeModules.includes(item.module);
-  });
-
   const renderNavItem = (item: { to: string; icon: any; label: string }) => {
-    const target = withContext(item.to);
+    const target = item.to;
     const active = location.pathname === item.to || (item.to !== '/' && location.pathname.startsWith(item.to));
     return (
       <NavLink

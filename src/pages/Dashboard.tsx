@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import StatCard from '@/components/StatCard';
 import { useOperationStats } from '@/hooks/useOperations';
 import { BarChart3, Wheat, ShoppingCart, FileText, DollarSign } from 'lucide-react';
-import { useNavigationContext } from '@/hooks/useNavigationContext';
+
 import { Skeleton } from '@/components/ui/skeleton';
 import { useAppContext } from '@/contexts/AppContext';
 
@@ -31,7 +31,7 @@ export default function Dashboard() {
   const formatNum = (v: number) => v.toLocaleString('pt-BR', { maximumFractionDigits: 0 });
 
   const handleOperationClick = (opId: string) => {
-    navigate(withContext(`/operacao/${opId}`));
+    navigate(`/operacao/${opId}`);
   };
 
   return (
