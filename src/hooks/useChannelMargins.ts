@@ -23,13 +23,19 @@ export function useSaveChannelMargins() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async ({ campaignId, margins }: { campaignId: string; margins: { segment: 'direto' | 'distribuidor' | 'cooperativa'; margin_percent: number }[] }) => {
-      const { error } = await supabase.rpc('upsert_campaign_channel_margins', {
-        p_campaign_id: campaignId,
-        p_margins: margins,
-      });
+      // Delete existing margins for this campaign
+      const { error: delError } = await supabase
+        .from('channel_margins')
+        .delete()
+        .eq('campaign_id', campaignId);
+      if (delError) throw delError;
 
-      if (error) {
-        throw error;
+      // Insert new margins
+      if (margins.length > 0) {
+        const { error: insError } = await supabase
+          .from('channel_margins')
+          .insert(margins.map(m => ({ campaign_id: campaignId, segment: m.segment, margin_percent: m.margin_percent })));
+        if (insError) throw insError;
       }
     },
     onSuccess: (_, vars) => {

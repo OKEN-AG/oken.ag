@@ -865,6 +865,33 @@ export default function OperationStepperPage() {
   const pendingStepResultsRef = useRef<any[]>([]);
   const docMap = new Map((existingDocs || []).map(d => [d.doc_type, d]));
 
+  // ─── Document handlers for FormalizationStep ───
+  const handleDocumentUpload = useCallback(async (docType: DocumentType, _file: File) => {
+    toast.info(`Upload de ${docType} — funcionalidade em desenvolvimento`);
+  }, []);
+
+  const handleDocumentReview = useCallback(async (docType: DocumentType, decision: 'approved' | 'rejected', reason?: string) => {
+    if (!operationId || !user) return;
+    const existing = existingDocs?.find(d => d.doc_type === docType);
+    if (!existing) return;
+    if (decision === 'approved') {
+      await supabase.from('operation_documents').update({ status: 'validado', validated_at: new Date().toISOString() } as any).eq('id', existing.id);
+    }
+    await supabase.from('operation_logs').insert([{ operation_id: operationId, user_id: user.id, action: `documento_review_${decision}_${docType}`, details: JSON.parse(JSON.stringify({ doc_type: docType, decision, reason })) }]);
+    toast.success(`Documento "${docType}" — ${decision}`);
+    refetchDocs();
+  }, [operationId, user, existingDocs, refetchDocs]);
+
+  const handleCounterpartyAcceptance = useCallback(async () => {
+    if (!operationId || !user) return;
+    const cessaoDoc = existingDocs?.find(d => d.doc_type === 'cessao_credito');
+    if (!cessaoDoc) return;
+    const docData = (cessaoDoc as any).data || {};
+    await supabase.from('operation_documents').update({ data: { ...docData, cession_accepted: true, accepted_at: new Date().toISOString() } } as any).eq('id', cessaoDoc.id);
+    toast.success('Aceite da contraparte registrado');
+    refetchDocs();
+  }, [operationId, user, existingDocs, refetchDocs]);
+
   const handleDocAction = async (docType: DocumentType, action: 'emit' | 'sign' | 'validate') => {
     if (!operationId || !user) return;
     setEmitting(docType);
@@ -914,7 +941,7 @@ export default function OperationStepperPage() {
       case 'simulation':
         return { grossRevenue: grossToNet.grossRevenue, netRevenue: grossToNet.netRevenue };
       case 'payment_barter':
-        return { paymentMethod: resolvePaymentMethod(selectedPM?.method_name), counterparty: selectedBuyerId === '__other__' ? counterpartyOther : selectedBuyer?.buyerName || null };
+        return { paymentMethod: resolvePaymentMethod(selectedPM?.method_name), counterparty: selectedBuyerId === '__other__' ? counterpartyOther : selectedBuyer?.buyer_name || null };
       case 'formalization':
         return { documentsTracked: (existingDocs || []).length };
       case 'summary_approval':
@@ -950,19 +977,19 @@ export default function OperationStepperPage() {
       return;
     }
 
-    await supabase.from('order_pricing_snapshots').insert({
+    await supabase.from('order_pricing_snapshots').insert([{
       operation_id: params.opId,
       snapshot_type: 'operation_step_result',
       snapshot: stepResult as any,
-      created_by: user?.id,
-    });
+      created_by: user?.id!,
+    }]);
 
-    await supabase.from('operation_logs').insert({
+    await supabase.from('operation_logs').insert([{
       operation_id: params.opId,
-      user_id: user?.id,
+      user_id: user?.id!,
       action: 'operation_step_transition',
-      details: { from_step: visibleFrom, to_step: visibleTo, operation_step_result: stepResult },
-    });
+      details: JSON.parse(JSON.stringify({ from_step: visibleFrom, to_step: visibleTo, operation_step_result: stepResult })),
+    }]);
   };
 
   const handleAdvanceStatus = async () => {
@@ -1169,12 +1196,12 @@ export default function OperationStepperPage() {
         snapshotHash,
       };
 
-      await supabase.from('order_pricing_snapshots').insert({
+      await supabase.from('order_pricing_snapshots').insert([{
         operation_id: opId!,
-        snapshot: pricingSnapshotEnvelope,
+        snapshot: JSON.parse(JSON.stringify(pricingSnapshotEnvelope)),
         snapshot_type: 'pricing_snapshot',
         created_by: user.id,
-      });
+      }]);
 
       const immutableSnapshot = await buildImmutableOperationSnapshot({
         normalizedInputs: {
@@ -1533,7 +1560,7 @@ export default function OperationStepperPage() {
             operationStatus={existingOp?.status}
             paymentMode={resolvePaymentMethod(selectedPM?.method_name)}
             operationId={operationId}
-            snapshotId={simResult?.snapshotId || null}
+            snapshotId={null}
             onDocumentUpload={handleDocumentUpload}
             onDocumentReview={handleDocumentReview}
             onCounterpartyAcceptance={handleCounterpartyAcceptance}
