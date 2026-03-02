@@ -3,5 +3,4 @@ export * from './template-registry';
 export * from './clause-library';
 export * from './draft-versioning';
 export * from './minimum-document-rule';
-
-export * from './snapshot-document-generator';
+export * from './document-components';
