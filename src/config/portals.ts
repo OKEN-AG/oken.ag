@@ -21,6 +21,7 @@ const ALL_QUEUES: OperationalQueue[] = [
 export const PROFILE_CAPABILITIES: Record<UserProfile, Capability[]> = {
   credor_oem: ['portal.credor_oem.view', 'queue.docs.manage', 'queue.formalizacao.manage', 'audit.read', 'audit.write'],
   backoffice: ['portal.backoffice.view', ...ALL_QUEUES.map(q => q.capability), 'audit.read', 'audit.write'],
+  juridico: ['portal.juridico.view', 'queue.docs.manage', 'queue.formalizacao.manage', 'audit.read', 'audit.write'],
   tomador: ['portal.tomador.view', 'queue.kyc.manage', 'queue.docs.manage', 'audit.read', 'audit.write'],
   fornecedor: ['portal.fornecedor.view', 'queue.docs.manage', 'queue.pagamentos.manage', 'audit.read', 'audit.write'],
   investidor: ['portal.investidor.view', 'queue.reconciliacao.manage', 'queue.cobranca.manage', 'audit.read', 'audit.write'],
@@ -42,6 +43,14 @@ export const PORTAL_DEFINITIONS: PortalDefinition[] = [
     description: 'Central operacional com governança ponta a ponta para operação.',
     route: '/portal/backoffice',
     requiredCapability: 'portal.backoffice.view',
+    queues: ALL_QUEUES,
+  },
+  {
+    profile: 'juridico',
+    title: 'Portal Jurídico / Formalização',
+    description: 'Templates, minutas, assinatura, registro e evidências documentais.',
+    route: '/portal/juridico',
+    requiredCapability: 'portal.juridico.view',
     queues: ALL_QUEUES,
   },
   {

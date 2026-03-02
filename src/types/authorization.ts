@@ -1,6 +1,7 @@
 export type UserProfile =
   | 'credor_oem'
   | 'backoffice'
+  | 'juridico'
   | 'tomador'
   | 'fornecedor'
   | 'investidor'
@@ -9,6 +10,7 @@ export type UserProfile =
 export type Capability =
   | 'portal.credor_oem.view'
   | 'portal.backoffice.view'
+  | 'portal.juridico.view'
   | 'portal.tomador.view'
   | 'portal.fornecedor.view'
   | 'portal.investidor.view'
