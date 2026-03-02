@@ -84,6 +84,8 @@ Hoje o sistema opera com foco em campanhas/operações e snapshots de cálculo.
 3. APIs internas por domínio (`/parties`, `/programs`, `/deals`, `/evidence`, `/events`).
 4. Case management com SLA, approvals e exception handling.
 
+> Detalhamento funcional da esteira e dos portais por perfil: `docs/architecture/CASE_MANAGEMENT_INTERFACES.md`.
+
 
 
 ## 6) Endurecimento aplicado após revisão (Fase 1.1)
