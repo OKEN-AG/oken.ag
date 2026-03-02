@@ -1,4 +1,6 @@
 import { useState, useMemo, useEffect, useCallback, useRef } from 'react';
+import { useOrderWizardState } from '@/pages/hooks/useOrderWizardState';
+import { useOrderPersistence } from '@/pages/hooks/useOrderPersistence';
 import { useParams, useNavigate, useSearchParams, Link } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '@/contexts/AuthContext';
@@ -31,6 +33,14 @@ import {
   Zap, Lightbulb, Eye
 } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { ContextStep } from '@/pages/steps/ContextStep';
+import { OrderStep } from '@/pages/steps/OrderStep';
+import { SimulationStep } from '@/pages/steps/SimulationStep';
+import { PaymentStep } from '@/pages/steps/PaymentStep';
+import { BarterStep } from '@/pages/steps/BarterStep';
+import { FormalizationStep } from '@/pages/steps/FormalizationStep';
+import { SummaryStep } from '@/pages/steps/SummaryStep';
+
 
 // ─── Step definitions ───
 const STEPS = [
@@ -209,55 +219,25 @@ export default function OperationStepperPage() {
   const { data: existingItems } = useOperationItems(isNewOperation ? undefined : operationId);
   const { data: existingDocs, refetch: refetchDocs } = useOperationDocuments(isNewOperation ? undefined : operationId);
 
-  // ─── Step state ───
-  const [currentStep, setCurrentStep] = useState(0);
-  const [selectedCampaignId, setSelectedCampaignId] = useState(initialCampaignId);
+  const wizard = useOrderWizardState(initialCampaignId);
+  const {
+    currentStep, setCurrentStep, selectedCampaignId, setSelectedCampaignId, clientName, setClientName,
+    clientDocument, setClientDocument, clientCity, setClientCity, clientCityCode, setClientCityCode,
+    clientState, setClientState, clientType, setClientType, clientEmail, setClientEmail,
+    clientPhone, setClientPhone, clientIE, setClientIE, deliveryAddress, setDeliveryAddress,
+    selectedDistributorId, setSelectedDistributorId, channelSegmentName, setChannelSegmentName,
+    channelMarginPercent, setChannelMarginPercent, channelAdjustmentPercent, setChannelAdjustmentPercent,
+    segment, setSegment, channelEnum, setChannelEnum, area, setArea, comboQty, setComboQty,
+    quantityMode, setQuantityMode, freeQuantities, setFreeQuantities, showCampaignPreview,
+    setShowCampaignPreview, packagingSplits, setPackagingSplits, selectedProducts, setSelectedProducts,
+    dueMonths, setDueMonths, selectedPaymentMethod, setSelectedPaymentMethod, selectedCommodity,
+    setSelectedCommodity, port, setPort, freightOrigin, setFreightOrigin, hasContract, setHasContract,
+    userPrice, setUserPrice, showInsurance, setShowInsurance, volatility, setVolatility,
+    selectedBuyerId, setSelectedBuyerId, counterpartyOther, setCounterpartyOther,
+    contractPriceType, setContractPriceType, performanceIndex, setPerformanceIndex,
+  } = wizard;
   const { campaign, rawCampaign, products, combos, commodityPricing, rawCommodityPricing, freightReducers, deliveryLocations, buyers, valorizations, dueDates, isLoading: loadingData } = useCampaignData(selectedCampaignId || undefined);
-
-  // ─── Context step state ───
-  const [clientName, setClientName] = useState('');
-  const [clientDocument, setClientDocument] = useState('');
-  const [clientCity, setClientCity] = useState('');
-  const [clientCityCode, setClientCityCode] = useState('');
-  const [clientState, setClientState] = useState('');
-  const [clientType, setClientType] = useState<'PF' | 'PJ'>('PJ');
-  const [clientEmail, setClientEmail] = useState('');
-  const [clientPhone, setClientPhone] = useState('');
-  const [clientIE, setClientIE] = useState('');
-  const [deliveryAddress, setDeliveryAddress] = useState('');
-  const [selectedDistributorId, setSelectedDistributorId] = useState('');
-  const [channelSegmentName, setChannelSegmentName] = useState('');
-  const [channelMarginPercent, setChannelMarginPercent] = useState(0);
-  const [channelAdjustmentPercent, setChannelAdjustmentPercent] = useState(0);
-  const [segment, setSegment] = useState<string>(''); // segmento comercial
-  const [channelEnum, setChannelEnum] = useState<ChannelSegment>('distribuidor'); // compat legado para telas antigas
-  const [area, setArea] = useState(500);
-  const [comboQty, setComboQty] = useState(1);
-  const [quantityMode, setQuantityMode] = useState<'dose' | 'livre'>('dose');
-  const [freeQuantities, setFreeQuantities] = useState<Map<string, number>>(new Map());
-  const [showCampaignPreview, setShowCampaignPreview] = useState(false);
-  const [packagingSplits, setPackagingSplits] = useState<Map<string, { productId: string; qty: number }[]>>(new Map());
   const effectiveArea = area * comboQty;
-
-  // ─── Order step state ───
-  const [selectedProducts, setSelectedProducts] = useState<Map<string, number>>(new Map());
-
-  // ─── Payment step state ───
-  const [dueMonths, setDueMonths] = useState(12);
-  const [selectedPaymentMethod, setSelectedPaymentMethod] = useState('');
-  const [selectedCommodity, setSelectedCommodity] = useState('');
-
-  // ─── Barter step state ───
-  const [port, setPort] = useState('');
-  const [freightOrigin, setFreightOrigin] = useState('');
-  const [hasContract, setHasContract] = useState(false);
-  const [userPrice, setUserPrice] = useState(0);
-  const [showInsurance, setShowInsurance] = useState(false);
-  const [volatility, setVolatility] = useState(25);
-  const [selectedBuyerId, setSelectedBuyerId] = useState('');
-  const [counterpartyOther, setCounterpartyOther] = useState('');
-  const [contractPriceType, setContractPriceType] = useState<ContractPriceType>('fixo');
-  const [performanceIndex, setPerformanceIndex] = useState(100); // 0-100 scale for UI
 
   // ─── Mutations ───
   const createOperation = useCreateOperation();
@@ -269,55 +249,31 @@ export default function OperationStepperPage() {
   // ─── Simulation Engine (server-authoritative — all calculations on backend) ───
   const { loading: simLoading, error: simError, result: simResult, simulateDebounced, clearResult: clearSimResult } = useSimulationEngine();
 
-  // ─── Load existing operation data ───
-  useEffect(() => {
-    if (existingOp) {
-      setSelectedCampaignId(existingOp.campaign_id);
-      setClientName(existingOp.client_name || '');
-      setClientDocument(existingOp.client_document || '');
-      setClientCity(existingOp.city || '');
-      setClientState(existingOp.state || '');
-      if (existingOp.city && existingOp.state) {
-        const cityMatch = getAllMunicipios().find(m => m.uf === existingOp.state && normalizeKey(m.name) === normalizeKey(existingOp.city || ''));
-        setClientCityCode(cityMatch?.ibge || '');
-      }
-      setChannelEnum((existingOp.channel || 'distribuidor') as ChannelSegment);
-      setSelectedDistributorId((existingOp as any).distributor_id || '');
-      setChannelSegmentName((existingOp as any).channel_segment_name || '');
-      setSegment((existingOp as any).commercial_segment_name || '');
-      setArea(existingOp.area_hectares || 500);
-      if (existingOp.commodity) setSelectedCommodity(existingOp.commodity);
-      if (existingOp.due_months) setDueMonths(existingOp.due_months);
-    }
-  }, [existingOp]);
-
-  useEffect(() => {
-    if (existingItems && existingItems.length > 0 && products.length > 0) {
-      const map = new Map<string, number>();
-      for (const item of existingItems) {
-        map.set(item.product_id, item.dose_per_hectare);
-      }
-      setSelectedProducts(map);
-    }
-  }, [existingItems, products]);
-
-  // Auto-select first campaign
-  useEffect(() => {
-    if (!selectedCampaignId && activeCampaigns?.length) {
-      setSelectedCampaignId(activeCampaigns[0].id);
-    }
-  }, [activeCampaigns, selectedCampaignId]);
-
-  useEffect(() => {
-    if (!isNewOperation) return;
-    setClientState('');
-    setClientCity('');
-    setClientCityCode('');
-    setSelectedProducts(new Map());
-    setFreeQuantities(new Map());
-    setPackagingSplits(new Map());
-    setComboQty(1);
-  }, [selectedCampaignId, isNewOperation]);
+  useOrderPersistence({
+    existingOp,
+    existingItems,
+    products,
+    activeCampaigns,
+    selectedCampaignId,
+    setSelectedCampaignId,
+    isNewOperation,
+    setClientName,
+    setClientDocument,
+    setClientCity,
+    setClientState,
+    setClientCityCode,
+    setChannelEnum,
+    setSelectedDistributorId,
+    setChannelSegmentName,
+    setSegment,
+    setArea,
+    setSelectedCommodity,
+    setDueMonths,
+    setSelectedProducts,
+    setFreeQuantities,
+    setPackagingSplits,
+    setComboQty,
+  });
 
   // ─── Campaign sub-data ───
   const { data: campaignSegments } = useQuery({
@@ -1152,7 +1108,7 @@ export default function OperationStepperPage() {
         <motion.div key={currentStepDef.id} initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} transition={{ duration: 0.15 }}>
 
           {/* ═══ CONTEXT STEP ═══ */}
-          {currentStepDef.id === 'context' && (
+          <ContextStep isActive={currentStepDef.id === 'context'}>
             <div className="space-y-4">
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                 <div className="glass-card p-4 lg:col-span-2">
@@ -1311,10 +1267,10 @@ export default function OperationStepperPage() {
                 </div>
               )}
             </div>
-          )}
+          </ContextStep>
 
           {/* ═══ ORDER STEP ═══ */}
-          {currentStepDef.id === 'order' && (
+          <OrderStep isActive={currentStepDef.id === 'order'}>
             <div className="space-y-4">
               {/* Sticky discount bar + mode toggle */}
               <div className="glass-card p-4 space-y-3 sticky top-0 z-10 backdrop-blur-md">
@@ -1552,11 +1508,11 @@ export default function OperationStepperPage() {
                 })}
               </div>
             </div>
-          )}
+          </OrderStep>
 
           {/* ═══ SIMULATION STEP ═══ */}
           {/* Discount never shown per product — only total in footer */}
-          {currentStepDef.id === 'simulation' && selections.length > 0 && (
+          <SimulationStep isActive={currentStepDef.id === 'simulation' && selections.length > 0}>
             <div className="glass-card p-5 space-y-4">
               <h2 className="text-sm font-semibold text-foreground flex items-center gap-2"><ShoppingCart className="w-4 h-4 text-primary" /> Breakdown da Simulação</h2>
               <div className="space-y-1">
@@ -1581,10 +1537,10 @@ export default function OperationStepperPage() {
                 <div><div className="stat-label">Total a Pagar</div><div className="font-mono font-bold text-xl text-success">{formatCurrency(grossToNet.netRevenue)}</div></div>
               </div>
             </div>
-          )}
+          </SimulationStep>
 
           {/* ═══ PAYMENT STEP ═══ */}
-          {currentStepDef.id === 'payment' && (
+          <PaymentStep isActive={currentStepDef.id === 'payment'}>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="glass-card p-4">
                 <label className="stat-label">Meio de Pagamento</label>
@@ -1600,10 +1556,10 @@ export default function OperationStepperPage() {
                 <div className="text-xs text-muted-foreground mt-1">Juros: {formatCurrency(grossToNet.financialRevenue)} | Margem: {formatCurrency(grossToNet.distributorMargin)}</div>
               </div>
             </div>
-          )}
+          </PaymentStep>
 
           {/* ═══ BARTER STEP (with buyer select + valorization) ═══ */}
-          {currentStepDef.id === 'barter' && (
+          <BarterStep isActive={currentStepDef.id === 'barter'}>
             <div className="space-y-4">
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                 <div className="glass-card p-4">
@@ -1692,10 +1648,10 @@ export default function OperationStepperPage() {
                 )}
               </div>
             </div>
-          )}
+          </BarterStep>
 
           {/* ═══ FORMALIZATION STEP ═══ */}
-          {currentStepDef.id === 'formalization' && (
+          <FormalizationStep isActive={currentStepDef.id === 'formalization'}>
             <div className="space-y-4">
               {!isNewOperation && wagonStages.length > 0 && (
                 <div className="glass-card p-4">
@@ -1808,10 +1764,10 @@ export default function OperationStepperPage() {
                 </div>
               )}
             </div>
-          )}
+          </FormalizationStep>
 
           {/* ═══ SUMMARY STEP ═══ */}
-          {currentStepDef.id === 'summary' && (
+          <SummaryStep isActive={currentStepDef.id === 'summary'}>
             <div className="space-y-4">
               <div className="glass-card p-5">
                 <h2 className="text-sm font-semibold text-foreground mb-3">Resumo Final</h2>
@@ -1844,7 +1800,7 @@ export default function OperationStepperPage() {
                 </div>
               )}
             </div>
-          )}
+          </SummaryStep>
         </motion.div>
       </AnimatePresence>
 

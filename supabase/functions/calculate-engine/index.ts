@@ -46,6 +46,90 @@ function pv(rate: number, years: number, fvValue: number): number {
   return fvValue / Math.pow(1 + rate, years);
 }
 
+
+
+type CreditLinePolicy = {
+  id: string;
+  name: string;
+  fundingCostAa: number;
+  spreadAa: number;
+  priority: number;
+  maxShare: number | null;
+};
+
+type CreditLineRequirementPolicy = {
+  creditLineId: string;
+  riskLevels?: string[];
+  profiles?: string[];
+  operationTypes?: string[];
+};
+
+type SelectedCreditSourcePolicy = {
+  creditLineId: string;
+  creditLineName: string;
+  share: number;
+  fundingCostAa: number;
+  spreadAa: number;
+  cetAa: number;
+};
+
+function matchesRequirement(value: string | undefined, allowed: string[] | undefined): boolean {
+  if (!allowed || allowed.length === 0) return true;
+  if (!value) return false;
+  return allowed.includes(value);
+}
+
+function selectCreditSourcesPolicy(
+  lines: CreditLinePolicy[],
+  requirements: CreditLineRequirementPolicy[],
+  riskLevel?: string,
+  profile?: string,
+  operationType?: string,
+): SelectedCreditSourcePolicy[] {
+  const reqMap = new Map<string, CreditLineRequirementPolicy[]>();
+  for (const req of requirements) {
+    const bucket = reqMap.get(req.creditLineId) || [];
+    bucket.push(req);
+    reqMap.set(req.creditLineId, bucket);
+  }
+
+  const eligible = lines
+    .sort((a, b) => (a.priority || 999) - (b.priority || 999))
+    .filter((line) => {
+      const reqs = reqMap.get(line.id) || [];
+      if (reqs.length === 0) return true;
+      return reqs.some((req) => (
+        matchesRequirement(riskLevel, req.riskLevels)
+        && matchesRequirement(profile, req.profiles)
+        && matchesRequirement(operationType, req.operationTypes)
+      ));
+    });
+
+  let remaining = 1;
+  const selected: SelectedCreditSourcePolicy[] = [];
+  for (const line of eligible) {
+    if (remaining <= 0) break;
+    const maxShare = line.maxShare == null ? 1 : Math.max(0, Math.min(1, line.maxShare));
+    const share = Math.min(maxShare, remaining);
+    if (share <= 0) continue;
+    selected.push({
+      creditLineId: line.id,
+      creditLineName: line.name,
+      share,
+      fundingCostAa: line.fundingCostAa,
+      spreadAa: line.spreadAa,
+      cetAa: line.fundingCostAa + line.spreadAa,
+    });
+    remaining -= share;
+  }
+
+  if (selected.length > 0 && remaining > 0) {
+    selected[selected.length - 1].share += remaining;
+  }
+
+  return selected;
+}
+
 function requireFields(payload: Record<string, unknown>, fields: string[]) {
   const missing = fields.filter((f) => payload[f] === null || payload[f] === undefined || payload[f] === '');
   if (missing.length > 0) {
@@ -66,6 +150,73 @@ function validateTemporalRules(payload: Record<string, unknown>) {
   if (repasse !== null && pagamento > repasse && !excecao) {
     throw new Error('Temporal: dataPagamento must be <= dataRepasse (or provide regraExcecaoTemporal)');
   }
+}
+
+
+async function resolveCreditComposition(
+  supabase: ReturnType<typeof createClient>,
+  campaignId: string | null,
+  jurosCetAaFallback: number,
+  riskLevel?: string,
+  profile?: string,
+  operationType?: string,
+) {
+  if (!campaignId) {
+    return {
+      effectiveCetAa: jurosCetAaFallback,
+      weightedFundingCostAa: 0,
+      weightedSpreadAa: jurosCetAaFallback,
+      selectedSources: [],
+    };
+  }
+
+  const [{ data: linesData }, { data: reqData }] = await Promise.all([
+    supabase
+      .from('credit_lines')
+      .select('id,name,funding_cost_aa,spread_aa,priority,max_share,active,campaign_id')
+      .eq('campaign_id', campaignId)
+      .eq('active', true),
+    supabase
+      .from('credit_line_requirements')
+      .select('credit_line_id,risk_levels,profiles,operation_types'),
+  ]);
+
+  const lines: CreditLinePolicy[] = (linesData || []).map((line: any) => ({
+    id: line.id,
+    name: line.name,
+    fundingCostAa: Number(line.funding_cost_aa || 0),
+    spreadAa: Number(line.spread_aa || 0),
+    priority: Number(line.priority || 999),
+    maxShare: line.max_share == null ? null : Number(line.max_share),
+  }));
+
+  const reqs: CreditLineRequirementPolicy[] = (reqData || []).map((req: any) => ({
+    creditLineId: req.credit_line_id,
+    riskLevels: Array.isArray(req.risk_levels) ? req.risk_levels : undefined,
+    profiles: Array.isArray(req.profiles) ? req.profiles : undefined,
+    operationTypes: Array.isArray(req.operation_types) ? req.operation_types : undefined,
+  }));
+
+  const selectedSources = selectCreditSourcesPolicy(lines, reqs, riskLevel, profile, operationType);
+
+  if (selectedSources.length === 0) {
+    return {
+      effectiveCetAa: jurosCetAaFallback,
+      weightedFundingCostAa: 0,
+      weightedSpreadAa: jurosCetAaFallback,
+      selectedSources,
+    };
+  }
+
+  const weightedFundingCostAa = selectedSources.reduce((sum, s) => sum + (s.fundingCostAa * s.share), 0);
+  const weightedSpreadAa = selectedSources.reduce((sum, s) => sum + (s.spreadAa * s.share), 0);
+
+  return {
+    effectiveCetAa: weightedFundingCostAa + weightedSpreadAa,
+    weightedFundingCostAa,
+    weightedSpreadAa,
+    selectedSources,
+  };
 }
 
 function buildFormulaMetadata(scenario: 'insumo' | 'divida') {
@@ -361,9 +512,18 @@ serve(async (req: Request) => {
           'dataRepasse', 'rendimentoAntecipacaoAa', 'feeMerchantPct',
         ]);
 
+        const creditComposition = await resolveCreditComposition(
+          supabase,
+          body.campaignId || null,
+          Number(body.jurosCetAa),
+          body.riskLevel,
+          body.profile,
+          body.operationType || body.scenarioType || 'insumo',
+        );
+
         const periodoJurosAnos = yearsBetween(body.dataConcessao, body.vencimento);
         const valorPresenteCredito = Number(body.precoFornecedor) * (1 + Number(body.markupPct) - Number(body.descontoPct));
-        const valorPontaSemFee = fv(Number(body.jurosCetAa), periodoJurosAnos, valorPresenteCredito) * (1 - Number(body.incentivoPct));
+        const valorPontaSemFee = fv(creditComposition.effectiveCetAa, periodoJurosAnos, valorPresenteCredito) * (1 - Number(body.incentivoPct));
         const valorPontaComFee = valorPontaSemFee * (1 + Number(body.feeOkenPct));
 
         validateTemporalRules(body);
@@ -374,7 +534,7 @@ serve(async (req: Request) => {
 
         const paridadeRealSacas = valorPontaComFee / precoEntregaAjustado;
         const montanteInsumoReferencia = fv(
-          Number(body.jurosCetAa), periodoJurosAnos,
+          creditComposition.effectiveCetAa, periodoJurosAnos,
           Number(body.precoFornecedor) * (1 + Number(body.markupPct) + Number(body.feeOkenPct))
         );
 
@@ -396,6 +556,7 @@ serve(async (req: Request) => {
           valorizacaoNominal, valorizacaoPercent, feeSacasFarmer,
           sacasTransfMerchant, feeSacasMerchant, walletMerchant,
           montantePagoMerchant, revenueOken,
+          creditComposition,
           calculationVersion: String(calcPolicy.policyPayload.calculationVersionDefault || runtimeConfig.calculationVersionDefault),
         };
 
@@ -449,8 +610,17 @@ serve(async (req: Request) => {
           'dataEntrega', 'dataPagamento', 'dataRepasse', 'rendimentoAntecipacaoAa', 'feeDealerPct',
         ]);
 
+        const creditComposition = await resolveCreditComposition(
+          supabase,
+          body.campaignId || null,
+          Number(body.jurosCetAa),
+          body.riskLevel,
+          body.profile,
+          body.operationType || body.scenarioType || 'divida',
+        );
+
         const periodoJurosAnos = yearsBetween(body.dataConcessao, body.vencimento);
-        const valorPontaSemFee = fv(Number(body.jurosCetAa), periodoJurosAnos, Number(body.valorDividaPv)) * (1 - Number(body.incentivoPct));
+        const valorPontaSemFee = fv(creditComposition.effectiveCetAa, periodoJurosAnos, Number(body.valorDividaPv)) * (1 - Number(body.incentivoPct));
         const valorPontaComFee = valorPontaSemFee * (1 + Number(body.feeOkenPct));
 
         validateTemporalRules(body);
@@ -460,7 +630,7 @@ serve(async (req: Request) => {
         const precoEntregaAjustado = pv(Number(body.rendimentoAntecipacaoAa), periodoAteRepasseAnos, precoLiquido);
 
         const paridadeRealSacas = valorPontaComFee / precoEntregaAjustado;
-        const montanteInsumoReferencia = fv(Number(body.jurosCetAa), periodoJurosAnos, Number(body.valorDividaPv));
+        const montanteInsumoReferencia = fv(creditComposition.effectiveCetAa, periodoJurosAnos, Number(body.valorDividaPv));
 
         const precoValorizado = montanteInsumoReferencia / paridadeRealSacas;
         const valorizacaoNominal = precoValorizado - precoLiquido;
@@ -480,6 +650,7 @@ serve(async (req: Request) => {
           valorizacaoNominal, valorizacaoPercent, feeSacasFarmer,
           sacasTransfDealer, feeSacasDealer, walletDealer,
           montantePagoDealer, revenueOken,
+          creditComposition,
           calculationVersion: String(calcPolicy.policyPayload.calculationVersionDefault || runtimeConfig.calculationVersionDefault),
         };
 

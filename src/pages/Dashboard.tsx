@@ -27,9 +27,8 @@ export default function Dashboard() {
 
   const formatNum = (v: number) => v.toLocaleString('pt-BR', { maximumFractionDigits: 0 });
 
-  // Bug #14: Navigate to documents page with operation context
   const handleOperationClick = (opId: string) => {
-    navigate('/documentos', { state: { operationId: opId } });
+    navigate(`/operacao/${opId}`);
   };
 
   return (
@@ -54,7 +53,7 @@ export default function Dashboard() {
             <StatCard label="Total de Operações" value={String(stats?.totalCount || 0)} icon={<BarChart3 className="w-4 h-4" />} />
           </div>
 
-          {/* Recent Operations - Bug #14: Now clickable */}
+          {/* Recent Operations */}
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.1 }} className="glass-card p-5">
             <h2 className="text-sm font-semibold text-foreground mb-4 flex items-center gap-2">
               <FileText className="w-4 h-4 text-muted-foreground" /> Operações Recentes

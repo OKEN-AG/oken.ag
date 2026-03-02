@@ -479,7 +479,7 @@ function checkEligibility(campaign: any, input: any, eligibilityPolicy?: any): E
 }
 
 // ─── COMMODITY / PARITY ENGINE ───
-function calculateCommodityNetPrice(pricing: any, port: string, freightReducer: any, opts: any): number {
+function calculateCommodityNetPrice(pricing: any, port: string, freightCostPerTon: number, opts: any): number {
   const bushelsPerTon = pricing.bushels_per_ton;
   const pesoSacaKg = pricing.peso_saca_kg;
   if (!bushelsPerTon || !pesoSacaKg) throw new Error('commodity_pricing is missing bushels_per_ton or peso_saca_kg — configure them in the campaign');
@@ -492,7 +492,6 @@ function calculateCommodityNetPrice(pricing: any, port: string, freightReducer: 
   const fobBrlPerTon = fobUsdPerTon * pricing.exchange_rate_bolsa;
   const afterMarketDelta = fobBrlPerTon * (1 - (pricing.security_delta_market ?? 0) / 100);
 
-  const freightCostPerTon = freightReducer?.total_reducer ?? 0;
   const interiorPricePerTon = afterMarketDelta - freightCostPerTon;
   const netPricePerTon = interiorPricePerTon * (1 - (pricing.security_delta_freight ?? 0) / 100);
 
@@ -549,7 +548,7 @@ serve(async (req: Request) => {
     const tenantId = (body?.tenantId || user.user_metadata?.tenant_id || null) as string | null;
     const simulationPolicy = await resolvePolicy(supabase, 'simulation_engine', tenantId);
 
-    let result: Record<string, unknown> | EligibilityResult;
+    let result: Record<string, unknown>;
 
     switch (endpoint) {
       // ═══════════════════════════════════════════
@@ -749,6 +748,7 @@ serve(async (req: Request) => {
         let commodityNetPriceValue: number | null = null;
         let ivpValue: number | null = null;
         let insuranceResult: any = null;
+        let freightBreakdownResult: any = null;
 
         const isBarter = selectedPM?.method_name?.toLowerCase().includes('barter');
 
@@ -766,14 +766,18 @@ serve(async (req: Request) => {
             : null;
 
           const freightOriginResolved = freightOrigin || deliveryLocation?.city || '';
-          const freightReducer = freightOriginResolved
-            ? (frRes.data || []).find((fr: any) => fr.origin === freightOriginResolved || fr.origin === deliveryLocation?.city)
-            : null;
+          const freightBreakdown = calculateFreightBreakdown({
+            reducers: frRes.data || [],
+            origin: freightOriginResolved,
+            destination: portName || '',
+            defaultCostPerKm: campaign.default_freight_cost_per_km,
+          });
 
           const buyer = buyerId ? (buyersRes.data || []).find((b: any) => b.id === buyerId) : null;
           const valorization = (valRes.data || []).find((v: any) => v.commodity?.toLowerCase() === commodityCode.toLowerCase());
 
-          commodityNetPriceValue = calculateCommodityNetPrice(commodityPricingRow, portName || '', freightReducer, {
+          freightBreakdownResult = freightBreakdown;
+          commodityNetPriceValue = calculateCommodityNetPrice(commodityPricingRow, portName || '', freightBreakdown.totalCostPerTon, {
             buyerFeePercent: buyer?.fee || 0,
           });
 
@@ -862,6 +866,7 @@ serve(async (req: Request) => {
           insurance: insuranceResult,
           commodityNetPrice: commodityNetPriceValue,
           ivp: ivpValue,
+          freightBreakdown: freightBreakdownResult,
           maxDiscount,
           activatedDiscount,
           complementaryDiscount,
@@ -1035,13 +1040,20 @@ serve(async (req: Request) => {
         if (parLivePrice != null) cpRow.exchange_price = parLivePrice;
         if (parLiveExchangeRate != null) cpRow.exchange_rate_bolsa = parLiveExchangeRate;
 
-        const parFreightReducer = parFreightOrigin
-          ? (frRes2.data || []).find((fr: any) => fr.origin === parFreightOrigin)
+        const deliveryLocationForParity = parDeliveryLocationId
+          ? (dlRes2.data || []).find((dl: any) => dl.id === parDeliveryLocationId)
           : null;
+        const parityFreightOrigin = parFreightOrigin || deliveryLocationForParity?.city || '';
+        const parityFreightBreakdown = calculateFreightBreakdown({
+          reducers: frRes2.data || [],
+          origin: parityFreightOrigin,
+          destination: parPort || '',
+          defaultCostPerKm: campRes.data?.default_freight_cost_per_km,
+        });
 
         const parBuyer = parBuyerId ? (buyersRes2.data || []).find((b: any) => b.id === parBuyerId) : null;
 
-        const commodityNetPriceCalc = calculateCommodityNetPrice(cpRow, parPort || '', parFreightReducer, {
+        const commodityNetPriceCalc = calculateCommodityNetPrice(cpRow, parPort || '', parityFreightBreakdown.totalCostPerTon, {
           buyerFeePercent: parBuyer?.fee || 0,
         });
 
@@ -1101,6 +1113,7 @@ serve(async (req: Request) => {
           effectiveCommodityPrice: effectiveCommodityPriceCalc,
           valorizationBonus: valBonus,
           ivp: ivpCalc,
+          freightBreakdown: parityFreightBreakdown,
           ports: Object.keys(basisByPort),
           freightOrigins: (frRes2.data || []).map((fr: any) => ({ origin: fr.origin, destination: fr.destination })),
           deliveryLocations: (dlRes2.data || []).map((dl: any) => ({ id: dl.id, warehouseName: dl.warehouse_name, city: dl.city, state: dl.state, latitude: dl.latitude, longitude: dl.longitude })),
@@ -1121,6 +1134,16 @@ serve(async (req: Request) => {
 
       default:
         return new Response(JSON.stringify({ error: 'Unknown endpoint' }), { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    }
+
+    if (endpoint === 'simulate' || endpoint === 'calculate-parity') {
+      await persistDecisionSnapshot(supabase, {
+        tenantId,
+        userId: user.id,
+        endpoint: String(endpoint || 'unknown'),
+        body: body || {},
+        result,
+      });
     }
 
     await recordPolicyDecisionAudit(supabase, {
