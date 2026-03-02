@@ -22,7 +22,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
         <AppSidebar />
         <main
           className="transition-[margin-left] duration-200 min-h-screen flex flex-col"
-          style={{ marginLeft: collapsed ? 64 : 240 }}
+          style={{ marginLeft: collapsed ? 64 : 260 }}
         >
           <JourneyHeader />
           <div className="flex-1">{children}</div>
