@@ -120,6 +120,11 @@ export interface SimulationResult {
   freightOrigins: { origin: string; destination: string }[];
   comboDefinitions: ComboDefinitionSummary[];
   distributorContext?: { id: string; shortName: string; channelSegmentName: string } | null;
+  resolvedPolicies?: {
+    eligibility?: unknown;
+    pricing?: unknown;
+    formalization?: unknown;
+  };
   timestamp: string;
 }
 

@@ -1,17 +1,27 @@
 openapi: 3.0.3
 info:
   title: Oken API
-  version: 0.1.0
+  version: 1.0.0
   license:
     name: Proprietary
   description: |
-    Especificação inicial para os domínios parties, programs, deals, evidence e events.
-    Inclui padronização de autenticação, headers operacionais, paginação por cursor,
-    filtros multi-tenant e versão inicial de webhooks assinados com política de retry.
+    Especificação inicial consolidada para os domínios operacionais da plataforma Oken.
+
+    **Padrões transversais**
+    - Header obrigatório `x-correlation-id` em todas as chamadas.
+    - Header `idempotency-key` obrigatório em operações de escrita (POST/PATCH/PUT).
+    - Paginação por cursor opaco (`cursor` + `limit`) e `page_info` padronizado.
+    - Erros normalizados no envelope `ErrorResponse`.
+
+    **Política de evolução de contrato**
+    - Todas as rotas são explicitamente versionadas em `/v1`.
+    - Alterações compatíveis retroativamente podem ser lançadas sem troca de versão major (campos opcionais, novos enums não-breaking, novos endpoints).
+    - Alterações incompatíveis (remoção/renomeação de campos, mudança de semântica, tightening de validação) exigem nova versão (`/v2`) com janela mínima de depreciação de 180 dias.
+    - Toda resposta inclui header `x-api-version` com a versão efetiva do contrato.
 servers:
-  - url: https://api.sandbox.oken.ag/v1
+  - url: https://api.sandbox.oken.ag
     description: Sandbox
-  - url: https://api.oken.ag/v1
+  - url: https://api.oken.ag
     description: Production
 tags:
   - name: Parties
@@ -38,36 +48,13 @@ security:
       - investors:read
       - investors:write
   - ApiKeyAuth: []
+
 paths:
-  /parties:
-    get:
-      tags: [Parties]
-      summary: Lista partes (empresas, produtores, revendas)
-      operationId: listParties
-      parameters:
-        - $ref: '#/components/parameters/CorrelationId'
-        - $ref: '#/components/parameters/TenantId'
-        - $ref: '#/components/parameters/Cursor'
-        - $ref: '#/components/parameters/Limit'
-        - $ref: '#/components/parameters/StatusFilter'
-        - $ref: '#/components/parameters/UpdatedFrom'
-        - $ref: '#/components/parameters/UpdatedTo'
-      responses:
-        '200':
-          description: Lista paginada
-          headers:
-            x-correlation-id:
-              $ref: '#/components/headers/CorrelationId'
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/PaginatedParties'
-        '400':
-          $ref: '#/components/responses/BadRequest'
+  /v1/identity/sessions:
     post:
-      tags: [Parties]
-      summary: Cria uma nova parte
-      operationId: createParty
+      tags: [Identity]
+      summary: Cria sessão técnica para integração service-to-service
+      operationId: createIdentitySession
       parameters:
         - $ref: '#/components/parameters/CorrelationId'
         - $ref: '#/components/parameters/IdempotencyKey'
@@ -75,72 +62,27 @@ paths:
         required: true
         content:
           application/json:
-            schema:
-              $ref: '#/components/schemas/PartyCreateInput'
+            schema: { $ref: '#/components/schemas/IdentitySessionCreateInput' }
       responses:
         '201':
-          description: Recurso criado
-          headers:
-            x-correlation-id:
-              $ref: '#/components/headers/CorrelationId'
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Party'
-        '409':
-          description: Conflito de idempotência
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-  /programs:
+          $ref: '#/components/responses/CreatedIdentitySession'
+        '400': { $ref: '#/components/responses/BadRequest' }
+
+  /v1/campaigns:
     get:
-      tags: [Programs]
-      summary: Lista programas comerciais
-      operationId: listPrograms
-      parameters:
-        - $ref: '#/components/parameters/CorrelationId'
-        - $ref: '#/components/parameters/TenantId'
-        - $ref: '#/components/parameters/Cursor'
-        - $ref: '#/components/parameters/Limit'
-        - $ref: '#/components/parameters/StatusFilter'
-        - $ref: '#/components/parameters/DateFrom'
-        - $ref: '#/components/parameters/DateTo'
+      tags: [Campaigns]
+      summary: Lista campanhas
+      operationId: listCampaigns
+      parameters: [ { $ref: '#/components/parameters/CorrelationId' }, { $ref: '#/components/parameters/Cursor' }, { $ref: '#/components/parameters/Limit' } ]
       responses:
-        '200':
-          description: Lista paginada
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/PaginatedPrograms'
-        '400':
-          $ref: '#/components/responses/BadRequest'
-  /deals:
-    get:
-      tags: [Deals]
-      summary: Lista operações/negociações
-      operationId: listDeals
-      parameters:
-        - $ref: '#/components/parameters/CorrelationId'
-        - $ref: '#/components/parameters/TenantId'
-        - $ref: '#/components/parameters/Cursor'
-        - $ref: '#/components/parameters/Limit'
-        - $ref: '#/components/parameters/StatusFilter'
-        - $ref: '#/components/parameters/DateFrom'
-        - $ref: '#/components/parameters/DateTo'
-      responses:
-        '200':
-          description: Lista paginada
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/PaginatedDeals'
-        '400':
-          $ref: '#/components/responses/BadRequest'
+        '200': { $ref: '#/components/responses/PaginatedCampaigns' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+
+  /v1/eligibility/checks:
     post:
-      tags: [Deals]
-      summary: Cria um deal
-      operationId: createDeal
+      tags: [Eligibility]
+      summary: Executa verificação de elegibilidade
+      operationId: createEligibilityCheck
       parameters:
         - $ref: '#/components/parameters/CorrelationId'
         - $ref: '#/components/parameters/IdempotencyKey'
@@ -148,43 +90,16 @@ paths:
         required: true
         content:
           application/json:
-            schema:
-              $ref: '#/components/schemas/DealCreateInput'
+            schema: { $ref: '#/components/schemas/EligibilityCheckInput' }
       responses:
-        '201':
-          description: Deal criado
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Deal'
-        '400':
-          $ref: '#/components/responses/BadRequest'
-  /evidence:
-    get:
-      tags: [Evidence]
-      summary: Lista evidências de compliance
-      operationId: listEvidence
-      parameters:
-        - $ref: '#/components/parameters/CorrelationId'
-        - $ref: '#/components/parameters/TenantId'
-        - $ref: '#/components/parameters/Cursor'
-        - $ref: '#/components/parameters/Limit'
-        - $ref: '#/components/parameters/StatusFilter'
-        - $ref: '#/components/parameters/DateFrom'
-        - $ref: '#/components/parameters/DateTo'
-      responses:
-        '200':
-          description: Lista paginada
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/PaginatedEvidence'
-        '400':
-          $ref: '#/components/responses/BadRequest'
+        '200': { $ref: '#/components/responses/EligibilityCheckResult' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+
+  /v1/pricing/quotes:
     post:
-      tags: [Evidence]
-      summary: Registra uma evidência
-      operationId: createEvidence
+      tags: [Pricing]
+      summary: Gera cotação de preço
+      operationId: createPricingQuote
       parameters:
         - $ref: '#/components/parameters/CorrelationId'
         - $ref: '#/components/parameters/IdempotencyKey'
@@ -192,22 +107,148 @@ paths:
         required: true
         content:
           application/json:
-            schema:
-              $ref: '#/components/schemas/EvidenceCreateInput'
+            schema: { $ref: '#/components/schemas/PricingQuoteInput' }
       responses:
-        '201':
-          description: Evidência criada
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Evidence'
-        '400':
-          $ref: '#/components/responses/BadRequest'
-  /events:
+        '201': { $ref: '#/components/responses/PricingQuoteCreated' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+
+  /v1/documents:
+    post:
+      tags: [Documents]
+      summary: Registra metadados de documento
+      operationId: createDocument
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/DocumentCreateInput' }
+      responses:
+        '201': { $ref: '#/components/responses/DocumentCreated' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+
+  /v1/registry/entities:
     get:
-      tags: [Events]
-      summary: Lista eventos de domínio (audit trail)
-      operationId: listEvents
+      tags: [Registry]
+      summary: Lista entidades de cadastro
+      operationId: listRegistryEntities
+      parameters: [ { $ref: '#/components/parameters/CorrelationId' }, { $ref: '#/components/parameters/Cursor' }, { $ref: '#/components/parameters/Limit' } ]
+      responses:
+        '200': { $ref: '#/components/responses/PaginatedRegistryEntities' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+
+  /v1/disbursements:
+    post:
+      tags: [Disbursements]
+      summary: Solicita desembolso
+      operationId: createDisbursement
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/DisbursementCreateInput' }
+      responses:
+        '201': { $ref: '#/components/responses/DisbursementCreated' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+
+  /v1/payments:
+    post:
+      tags: [Payments]
+      summary: Registra pagamento
+      operationId: createPayment
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PaymentCreateInput' }
+      responses:
+        '201': { $ref: '#/components/responses/PaymentCreated' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+
+  /v1/reconciliation/runs:
+    post:
+      tags: [Reconciliation]
+      summary: Inicia execução de reconciliação
+      operationId: createReconciliationRun
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ReconciliationRunCreateInput' }
+      responses:
+        '202': { $ref: '#/components/responses/ReconciliationAccepted' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+
+  /v1/offers:
+    get:
+      tags: [Offers]
+      summary: Lista ofertas
+      operationId: listOffers
+      parameters: [ { $ref: '#/components/parameters/CorrelationId' }, { $ref: '#/components/parameters/Cursor' }, { $ref: '#/components/parameters/Limit' } ]
+      responses:
+        '200': { $ref: '#/components/responses/PaginatedOffers' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+
+  /v1/investors:
+    get:
+      tags: [Investors]
+      summary: Lista investidores
+      operationId: listInvestors
+      parameters: [ { $ref: '#/components/parameters/CorrelationId' }, { $ref: '#/components/parameters/Cursor' }, { $ref: '#/components/parameters/Limit' } ]
+      responses:
+        '200': { $ref: '#/components/responses/PaginatedInvestors' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+
+  /v1/orders:
+    post:
+      tags: [Orders]
+      summary: Cria pedido operacional
+      operationId: createOrder
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/OrderCreateInput' }
+      responses:
+        '201': { $ref: '#/components/responses/OrderCreated' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+
+  /v1/accounting/entries:
+    post:
+      tags: [Accounting]
+      summary: Registra lançamento contábil
+      operationId: createAccountingEntry
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AccountingEntryCreateInput' }
+      responses:
+        '201': { $ref: '#/components/responses/AccountingEntryCreated' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+
+  /v1/tax/documents:
+    post:
+      tags: [Tax]
+      summary: Registra documento fiscal
+      operationId: createTaxDocument
       parameters:
         - $ref: '#/components/parameters/CorrelationId'
         - $ref: '#/components/parameters/TenantId'
@@ -313,7 +354,7 @@ paths:
   /webhooks/subscriptions:
     post:
       tags: [Webhooks]
-      summary: Cria assinatura de webhook
+      summary: Cria assinatura de webhook por domínio
       operationId: createWebhookSubscription
       parameters:
         - $ref: '#/components/parameters/CorrelationId'
@@ -322,17 +363,18 @@ paths:
         required: true
         content:
           application/json:
-            schema:
-              $ref: '#/components/schemas/WebhookSubscriptionCreateInput'
+            schema: { $ref: '#/components/schemas/WebhookSubscriptionCreateInput' }
       responses:
         '201':
           description: Assinatura criada
+          headers:
+            x-correlation-id: { $ref: '#/components/headers/CorrelationId' }
+            x-api-version: { $ref: '#/components/headers/ApiVersion' }
           content:
             application/json:
-              schema:
-                $ref: '#/components/schemas/WebhookSubscription'
-        '400':
-          $ref: '#/components/responses/BadRequest'
+              schema: { $ref: '#/components/schemas/WebhookSubscription' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+
 components:
   securitySchemes:
     OAuth2ClientCredentials:
@@ -356,196 +398,301 @@ components:
   headers:
     CorrelationId:
       description: Identificador único para rastreio distribuído.
-      schema:
-        type: string
-        format: uuid
+      schema: { type: string, format: uuid }
+    ApiVersion:
+      description: Versão efetiva do contrato retornado pela API.
+      schema: { type: string, example: v1 }
   parameters:
     CorrelationId:
       name: x-correlation-id
       in: header
       required: true
-      schema:
-        type: string
-        format: uuid
-      description: UUID gerado pelo cliente para rastreabilidade end-to-end.
+      schema: { type: string, format: uuid }
     IdempotencyKey:
       name: idempotency-key
       in: header
       required: true
-      schema:
-        type: string
-        maxLength: 128
-      description: Chave única por tentativa lógica de criação (TTL recomendado de 24h).
-    TenantId:
-      name: tenant_id
-      in: query
-      required: true
-      schema:
-        type: string
-        format: uuid
-      description: Escopo multi-tenant.
+      schema: { type: string, minLength: 8, maxLength: 128 }
     Cursor:
       name: cursor
       in: query
-      schema:
-        type: string
-      description: Cursor opaco retornado em page_info.next_cursor.
+      schema: { type: string }
+      description: Cursor opaco retornado em `page_info.next_cursor`.
     Limit:
       name: limit
       in: query
-      schema:
-        type: integer
-        minimum: 1
-        maximum: 200
-        default: 50
-    StatusFilter:
-      name: status
-      in: query
-      schema:
-        type: string
-      description: Filtro por status da entidade.
-    DateFrom:
-      name: date_from
-      in: query
-      schema:
-        type: string
-        format: date-time
-    DateTo:
-      name: date_to
-      in: query
-      schema:
-        type: string
-        format: date-time
-    UpdatedFrom:
-      name: updated_from
-      in: query
-      schema:
-        type: string
-        format: date-time
-    UpdatedTo:
-      name: updated_to
-      in: query
-      schema:
-        type: string
-        format: date-time
+      schema: { type: integer, minimum: 1, maximum: 200, default: 50 }
   responses:
     BadRequest:
       description: Requisição inválida
+      headers:
+        x-correlation-id: { $ref: '#/components/headers/CorrelationId' }
+        x-api-version: { $ref: '#/components/headers/ApiVersion' }
       content:
         application/json:
-          schema:
-            $ref: '#/components/schemas/Error'
+          schema: { $ref: '#/components/schemas/ErrorResponse' }
+    CreatedIdentitySession:
+      description: Sessão criada
+      headers:
+        x-correlation-id: { $ref: '#/components/headers/CorrelationId' }
+        x-api-version: { $ref: '#/components/headers/ApiVersion' }
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/IdentitySession' }
+    EligibilityCheckResult:
+      description: Resultado de elegibilidade
+      headers: { x-correlation-id: { $ref: '#/components/headers/CorrelationId' }, x-api-version: { $ref: '#/components/headers/ApiVersion' } }
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/EligibilityCheckResult' }
+    PricingQuoteCreated:
+      description: Cotação criada
+      headers: { x-correlation-id: { $ref: '#/components/headers/CorrelationId' }, x-api-version: { $ref: '#/components/headers/ApiVersion' } }
+      content: { application/json: { schema: { $ref: '#/components/schemas/PricingQuote' } } }
+    DocumentCreated:
+      description: Documento criado
+      headers: { x-correlation-id: { $ref: '#/components/headers/CorrelationId' }, x-api-version: { $ref: '#/components/headers/ApiVersion' } }
+      content: { application/json: { schema: { $ref: '#/components/schemas/Document' } } }
+    DisbursementCreated:
+      description: Desembolso criado
+      headers: { x-correlation-id: { $ref: '#/components/headers/CorrelationId' }, x-api-version: { $ref: '#/components/headers/ApiVersion' } }
+      content: { application/json: { schema: { $ref: '#/components/schemas/Disbursement' } } }
+    PaymentCreated:
+      description: Pagamento criado
+      headers: { x-correlation-id: { $ref: '#/components/headers/CorrelationId' }, x-api-version: { $ref: '#/components/headers/ApiVersion' } }
+      content: { application/json: { schema: { $ref: '#/components/schemas/Payment' } } }
+    ReconciliationAccepted:
+      description: Reconciliação aceita para processamento assíncrono
+      headers: { x-correlation-id: { $ref: '#/components/headers/CorrelationId' }, x-api-version: { $ref: '#/components/headers/ApiVersion' } }
+      content: { application/json: { schema: { $ref: '#/components/schemas/ReconciliationRun' } } }
+    OrderCreated:
+      description: Pedido criado
+      headers: { x-correlation-id: { $ref: '#/components/headers/CorrelationId' }, x-api-version: { $ref: '#/components/headers/ApiVersion' } }
+      content: { application/json: { schema: { $ref: '#/components/schemas/Order' } } }
+    AccountingEntryCreated:
+      description: Lançamento criado
+      headers: { x-correlation-id: { $ref: '#/components/headers/CorrelationId' }, x-api-version: { $ref: '#/components/headers/ApiVersion' } }
+      content: { application/json: { schema: { $ref: '#/components/schemas/AccountingEntry' } } }
+    TaxDocumentCreated:
+      description: Documento fiscal criado
+      headers: { x-correlation-id: { $ref: '#/components/headers/CorrelationId' }, x-api-version: { $ref: '#/components/headers/ApiVersion' } }
+      content: { application/json: { schema: { $ref: '#/components/schemas/TaxDocument' } } }
+    PaginatedCampaigns:
+      description: Lista paginada de campanhas
+      headers: { x-correlation-id: { $ref: '#/components/headers/CorrelationId' }, x-api-version: { $ref: '#/components/headers/ApiVersion' } }
+      content: { application/json: { schema: { $ref: '#/components/schemas/PaginatedCampaigns' } } }
+    PaginatedRegistryEntities:
+      description: Lista paginada de entidades
+      headers: { x-correlation-id: { $ref: '#/components/headers/CorrelationId' }, x-api-version: { $ref: '#/components/headers/ApiVersion' } }
+      content: { application/json: { schema: { $ref: '#/components/schemas/PaginatedRegistryEntities' } } }
+    PaginatedOffers:
+      description: Lista paginada de ofertas
+      headers: { x-correlation-id: { $ref: '#/components/headers/CorrelationId' }, x-api-version: { $ref: '#/components/headers/ApiVersion' } }
+      content: { application/json: { schema: { $ref: '#/components/schemas/PaginatedOffers' } } }
+    PaginatedInvestors:
+      description: Lista paginada de investidores
+      headers: { x-correlation-id: { $ref: '#/components/headers/CorrelationId' }, x-api-version: { $ref: '#/components/headers/ApiVersion' } }
+      content: { application/json: { schema: { $ref: '#/components/schemas/PaginatedInvestors' } } }
+    PaginatedTenants:
+      description: Lista paginada de tenants
+      headers: { x-correlation-id: { $ref: '#/components/headers/CorrelationId' }, x-api-version: { $ref: '#/components/headers/ApiVersion' } }
+      content: { application/json: { schema: { $ref: '#/components/schemas/PaginatedTenants' } } }
+
   schemas:
     PageInfo:
       type: object
       required: [has_next_page]
       properties:
-        next_cursor:
-          type: string
-          nullable: true
-        has_next_page:
-          type: boolean
+        next_cursor: { type: string, nullable: true }
+        has_next_page: { type: boolean }
     Error:
       type: object
+      required: [code, message]
       properties:
-        code:
-          type: string
-        message:
-          type: string
-        correlation_id:
-          type: string
-          format: uuid
-    Party:
+        code: { type: string, example: validation_error }
+        message: { type: string }
+        field: { type: string, nullable: true }
+        details:
+          type: object
+          additionalProperties: true
+    ErrorResponse:
       type: object
-      required: [id, tenant_id, name, type, status, created_at, updated_at]
+      required: [error]
+      properties:
+        error: { $ref: '#/components/schemas/Error' }
+        correlation_id: { type: string, format: uuid }
+
+    IdentitySessionCreateInput:
+      type: object
+      required: [tenant_id, subject]
+      properties:
+        tenant_id: { type: string, format: uuid }
+        subject: { type: string }
+    IdentitySession:
+      type: object
       properties:
         id: { type: string, format: uuid }
         tenant_id: { type: string, format: uuid }
+        access_token: { type: string }
+        expires_at: { type: string, format: date-time }
+
+    Campaign:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
         name: { type: string }
-        document_number: { type: string }
-        type:
-          type: string
-          enum: [producer, reseller, buyer, carrier]
-        status:
-          type: string
-          enum: [active, inactive, blocked]
-        created_at: { type: string, format: date-time }
-        updated_at: { type: string, format: date-time }
-    PartyCreateInput:
+        status: { type: string, enum: [draft, active, paused, closed] }
+    PaginatedCampaigns:
       type: object
-      required: [tenant_id, name, type]
+      properties:
+        data: { type: array, items: { $ref: '#/components/schemas/Campaign' } }
+        page_info: { $ref: '#/components/schemas/PageInfo' }
+
+    EligibilityCheckInput:
+      type: object
+      required: [tenant_id, subject_id, campaign_id]
       properties:
         tenant_id: { type: string, format: uuid }
-        name: { type: string }
-        document_number: { type: string }
-        type:
-          type: string
-          enum: [producer, reseller, buyer, carrier]
-    Program:
+        subject_id: { type: string, format: uuid }
+        campaign_id: { type: string, format: uuid }
+    EligibilityCheckResult:
       type: object
-      required: [id, tenant_id, name, status, starts_at, ends_at]
       properties:
-        id: { type: string, format: uuid }
-        tenant_id: { type: string, format: uuid }
-        name: { type: string }
-        status:
-          type: string
-          enum: [draft, active, suspended, closed]
-        starts_at: { type: string, format: date-time }
-        ends_at: { type: string, format: date-time }
-    Deal:
+        eligible: { type: boolean }
+        reason_code: { type: string }
+
+    PricingQuoteInput:
       type: object
-      required: [id, tenant_id, program_id, party_id, status, volume, created_at]
+      required: [tenant_id, amount, term_days]
+      properties:
+        tenant_id: { type: string, format: uuid }
+        amount: { type: number, format: double }
+        term_days: { type: integer }
+    PricingQuote:
+      type: object
       properties:
         id: { type: string, format: uuid }
-        tenant_id: { type: string, format: uuid }
-        program_id: { type: string, format: uuid }
-        party_id: { type: string, format: uuid }
-        status:
-          type: string
-          enum: [pending, approved, settled, canceled]
-        volume: { type: number, format: double }
-        commodity: { type: string }
-        created_at: { type: string, format: date-time }
-    DealCreateInput:
+        rate: { type: number, format: double }
+        total_cost: { type: number, format: double }
+
+    DocumentCreateInput:
       type: object
-      required: [tenant_id, program_id, party_id, volume, commodity]
+      required: [tenant_id, type, uri]
       properties:
         tenant_id: { type: string, format: uuid }
-        program_id: { type: string, format: uuid }
-        party_id: { type: string, format: uuid }
-        volume: { type: number, format: double }
-        commodity: { type: string }
-    Evidence:
-      type: object
-      required: [id, tenant_id, deal_id, type, status, created_at]
-      properties:
-        id: { type: string, format: uuid }
-        tenant_id: { type: string, format: uuid }
-        deal_id: { type: string, format: uuid }
-        type:
-          type: string
-          enum: [invoice, contract, shipping_document, photo]
-        status:
-          type: string
-          enum: [pending_review, approved, rejected]
+        type: { type: string, enum: [invoice, contract, statement, kyc] }
         uri: { type: string, format: uri }
-        created_at: { type: string, format: date-time }
-    EvidenceCreateInput:
+    Document:
       type: object
-      required: [tenant_id, deal_id, type, uri]
-      properties:
-        tenant_id: { type: string, format: uuid }
-        deal_id: { type: string, format: uuid }
-        type:
-          type: string
-          enum: [invoice, contract, shipping_document, photo]
-        uri: { type: string, format: uri }
-    Event:
-      type: object
-      required: [id, tenant_id, type, aggregate_type, aggregate_id, occurred_at]
       properties:
         id: { type: string, format: uuid }
+        status: { type: string, enum: [pending, approved, rejected] }
+
+    RegistryEntity:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        kind: { type: string, enum: [person, company, account] }
+    PaginatedRegistryEntities:
+      type: object
+      properties:
+        data: { type: array, items: { $ref: '#/components/schemas/RegistryEntity' } }
+        page_info: { $ref: '#/components/schemas/PageInfo' }
+
+    DisbursementCreateInput:
+      type: object
+      required: [tenant_id, beneficiary_id, amount]
+      properties:
+        tenant_id: { type: string, format: uuid }
+        beneficiary_id: { type: string, format: uuid }
+        amount: { type: number, format: double }
+    Disbursement:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        status: { type: string, enum: [requested, processing, completed, failed] }
+
+    PaymentCreateInput:
+      type: object
+      required: [tenant_id, payer_id, amount]
+      properties:
+        tenant_id: { type: string, format: uuid }
+        payer_id: { type: string, format: uuid }
+        amount: { type: number, format: double }
+    Payment:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        status: { type: string, enum: [pending, settled, canceled] }
+
+    ReconciliationRunCreateInput:
+      type: object
+      required: [tenant_id, reference_date]
+      properties:
+        tenant_id: { type: string, format: uuid }
+        reference_date: { type: string, format: date }
+    ReconciliationRun:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        status: { type: string, enum: [queued, running, finished, failed] }
+
+    Offer:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        product: { type: string }
+        status: { type: string, enum: [active, expired] }
+    PaginatedOffers:
+      type: object
+      properties:
+        data: { type: array, items: { $ref: '#/components/schemas/Offer' } }
+        page_info: { $ref: '#/components/schemas/PageInfo' }
+
+    Investor:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        status: { type: string, enum: [active, blocked] }
+    PaginatedInvestors:
+      type: object
+      properties:
+        data: { type: array, items: { $ref: '#/components/schemas/Investor' } }
+        page_info: { $ref: '#/components/schemas/PageInfo' }
+
+    OrderCreateInput:
+      type: object
+      required: [tenant_id, offer_id, amount]
+      properties:
+        tenant_id: { type: string, format: uuid }
+        offer_id: { type: string, format: uuid }
+        amount: { type: number, format: double }
+    Order:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        status: { type: string, enum: [created, approved, canceled] }
+
+    AccountingEntryCreateInput:
+      type: object
+      required: [tenant_id, debit_account, credit_account, amount]
+      properties:
+        tenant_id: { type: string, format: uuid }
+        debit_account: { type: string }
+        credit_account: { type: string }
+        amount: { type: number, format: double }
+    AccountingEntry:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        posted_at: { type: string, format: date-time }
+
+    TaxDocumentCreateInput:
+      type: object
+      required: [tenant_id, document_number, amount]
+      properties:
         tenant_id: { type: string, format: uuid }
         type: { type: string, example: deal.approved }
         aggregate_type:
@@ -609,7 +756,7 @@ components:
 
     WebhookSubscriptionCreateInput:
       type: object
-      required: [tenant_id, endpoint_url, secret, event_types]
+      required: [tenant_id, endpoint_url, secret, domain]
       properties:
         tenant_id: { type: string, format: uuid }
         endpoint_url: { type: string, format: uri }
@@ -617,27 +764,23 @@ components:
           type: string
           description: Segredo compartilhado para assinatura HMAC-SHA256.
           minLength: 32
+        domain:
+          type: string
+          enum: [identity, campaigns, eligibility, pricing, documents, registry, disbursements, payments, reconciliation, offers, investors, orders, accounting, tax, admin]
         event_types:
           type: array
-          items:
-            type: string
-            example: deal.*
+          items: { type: string, example: disbursement.created }
     WebhookSubscription:
       allOf:
         - $ref: '#/components/schemas/WebhookSubscriptionCreateInput'
         - type: object
-          required: [id, status, created_at, retry_policy]
           properties:
             id: { type: string, format: uuid }
-            status:
-              type: string
-              enum: [active, paused]
-            created_at: { type: string, format: date-time }
-            retry_policy:
-              $ref: '#/components/schemas/WebhookRetryPolicy'
+            status: { type: string, enum: [active, paused] }
+            retry_policy: { $ref: '#/components/schemas/WebhookRetryPolicy' }
+
     WebhookRetryPolicy:
       type: object
-      description: Política inicial de retry para entregas de webhook.
       properties:
         strategy:
           type: string
@@ -712,8 +855,82 @@ x-oken-webhooks:
   delivery:
     success_http_codes: [200, 201, 202, 204]
     retryable_http_codes: [408, 409, 425, 429, 500, 502, 503, 504]
-    retry_policy:
-      strategy: exponential_backoff_with_jitter
-      max_attempts: 8
-      first_retry_delay_seconds: 30
-      max_delay_seconds: 3600
+  domains:
+    identity:
+      event_types: [identity.session.created]
+      request_example:
+        headers:
+          x-oken-signature: t=1735770000,v1=abcdef123
+        body: { id: evt_001, type: identity.session.created }
+      response_example: { status_code: 204 }
+      retry_policy: { strategy: exponential_backoff_with_jitter, max_attempts: 8, first_retry_delay_seconds: 30 }
+    campaigns:
+      event_types: [campaign.created, campaign.updated]
+      request_example: { body: { id: evt_002, type: campaign.created } }
+      response_example: { status_code: 200 }
+      retry_policy: { strategy: exponential_backoff_with_jitter, max_attempts: 8, first_retry_delay_seconds: 30 }
+    eligibility:
+      event_types: [eligibility.checked]
+      request_example: { body: { id: evt_003, type: eligibility.checked } }
+      response_example: { status_code: 200 }
+      retry_policy: { strategy: exponential_backoff_with_jitter, max_attempts: 8, first_retry_delay_seconds: 30 }
+    pricing:
+      event_types: [pricing.quote.created]
+      request_example: { body: { id: evt_004, type: pricing.quote.created } }
+      response_example: { status_code: 200 }
+      retry_policy: { strategy: exponential_backoff_with_jitter, max_attempts: 8, first_retry_delay_seconds: 30 }
+    documents:
+      event_types: [document.created, document.approved]
+      request_example: { body: { id: evt_005, type: document.created } }
+      response_example: { status_code: 200 }
+      retry_policy: { strategy: exponential_backoff_with_jitter, max_attempts: 8, first_retry_delay_seconds: 30 }
+    registry:
+      event_types: [registry.entity.created]
+      request_example: { body: { id: evt_006, type: registry.entity.created } }
+      response_example: { status_code: 200 }
+      retry_policy: { strategy: exponential_backoff_with_jitter, max_attempts: 8, first_retry_delay_seconds: 30 }
+    disbursements:
+      event_types: [disbursement.created, disbursement.completed]
+      request_example: { body: { id: evt_007, type: disbursement.created } }
+      response_example: { status_code: 200 }
+      retry_policy: { strategy: exponential_backoff_with_jitter, max_attempts: 8, first_retry_delay_seconds: 30 }
+    payments:
+      event_types: [payment.created, payment.settled]
+      request_example: { body: { id: evt_008, type: payment.created } }
+      response_example: { status_code: 200 }
+      retry_policy: { strategy: exponential_backoff_with_jitter, max_attempts: 8, first_retry_delay_seconds: 30 }
+    reconciliation:
+      event_types: [reconciliation.finished, reconciliation.failed]
+      request_example: { body: { id: evt_009, type: reconciliation.finished } }
+      response_example: { status_code: 200 }
+      retry_policy: { strategy: exponential_backoff_with_jitter, max_attempts: 8, first_retry_delay_seconds: 30 }
+    offers:
+      event_types: [offer.created, offer.expired]
+      request_example: { body: { id: evt_010, type: offer.created } }
+      response_example: { status_code: 200 }
+      retry_policy: { strategy: exponential_backoff_with_jitter, max_attempts: 8, first_retry_delay_seconds: 30 }
+    investors:
+      event_types: [investor.created, investor.updated]
+      request_example: { body: { id: evt_011, type: investor.created } }
+      response_example: { status_code: 200 }
+      retry_policy: { strategy: exponential_backoff_with_jitter, max_attempts: 8, first_retry_delay_seconds: 30 }
+    orders:
+      event_types: [order.created, order.approved]
+      request_example: { body: { id: evt_012, type: order.created } }
+      response_example: { status_code: 200 }
+      retry_policy: { strategy: exponential_backoff_with_jitter, max_attempts: 8, first_retry_delay_seconds: 30 }
+    accounting:
+      event_types: [accounting.entry.created]
+      request_example: { body: { id: evt_013, type: accounting.entry.created } }
+      response_example: { status_code: 200 }
+      retry_policy: { strategy: exponential_backoff_with_jitter, max_attempts: 8, first_retry_delay_seconds: 30 }
+    tax:
+      event_types: [tax.document.issued]
+      request_example: { body: { id: evt_014, type: tax.document.issued } }
+      response_example: { status_code: 200 }
+      retry_policy: { strategy: exponential_backoff_with_jitter, max_attempts: 8, first_retry_delay_seconds: 30 }
+    admin:
+      event_types: [admin.tenant.updated]
+      request_example: { body: { id: evt_015, type: admin.tenant.updated } }
+      response_example: { status_code: 200 }
+      retry_policy: { strategy: exponential_backoff_with_jitter, max_attempts: 8, first_retry_delay_seconds: 30 }
