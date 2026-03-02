@@ -261,7 +261,7 @@ export function getBlockingReason(
     );
 
     if (!minimumRule.canDisburse) {
-      return `Regra documental mínima para desembolso não atendida: ${minimumRule.missing.join(', ')}`;
+      return `document_done=false. Regra documental mínima para desembolso não atendida: ${minimumRule.missing.join(', ')}`;
     }
   }
 

@@ -39,6 +39,19 @@ export default function DocumentsPage() {
   const [selectedOpId, setSelectedOpId] = useState<string>('');
   const { data: docs, refetch: refetchDocs } = useOperationDocuments(selectedOpId || undefined);
   const [emitting, setEmitting] = useState<string | null>(null);
+  const { data: documentalPanel } = useQuery({
+    queryKey: ['operation-documental-panel', selectedOpId],
+    enabled: !!selectedOpId,
+    queryFn: async () => {
+      const { data, error } = await (supabase as any)
+        .from('operation_documental_pending_panel')
+        .select('*')
+        .eq('operation_id', selectedOpId)
+        .maybeSingle();
+      if (error) throw error;
+      return data as any;
+    },
+  });
 
   const selectedOp = operations?.find(op => op.id === selectedOpId);
 
@@ -207,6 +220,32 @@ export default function DocumentsPage() {
         <div className="glass-card p-8 text-center text-muted-foreground">Selecione uma operação para ver seus documentos.</div>
       ) : (
         <>
+
+          {selectedOpId && documentalPanel && (
+            <div className="glass-card p-5">
+              <h2 className="text-sm font-semibold text-foreground mb-3">Painel operacional documental</h2>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-sm">
+                <div className="engine-badge bg-muted text-foreground">Pendências: {documentalPanel.pending_documents ?? 0}</div>
+                <div className={`engine-badge ${documentalPanel.document_done ? 'bg-success/10 text-success' : 'bg-warning/10 text-warning'}`}>
+                  document_done: {documentalPanel.document_done ? 'true' : 'false'}
+                </div>
+                <div className="engine-badge bg-primary/10 text-primary">Status operação: {documentalPanel.operation_status}</div>
+              </div>
+              <div className="mt-4 space-y-2">
+                <p className="text-xs text-muted-foreground">Trilha de evidências</p>
+                <div className="max-h-44 overflow-auto space-y-2">
+                  {Array.isArray(documentalPanel.evidence_trail) && documentalPanel.evidence_trail.length > 0 ? documentalPanel.evidence_trail.map((ev: any) => (
+                    <div key={ev.document_instance_id} className="rounded border border-border p-2 text-xs">
+                      <div><strong>Documento:</strong> {ev.document_type || 'n/a'}</div>
+                      <div><strong>Estado:</strong> {ev.state}</div>
+                      <div><strong>Snapshot:</strong> {ev.snapshot_id}</div>
+                    </div>
+                  )) : <div className="text-xs text-muted-foreground">Sem evidências ainda.</div>}
+                </div>
+              </div>
+            </div>
+          )}
+
           {wagonStages.length > 0 && (
             <div className="glass-card p-5">
               <div className="flex items-center justify-between mb-4">
