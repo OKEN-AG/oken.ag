@@ -1136,7 +1136,7 @@ serve(async (req: Request) => {
       resolvedPolicy: simulationPolicy,
       appliedRule: String(endpoint || 'unknown'),
       decisionInputs: body || {},
-      decisionOutput: result || {},
+      decisionOutput: (result || {}) as Record<string, unknown>,
       rationale: 'Simulation executed with server-resolved policy',
     });
 
