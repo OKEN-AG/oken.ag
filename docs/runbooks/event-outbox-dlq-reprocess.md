@@ -21,7 +21,9 @@ select
   dlq.business_event_id,
   dlq.destination,
   dlq.failed_at,
-  dlq.error_payload
+  dlq.last_error,
+  dlq.error_payload,
+  dlq.payload
 from public.event_outbox_dlq dlq
 where dlq.reprocessed_at is null
 order by dlq.failed_at asc
@@ -32,12 +34,20 @@ limit 100;
 
 - Confirmar uso de `idempotency_key` no consumidor.
 - Se necessário, registrar chaves já aplicadas no destino antes do replay.
+- Garantir que o replay usa os mesmos identificadores de evento (`eventId`/`idempotencyKey`) e não gera novo `business_event`.
 
 ### 3) Reenfileirar de forma idempotente
 
 ```sql
 begin;
 
+with selected as (
+  select dlq.outbox_id
+  from public.event_outbox_dlq dlq
+  where dlq.reprocessed_at is null
+  order by dlq.failed_at asc
+  limit 100
+)
 update public.event_outbox eo
 set
   status = 'pending',
@@ -45,14 +55,9 @@ set
   next_retry_at = null,
   last_error = null,
   updated_at = now()
-where eo.id in (
-  select dlq.outbox_id
-  from public.event_outbox_dlq dlq
-  where dlq.reprocessed_at is null
-  order by dlq.failed_at asc
-  limit 100
-)
-and eo.status = 'dead_lettered';
+from selected
+where eo.id = selected.outbox_id
+  and eo.status = 'dead_lettered';
 
 update public.event_outbox_dlq dlq
 set reprocessed_at = now()
@@ -68,8 +73,9 @@ commit;
 
 ### 4) Acompanhar pós-replay
 
-- Monitorar `pending_count`, `retry_rate`, `latency_p95_ms` na dashboard.
+- Monitorar `pending_count`, `retry_rate`, `latency_p95_ms`, `avg_publish_time_ms` na dashboard.
 - Confirmar queda de `dead_letter_rate` e ausência de duplicidade funcional no consumidor.
+- Priorizar análise de `event_outbox_destination_failures_1h` quando falha estiver concentrada em um endpoint.
 
 ## Rollback
 
@@ -77,7 +83,7 @@ Se erro regressar:
 
 1. Pausar agenda do worker.
 2. Voltar registros recém-reprocessados para `dead_lettered`.
-3. Abrir incidente e anexar `error_payload/error_stack` da DLQ.
+3. Abrir incidente e anexar `last_error`, `error_payload` e `error_stack` da DLQ.
 
 ## Evidências mínimas
 

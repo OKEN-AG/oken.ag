@@ -7,6 +7,7 @@ type OutboxCandidate = {
   destination: string;
   status: 'pending' | 'failed';
   attempts: number;
+  created_at: string;
   updated_at: string;
   business_events: {
     payload: Record<string, unknown>;
@@ -81,13 +82,13 @@ serve(async () => {
   const [pendingResult, failedResult] = await Promise.all([
     supabase
       .from('event_outbox')
-      .select('id,business_event_id,destination,status,attempts,updated_at,business_events(payload,event_name,tenant_id,correlation_id,idempotency_key)')
+      .select('id,business_event_id,destination,status,attempts,created_at,updated_at,business_events(payload,event_name,tenant_id,correlation_id,idempotency_key)')
       .eq('status', 'pending')
       .order('created_at', { ascending: true })
       .limit(BATCH_SIZE),
     supabase
       .from('event_outbox')
-      .select('id,business_event_id,destination,status,attempts,updated_at,business_events(payload,event_name,tenant_id,correlation_id,idempotency_key)')
+      .select('id,business_event_id,destination,status,attempts,created_at,updated_at,business_events(payload,event_name,tenant_id,correlation_id,idempotency_key)')
       .eq('status', 'failed')
       .lte('next_retry_at', new Date().toISOString())
       .order('next_retry_at', { ascending: true })
@@ -128,6 +129,8 @@ serve(async () => {
     }
 
     try {
+      const publishTimeMs = Math.max(0, Date.now() - Date.parse(candidate.created_at));
+
       await publishToDestination(candidate.destination, {
         eventId: candidate.business_event_id,
         eventName: candidate.business_events.event_name,
@@ -154,11 +157,13 @@ serve(async () => {
         attempt_no: attemptNo,
         status: 'success',
         latency_ms: latencyMs,
+        publish_time_ms: publishTimeMs,
       });
 
       published += 1;
     } catch (err) {
       const latencyMs = Math.round(performance.now() - startedAt);
+      const publishTimeMs = Math.max(0, Date.now() - Date.parse(candidate.created_at));
       const errorPayload = buildErrorPayload(err);
       const stack = err instanceof Error ? err.stack ?? null : null;
 
@@ -176,6 +181,7 @@ serve(async () => {
           attempt_no: attemptNo,
           status: 'dead_lettered',
           latency_ms: latencyMs,
+          publish_time_ms: publishTimeMs,
           error_message: errorPayload.message,
         });
 
@@ -199,6 +205,7 @@ serve(async () => {
           attempt_no: attemptNo,
           status: 'retry',
           latency_ms: latencyMs,
+          publish_time_ms: publishTimeMs,
           error_message: errorPayload.message,
         });
 
