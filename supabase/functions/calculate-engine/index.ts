@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.4";
+import { resolvePolicy, recordPolicyDecisionAudit } from "../_shared/policy.ts";
 
 // CORS: restrict to allowed origins via env
 function getCorsHeaders(req: Request) {
@@ -121,6 +122,10 @@ serve(async (req: Request) => {
         status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
+
+    const tenantId = (body?.tenantId || user.user_metadata?.tenant_id || null) as string | null;
+
+    const calcPolicy = await resolvePolicy(supabase, 'calculate_engine', tenantId);
 
     const { data: runtimeRow } = await supabase
       .from('engine_runtime_config')
@@ -391,7 +396,7 @@ serve(async (req: Request) => {
           valorizacaoNominal, valorizacaoPercent, feeSacasFarmer,
           sacasTransfMerchant, feeSacasMerchant, walletMerchant,
           montantePagoMerchant, revenueOken,
-          calculationVersion: body.calculationVersion || runtimeConfig.calculationVersionDefault,
+          calculationVersion: String(calcPolicy.policyPayload.calculationVersionDefault || runtimeConfig.calculationVersionDefault),
         };
 
         if (body.operationId) {
@@ -399,7 +404,7 @@ serve(async (req: Request) => {
             operation_id: body.operationId,
             snapshot_type: runtimeConfig.snapshotTypeInput,
             snapshot: {
-              version: body.calculationVersion || runtimeConfig.calculationVersionDefault,
+              version: String(calcPolicy.policyPayload.calculationVersionDefault || runtimeConfig.calculationVersionDefault),
               ...buildFormulaMetadata('insumo'),
               input: body, output: result,
             },
@@ -408,7 +413,7 @@ serve(async (req: Request) => {
 
           await supabase.from('operation_calculation_inputs').upsert({
             operation_id: body.operationId, scenario_type: 'insumo',
-            calculation_version: body.calculationVersion || runtimeConfig.calculationVersionDefault,
+            calculation_version: String(calcPolicy.policyPayload.calculationVersionDefault || runtimeConfig.calculationVersionDefault),
             juros_cet_aa: Number(body.jurosCetAa), fee_oken_pct: Number(body.feeOkenPct),
             incentivo_pct: Number(body.incentivoPct), commodity: String(body.commodity),
             periodo_entrega: String(body.periodoEntrega), local_entrega: String(body.localEntrega),
@@ -429,7 +434,7 @@ serve(async (req: Request) => {
           await supabase.from('operation_logs').insert({
             operation_id: body.operationId, user_id: user.id,
             action: 'server_input_memory_calculated',
-            details: { version: body.calculationVersion || runtimeConfig.calculationVersionDefault, scenario: 'insumo' },
+            details: { version: String(calcPolicy.policyPayload.calculationVersionDefault || runtimeConfig.calculationVersionDefault), scenario: 'insumo' },
           });
         }
         break;
@@ -475,7 +480,7 @@ serve(async (req: Request) => {
           valorizacaoNominal, valorizacaoPercent, feeSacasFarmer,
           sacasTransfDealer, feeSacasDealer, walletDealer,
           montantePagoDealer, revenueOken,
-          calculationVersion: body.calculationVersion || runtimeConfig.calculationVersionDefault,
+          calculationVersion: String(calcPolicy.policyPayload.calculationVersionDefault || runtimeConfig.calculationVersionDefault),
         };
 
         if (body.operationId) {
@@ -483,7 +488,7 @@ serve(async (req: Request) => {
             operation_id: body.operationId,
             snapshot_type: runtimeConfig.snapshotTypeDebt,
             snapshot: {
-              version: body.calculationVersion || runtimeConfig.calculationVersionDefault,
+              version: String(calcPolicy.policyPayload.calculationVersionDefault || runtimeConfig.calculationVersionDefault),
               ...buildFormulaMetadata('divida'),
               input: body, output: result,
             },
@@ -492,7 +497,7 @@ serve(async (req: Request) => {
 
           await supabase.from('operation_calculation_inputs').upsert({
             operation_id: body.operationId, scenario_type: 'divida',
-            calculation_version: body.calculationVersion || runtimeConfig.calculationVersionDefault,
+            calculation_version: String(calcPolicy.policyPayload.calculationVersionDefault || runtimeConfig.calculationVersionDefault),
             juros_cet_aa: Number(body.jurosCetAa), fee_oken_pct: Number(body.feeOkenPct),
             incentivo_pct: Number(body.incentivoPct), commodity: String(body.commodity),
             periodo_entrega: String(body.periodoEntrega), local_entrega: String(body.localEntrega),
@@ -512,7 +517,7 @@ serve(async (req: Request) => {
           await supabase.from('operation_logs').insert({
             operation_id: body.operationId, user_id: user.id,
             action: 'server_debt_memory_calculated',
-            details: { version: body.calculationVersion || runtimeConfig.calculationVersionDefault, scenario: 'divida' },
+            details: { version: String(calcPolicy.policyPayload.calculationVersionDefault || runtimeConfig.calculationVersionDefault), scenario: 'divida' },
           });
         }
         break;
@@ -523,6 +528,18 @@ serve(async (req: Request) => {
           status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });
     }
+
+    await recordPolicyDecisionAudit(supabase, {
+      tenantId,
+      domainRef: 'calculate_engine',
+      domainId: body.operationId || null,
+      policyKey: 'calculate_engine',
+      resolvedPolicy: calcPolicy,
+      appliedRule: path || 'unknown',
+      decisionInputs: body || {},
+      decisionOutput: result,
+      rationale: 'Edge function executed with server-resolved policy',
+    });
 
     return new Response(JSON.stringify(result), {
       status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' },

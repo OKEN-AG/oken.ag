@@ -1,0 +1,12 @@
+{
+  "endpoint": "POST /v1/disbursements",
+  "request": {
+    "tenant_id": "11111111-1111-1111-1111-111111111111",
+    "beneficiary_id": "44444444-4444-4444-4444-444444444444",
+    "amount": 80000.0
+  },
+  "response": {
+    "id": "dis_001",
+    "status": "requested"
+  }
+}

@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://oken.ag/schemas/core/cash-account.schema.json",
+  "title": "CashAccount",
+  "description": "Conta de caixa para liquidação e reconciliação por tenant.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["entity", "version", "id", "tenantId", "status", "accountRole", "providerName", "providerAccountId", "currency", "createdAt"],
+  "properties": {
+    "entity": { "const": "cash_account" },
+    "version": { "type": "string", "pattern": "^\\d+\\.\\d+\\.\\d+$", "default": "1.0.0" },
+    "id": { "type": "string", "minLength": 1 },
+    "tenantId": { "type": "string", "minLength": 1 },
+    "dealId": { "type": "string", "minLength": 1 },
+    "programId": { "type": "string", "minLength": 1 },
+    "organizationId": { "type": "string", "minLength": 1 },
+    "partyId": { "type": "string", "minLength": 1 },
+    "status": { "type": "string", "enum": ["pending", "active", "blocked", "closed"] },
+    "accountRole": { "type": "string", "minLength": 1 },
+    "providerName": { "type": "string", "minLength": 1 },
+    "providerAccountId": { "type": "string", "minLength": 1 },
+    "bankCode": { "type": "string" },
+    "branchCode": { "type": "string" },
+    "accountNumber": { "type": "string" },
+    "currency": { "type": "string", "minLength": 3, "maxLength": 3 },
+    "availableBalance": { "type": "number", "minimum": 0 },
+    "blockedBalance": { "type": "number", "minimum": 0 },
+    "idempotencyKey": { "type": "string" },
+    "createdAt": { "type": "string", "format": "date-time" },
+    "updatedAt": { "type": "string", "format": "date-time" }
+  }
+}

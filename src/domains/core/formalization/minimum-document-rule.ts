@@ -33,3 +33,11 @@ export function validateMinimumDocumentRule(
     missing,
   };
 }
+
+
+export function isDocumentDone(
+  requiredDocuments: DocumentRequirement[],
+  existingDocuments: DocumentSnapshot[],
+): boolean {
+  return validateMinimumDocumentRule(requiredDocuments, existingDocuments).canDisburse;
+}

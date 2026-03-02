@@ -1,0 +1,16 @@
+{
+  "endpoint": "GET /v1/registry/entities",
+  "response": {
+    "data": [
+      {
+        "id": "ent_001",
+        "name": "Cooperativa XYZ",
+        "kind": "company"
+      }
+    ],
+    "page_info": {
+      "next_cursor": null,
+      "has_next_page": false
+    }
+  }
+}

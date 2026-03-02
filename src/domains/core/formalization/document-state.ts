@@ -10,6 +10,16 @@ export const CANONICAL_DOCUMENT_STATES = [
 
 export type CanonicalDocumentState = (typeof CANONICAL_DOCUMENT_STATES)[number];
 
+export const DOCUMENT_STATE_TRANSITIONS: Record<CanonicalDocumentState, CanonicalDocumentState[]> = {
+  pendente: ['draft'],
+  draft: ['aprovado', 'cancelado'],
+  aprovado: ['assinado', 'cancelado'],
+  assinado: ['registrado', 'substituido'],
+  registrado: ['substituido'],
+  substituido: [],
+  cancelado: [],
+};
+
 const LEGACY_TO_CANONICAL: Record<string, CanonicalDocumentState> = {
   emitido: 'draft',
   validado: 'aprovado',
