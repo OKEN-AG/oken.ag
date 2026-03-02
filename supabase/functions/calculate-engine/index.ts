@@ -154,7 +154,7 @@ function validateTemporalRules(payload: Record<string, unknown>) {
 
 
 async function resolveCreditComposition(
-  supabase: ReturnType<typeof createClient>,
+  supabase: any,
   campaignId: string | null,
   jurosCetAaFallback: number,
   riskLevel?: string,
