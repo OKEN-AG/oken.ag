@@ -1,12 +1,14 @@
-import { Toaster } from "@/components/ui/toaster";
-import { Toaster as Sonner } from "@/components/ui/sonner";
-import { TooltipProvider } from "@/components/ui/tooltip";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
-import { AuthProvider } from "@/contexts/AuthContext";
-import ProtectedRoute from "@/components/ProtectedRoute";
-import AppLayout from "@/components/AppLayout";
-import Dashboard from "@/pages/Dashboard";
+import { Toaster } from '@/components/ui/toaster';
+import { Toaster as Sonner } from '@/components/ui/sonner';
+import { TooltipProvider } from '@/components/ui/tooltip';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { BrowserRouter, Routes, Route } from 'react-router-dom';
+import { AuthProvider } from '@/contexts/AuthContext';
+import { AuditTrailProvider } from '@/contexts/audit/AuditTrailContext';
+import ProtectedRoute from '@/components/ProtectedRoute';
+import CapabilityRoute from '@/components/security/CapabilityRoute';
+import AppLayout from '@/components/AppLayout';
+import Dashboard from '@/pages/Dashboard';
 
 import MonitoringPage from "@/pages/MonitoringPage";
 import SettlementOpsPage from "@/pages/SettlementOpsPage";
@@ -24,12 +26,45 @@ import PricingAnalysisPage from "@/pages/PricingAnalysisPage";
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
-      staleTime: 5 * 60 * 1000, // 5 min - dados ficam em cache entre navegações
-      gcTime: 10 * 60 * 1000,   // 10 min - cache mantido mesmo após desmontar
+      staleTime: 5 * 60 * 1000,
+      gcTime: 10 * 60 * 1000,
       refetchOnWindowFocus: false,
     },
   },
 });
+
+const portalRoutesByProfile: Record<UserProfile, { path: string; capability: (typeof PORTAL_BY_PROFILE)[UserProfile]['requiredCapability']; element: JSX.Element }> = {
+  credor_oem: {
+    path: PORTAL_BY_PROFILE.credor_oem.route,
+    capability: PORTAL_BY_PROFILE.credor_oem.requiredCapability,
+    element: <CredorOemPortalPage />,
+  },
+  backoffice: {
+    path: PORTAL_BY_PROFILE.backoffice.route,
+    capability: PORTAL_BY_PROFILE.backoffice.requiredCapability,
+    element: <BackofficePortalPage />,
+  },
+  tomador: {
+    path: PORTAL_BY_PROFILE.tomador.route,
+    capability: PORTAL_BY_PROFILE.tomador.requiredCapability,
+    element: <TomadorPortalPage />,
+  },
+  fornecedor: {
+    path: PORTAL_BY_PROFILE.fornecedor.route,
+    capability: PORTAL_BY_PROFILE.fornecedor.requiredCapability,
+    element: <FornecedorPortalPage />,
+  },
+  investidor: {
+    path: PORTAL_BY_PROFILE.investidor.route,
+    capability: PORTAL_BY_PROFILE.investidor.requiredCapability,
+    element: <InvestidorPortalPage />,
+  },
+  compliance_auditoria: {
+    path: PORTAL_BY_PROFILE.compliance_auditoria.route,
+    capability: PORTAL_BY_PROFILE.compliance_auditoria.requiredCapability,
+    element: <ComplianceAuditoriaPortalPage />,
+  },
+};
 
 const App = () => (
   <QueryClientProvider client={queryClient}>
