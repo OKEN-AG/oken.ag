@@ -82,8 +82,18 @@ Para fechar o “Base Benefícios e Descontos”, a estrutura recomendada é:
 
 ## Priorização recomendada (90 dias)
 
-1. **P0**: módulos 8, 9, 11, 12 (motor financeiro + plano de pagamento por parcela).
-2. **P0**: módulo 17 (risco/bureau) e 19 (emissão/faturamento).
-3. **P1**: módulo 5 completo (offer builder declarativo).
-4. **P1**: precedência formal do módulo 1 e alçadas do módulo 18.
-5. **P2**: observabilidade event-driven do módulo 20.
+1. **Onda 1 (Dias 1–30):** governança de domínio, schemas, outbox worker MVP, testes de isolamento entre tenants.
+2. **Onda 2 (Dias 31–60):** APIs canônicas v1, enforcement de snapshot, observabilidade de eventos e DLQ.
+3. **Onda 3 (Dias 61–90):** rails/reconciliação MVP, accounting events, ops console inicial.
+
+### Gates de qualidade por onda
+
+- cobertura de testes críticos;
+- SLO de outbox;
+- zero acesso cruzado entre tenants;
+- reconciliação com taxa de mismatch abaixo do limite definido.
+
+### Ritual de encerramento por onda
+
+- review técnico-regulatório;
+- plano detalhado da onda seguinte.
