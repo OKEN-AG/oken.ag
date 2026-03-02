@@ -37,6 +37,13 @@ Cascas de produto/regulação (plataforma 88, gestão/fundos, securitização) s
 ### 2.2 Programa e operação econômica
 - `programs`: campanha/linha/safra com versionamento.
 - `deals`: caso econômico em formação e ciclo operacional.
+- `instruments`: títulos/contratos financeiros derivados de deals/programs.
+- `collaterals`: garantias vinculadas ao deal e às partes relacionadas.
+- `pools`: agrupadores de captação/alocação para ofertas e ordens.
+- `offers`: ofertas primárias/secundárias vinculadas a pool, instrumento e deal.
+- `investor_orders`: ordens dos investidores com status de alocação.
+- `positions`: posições por instrumento/parte ao longo do lifecycle.
+- `cash_accounts`: contas de caixa para liquidação, reconciliação e controle de saldo.
 
 ### 2.3 Evidência, snapshot e rastreabilidade
 - `evidences`: documento, hash, assinatura, laudo, oráculo.
@@ -79,7 +86,7 @@ Hoje o sistema opera com foco em campanhas/operações e snapshots de cálculo.
 
 ## 5) Próximas entregas (Fase 2)
 
-1. Expandir core para `cash_accounts`, `positions`, `investor_orders`, `accounting_entries`, `tax_events`.
+1. Expandir core para `accounting_entries`, `tax_events` e liquidação regulatória avançada.
 2. Catálogo oficial de eventos com schema registry (`docs/schemas/events/*`).
 3. APIs internas por domínio (`/parties`, `/programs`, `/deals`, `/evidence`, `/events`).
 4. Case management com SLA, approvals e exception handling.
@@ -129,22 +136,15 @@ Para suportar operação paralela com legado sem perda de rastreabilidade:
 - Logs de reconciliação ficam em `operation_deal_reconciliation_logs` para auditoria de divergências legado x core.
 - View `operations_deals_divergence_dashboard` publica o dashboard SQL de divergência para estabilização da migração.
 
-## 9) Expansão canônica de mercado de capitais (Fase 2.0)
 
-A fase 2.0 adiciona entidades financeiras centrais com relacionamento explícito a `programs` e `deals`:
+## 9) Expansão de ativos, captação e liquidação (Fase 1.4)
 
-- `instruments`: definição do ativo e lifecycle de emissão.
-- `collaterals`: garantias vinculadas ao deal e opcionalmente ao instrumento.
-- `pools`: agrupadores para estratégia de oferta/alocação.
-- `offers`: janelas de distribuição com lifecycle de captação.
-- `investor_orders`: ordens com idempotência para processamento resiliente.
-- `positions`: posição consolidada por holder e instrumento.
-- `cash_accounts`: saldos e disponibilidade de caixa para liquidação.
+Foram adicionadas entidades ausentes no core para cobrir ciclo financeiro completo:
 
-Decisões de desenho aplicadas nesta fase:
+- `instruments`, `collaterals`, `positions`, `pools`, `offers`, `investor_orders`, `cash_accounts`.
+- Todas com `tenant_id`, status de lifecycle, trilha temporal (`created_at`, `updated_at`) e `idempotency_key` por tenant.
+- Relacionamentos explícitos com `deals`, `programs`, `organizations` e `parties` via FKs.
+- Índices canônicos de busca operacional por `(tenant_id, status, created_at DESC)`.
+- Constraints de unicidade de negócio (ex.: códigos por programa/pool, conta externa por provedor, ordem externa por oferta).
 
-1. Enums de status/lifecycle dedicados por entidade (`instrument_status`, `collateral_status`, `offer_status`, `order_status`, etc.).
-2. Índices padronizados por `(tenant_id, status, created_at DESC)` para consultas operacionais e políticas RLS tenant-aware.
-3. Constraints de idempotência para pontos de reprocessamento (`investor_orders`, `cash_accounts`).
-4. Publicação de schemas JSON em `docs/schemas/core/` para contratos de integração e evolução versionada.
-
+Essa expansão completa o núcleo para jornada ponta a ponta de originação, distribuição, alocação e reconciliação de caixa no Common Core.
