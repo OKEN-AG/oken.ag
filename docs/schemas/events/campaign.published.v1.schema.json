@@ -1,0 +1,73 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://oken.ag/schemas/events/campaign.published.v1.schema.json",
+  "title": "campaign.published.v1",
+  "description": "Evento emitido quando uma campanha é publicada para operação.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "event_id",
+    "occurred_at",
+    "producer",
+    "schema_version",
+    "payload"
+  ],
+  "properties": {
+    "event_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "occurred_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "producer": {
+      "type": "string",
+      "minLength": 1
+    },
+    "schema_version": {
+      "type": "string",
+      "const": "v1"
+    },
+    "dedupe_key": {
+      "type": "string",
+      "minLength": 1
+    },
+    "payload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "campaign_id",
+        "published_by",
+        "published_at",
+        "channel"
+      ],
+      "properties": {
+        "campaign_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "published_by": {
+          "type": "string",
+          "minLength": 1
+        },
+        "published_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "channel": {
+          "type": "string",
+          "enum": [
+            "portal",
+            "api",
+            "backoffice"
+          ]
+        },
+        "portfolio_id": {
+          "type": "string",
+          "format": "uuid"
+        }
+      }
+    }
+  }
+}

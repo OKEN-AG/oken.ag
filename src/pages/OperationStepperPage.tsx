@@ -5,6 +5,7 @@ import { useParams, useNavigate, useSearchParams, Link } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '@/contexts/AuthContext';
 import { useActiveCampaigns, useCampaignData } from '@/hooks/useActiveCampaign';
+import { useAppContext } from '@/contexts/AppContext';
 import { useCommodityOptions } from '@/hooks/useCommoditiesMasterData';
 import { normalizeCommodityCode } from '@/lib/commodity';
 import { useOperation, useOperationItems, useOperationDocuments, useCreateOperation, useCreateOperationItems, useCreateOperationLog, useReplaceOperationItems, useUpdateOperation } from '@/hooks/useOperations';
@@ -195,9 +196,10 @@ export default function OperationStepperPage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { user } = useAuth();
+  const { tenantId, campaignId: contextCampaignId } = useAppContext();
 
   const isNewOperation = !operationId || operationId === 'novo';
-  const initialCampaignId = searchParams.get('campaignId') || '';
+  const initialCampaignId = contextCampaignId || searchParams.get('campaignId') || '';
 
   // ─── Data fetching ───
   const { data: activeCampaigns, isLoading: loadingCampaigns } = useActiveCampaigns();
@@ -226,7 +228,7 @@ export default function OperationStepperPage() {
   const effectiveArea = area * comboQty;
 
   // ─── Mutations ───
-  const createOperation = useCreateOperation();
+  const createOperation = useCreateOperation({ tenantId, campaignId: selectedCampaignId || null });
   const createItems = useCreateOperationItems();
   const replaceItems = useReplaceOperationItems();
   const createLog = useCreateOperationLog();
@@ -594,7 +596,7 @@ export default function OperationStepperPage() {
 
   // ─── Trigger simulation on input changes (server-authoritative) ───
   useEffect(() => {
-    if (!selectedCampaignId || selectedProducts.size === 0 || !dueMonths || hasDueDateConfigIssue || !segment || !selectedDistributorId) return;
+    if (!tenantId || !selectedCampaignId || selectedProducts.size === 0 || !dueMonths || hasDueDateConfigIssue || !segment || !selectedDistributorId) return;
     if (lastSimulationKeyRef.current === simulationKey) return;
     lastSimulationKeyRef.current = simulationKey;
 
@@ -603,6 +605,7 @@ export default function OperationStepperPage() {
       overrideQuantity: quantityMode === 'livre' ? (freeQuantities.get(id) || undefined) : undefined,
     }));
     simulateDebounced({
+      tenantId,
       campaignId: selectedCampaignId, selections: inputSelections, distributorId: selectedDistributorId || undefined, channelSegmentName: channelSegmentName || undefined, commercialSegmentName: segment, segmentName: segment, channelSegment: channelEnum, dueMonths, dueDate: selectedDueDate || undefined,
       paymentMethodId: selectedPaymentMethod || undefined,
       commodityCode: selectedCommodity || undefined,
@@ -621,7 +624,7 @@ export default function OperationStepperPage() {
       selectedCommodity, port, freightOrigin, selectedDeliveryLocationId, hasContract, userPrice, showInsurance,
       selectedBuyerId, contractPriceType, performanceIndex, clientState, selectedCityName,
       clientCityCode, usesIbgeCityEligibility, clientType, clientDocument, quantityMode, freeQuantities,
-      simulationKey, hasDueDateConfigIssue, selectedDeliveryLocationId]);
+      simulationKey, hasDueDateConfigIssue, selectedDeliveryLocationId, tenantId]);
 
   // ─── Eligibility from backend result ───
   const eligibility = simResult?.eligibility ?? null;
@@ -964,6 +967,24 @@ export default function OperationStepperPage() {
 
   const handleAdvanceStatus = async () => {
     if (!operationId || !nextStatus || !user) return;
+    if (['formalizado', 'garantido', 'faturado', 'monitorando', 'liquidado'].includes(nextStatus)) {
+      const { data: persistedPricingSnapshot, error: snapshotErr } = await supabase
+        .from('order_pricing_snapshots')
+        .select('id')
+        .eq('operation_id', operationId)
+        .eq('snapshot_type', 'pricing_snapshot')
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (snapshotErr) {
+        toast.error(`Falha ao validar snapshot de pricing: ${snapshotErr.message}`);
+        return;
+      }
+      if (!persistedPricingSnapshot) {
+        toast.error('Transição bloqueada: é obrigatório snapshot de pricing persistido para seguir para formalização/liquidação.');
+        return;
+      }
+    }
     const fromStatus = existingOp?.status || 'simulacao';
     await supabase.from('operations').update({ status: nextStatus }).eq('id', operationId);
     // C1: Write to operation_status_history for formal audit trail
@@ -1006,7 +1027,7 @@ export default function OperationStepperPage() {
 
       if (isNewOperation) {
         const op = await createOperation.mutateAsync({
-          campaign_id: selectedCampaignId, user_id: user.id, client_name: clientName || 'Sem nome',
+          client_name: clientName || 'Sem nome',
           client_document: clientDocument || undefined, channel: channelEnum, distributor_id: selectedDistributorId || undefined, city: clientCity || undefined, area_hectares: effectiveArea,
           state: clientState || undefined, due_months: dueMonths,
           gross_revenue: grossToNet.grossRevenue, combo_discount: grossToNet.comboDiscount,
@@ -1062,11 +1083,96 @@ export default function OperationStepperPage() {
         });
       }
 
-      // Save snapshot — entire simulation result IS the authoritative snapshot
+      // Save snapshot — persistir entradas + políticas resolvidas + outputs para replay/auditoria
+      const pricingSnapshotEnvelope: Record<string, unknown> = {
+        snapshotType: 'pricing_snapshot',
+        metadata: {
+          tenantId: (user.user_metadata as any)?.tenant_id || null,
+          campaignId: selectedCampaignId,
+          operationId: opId,
+          decisionType: currentStepDef.id === 'summary' ? 'final_approval_simulation' : 'simulation',
+          policyVersions: {
+            eligibility: (simResult.resolvedPolicies as any)?.eligibility?.version ?? null,
+            pricing: (simResult.resolvedPolicies as any)?.pricing?.version ?? null,
+            formalization: (simResult.resolvedPolicies as any)?.formalization?.version ?? null,
+          },
+          actor: {
+            userId: user.id,
+            email: user.email || null,
+          },
+          createdAt: new Date().toISOString(),
+        },
+        inputs: {
+          campaignId: selectedCampaignId,
+          segment,
+          channelSegmentName,
+          distributorId: selectedDistributorId,
+          dueMonths,
+          dueDate: selectedDueDate,
+          paymentMethodId: selectedPaymentMethod,
+          commodityCode: selectedCommodity,
+          port,
+          freightOrigin,
+          deliveryLocationId: selectedDeliveryLocationId,
+          hasContract,
+          userOverridePrice: userPrice,
+          showInsurance,
+          barterDiscountPercent: 0,
+          buyerId: selectedBuyerId,
+          contractPriceType,
+          performanceIndex,
+          clientContext: {
+            clientType,
+            state: clientState,
+            city: clientCity,
+            clientDocument,
+          },
+          selections: (simResult.selections || []).map((s) => ({
+            productId: s.productId,
+            dosePerHectare: s.dosePerHectare,
+            areaHectares: s.areaHectares,
+            overrideQuantity: s.rawQuantity,
+          })),
+        },
+        resolvedPolicies: simResult.resolvedPolicies || {},
+        outputs: simResult,
+        ruleTrail: ((simResult as any).pricingDebugRows || []).map((row: any) => ({
+          productId: row.productId,
+          productName: row.productName,
+          numbers: {
+            basePrice: row.priceAfterFx,
+            interestPerUnit: row.interestPerUnit,
+            marginPerUnit: row.marginPerUnit,
+            segmentAdjustmentPerUnit: row.segmentAdjPerUnit,
+            paymentMarkupPerUnit: row.paymentMarkupPerUnit,
+            normalizedPrice: row.normalizedPrice,
+            subtotal: row.subtotal,
+          },
+          rules: {
+            sourceField: row.sourceField,
+            fxSourceUsed: row.fxSourceUsed,
+            channelSegment: row.channelSegment,
+            segmentName: row.segmentName,
+            marginPercent: row.marginPercent,
+            segmentAdjustmentPercent: row.segmentAdjustmentPercent,
+            paymentMethodMarkupPercent: row.paymentMethodMarkupPercent,
+            interestMultiplier: row.interestMultiplier,
+            dueMonths: row.dueMonths,
+          },
+        })),
+      };
+
+      const hashBuffer = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(JSON.stringify(pricingSnapshotEnvelope)));
+      const snapshotHash = Array.from(new Uint8Array(hashBuffer)).map((b) => b.toString(16).padStart(2, '0')).join('');
+      pricingSnapshotEnvelope.metadata = {
+        ...(pricingSnapshotEnvelope.metadata as Record<string, unknown>),
+        snapshotHash,
+      };
+
       await supabase.from('order_pricing_snapshots').insert({
         operation_id: opId!,
-        snapshot: simResult as any,
-        snapshot_type: isNewOperation ? 'simulation' : 'order',
+        snapshot: pricingSnapshotEnvelope,
+        snapshot_type: 'pricing_snapshot',
         created_by: user.id,
       });
 
@@ -1424,6 +1530,13 @@ export default function OperationStepperPage() {
             netRevenue={grossToNet.netRevenue}
             quantitySacas={parity.quantitySacas}
             formatCurrency={formatCurrency}
+            operationStatus={existingOp?.status}
+            paymentMode={resolvePaymentMethod(selectedPM?.method_name)}
+            operationId={operationId}
+            snapshotId={simResult?.snapshotId || null}
+            onDocumentUpload={handleDocumentUpload}
+            onDocumentReview={handleDocumentReview}
+            onCounterpartyAcceptance={handleCounterpartyAcceptance}
             documentData={{
               clientName, clientDocument, clientCity, clientState,
               counterparty: selectedBuyerId === '__other__' ? counterpartyOther : (buyers?.find((b: any) => b.id === selectedBuyerId)?.buyer_name || ''),

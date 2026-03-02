@@ -14,10 +14,39 @@ import { Progress } from '@/components/ui/progress';
 import { useOperations } from '@/hooks/useOperations';
 import { toast } from 'sonner';
 import { motion } from 'framer-motion';
+import { useAppContext } from '@/contexts/AppContext';
+
+const settlementBlueprint = {
+  feed: [
+    'Operações elegíveis para liquidação',
+    'Eventos financeiros recebidos',
+    'Divergências abertas',
+  ],
+  inputs: [
+    'Registrar entrega/valor',
+    'Confirmar/reverter evento',
+    'Tratar exceção',
+  ],
+  precedents: [
+    'Formalização concluída',
+    'Operação apta por regra de estado',
+  ],
+  outputs: ['settlement_entry', 'reconciliation_status', 'exception_case quando houver mismatch'],
+  persistence: [
+    'Ledger de liquidação',
+    'Tabela de reconciliação',
+    'Histórico de mudanças de status',
+  ],
+  integration: [
+    'Emitir eventos para Finance, Monitoramento e Portais (T+0/T+1)',
+    'Garantir idempotência por chave de evento externo',
+  ],
+};
 
 export default function SettlementOpsPage() {
   const queryClient = useQueryClient();
-  const { data: operations = [], isLoading: opsLoading } = useOperations();
+  const { tenantId, campaignId } = useAppContext();
+  const { data: operations = [], isLoading: opsLoading } = useOperations({ tenantId, campaignId });
   const [selectedOpId, setSelectedOpId] = useState<string>('');
   const [dialogOpen, setDialogOpen] = useState(false);
   const [deliveryForm, setDeliveryForm] = useState({
@@ -145,6 +174,57 @@ export default function SettlementOpsPage() {
         <StatCard label="Valor Conciliado" value={formatCurrency(totalSettledAmount)} icon={<Landmark className="w-4 h-4" />} subtitle={`${settlementEntries.length} lançamentos`} />
         <StatCard label="Operações Pendentes" value={String(pendingOps)} icon={<Timer className="w-4 h-4" />} subtitle={`de ${settleOps.length} total`} />
         <StatCard label="Entregas Registradas" value={String(grainDeliveries.length)} icon={<CheckCircle2 className="w-4 h-4" />} subtitle="grain_deliveries" />
+      </div>
+
+      <div className="glass-card p-5 space-y-5">
+        <div>
+          <h2 className="text-lg font-semibold text-foreground">Blocos da tela de liquidação</h2>
+          <p className="text-sm text-muted-foreground">Visão funcional de feeds, gatilhos, persistência e integrações operacionais.</p>
+        </div>
+
+        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+          <div className="rounded-lg border border-border/60 bg-background/30 p-4">
+            <h3 className="text-sm font-semibold mb-2">Feed</h3>
+            <ul className="space-y-1 text-sm text-muted-foreground list-disc pl-5">
+              {settlementBlueprint.feed.map(item => <li key={item}>{item}</li>)}
+            </ul>
+          </div>
+
+          <div className="rounded-lg border border-border/60 bg-background/30 p-4">
+            <h3 className="text-sm font-semibold mb-2">Inputs</h3>
+            <ul className="space-y-1 text-sm text-muted-foreground list-disc pl-5">
+              {settlementBlueprint.inputs.map(item => <li key={item}>{item}</li>)}
+            </ul>
+          </div>
+
+          <div className="rounded-lg border border-border/60 bg-background/30 p-4">
+            <h3 className="text-sm font-semibold mb-2">Precedentes</h3>
+            <ul className="space-y-1 text-sm text-muted-foreground list-disc pl-5">
+              {settlementBlueprint.precedents.map(item => <li key={item}>{item}</li>)}
+            </ul>
+          </div>
+
+          <div className="rounded-lg border border-border/60 bg-background/30 p-4">
+            <h3 className="text-sm font-semibold mb-2">Outputs</h3>
+            <div className="flex flex-wrap gap-2">
+              {settlementBlueprint.outputs.map(item => <Badge key={item} variant="secondary" className="font-mono">{item}</Badge>)}
+            </div>
+          </div>
+
+          <div className="rounded-lg border border-border/60 bg-background/30 p-4">
+            <h3 className="text-sm font-semibold mb-2">Persistência</h3>
+            <ul className="space-y-1 text-sm text-muted-foreground list-disc pl-5">
+              {settlementBlueprint.persistence.map(item => <li key={item}>{item}</li>)}
+            </ul>
+          </div>
+
+          <div className="rounded-lg border border-border/60 bg-background/30 p-4">
+            <h3 className="text-sm font-semibold mb-2">Integração</h3>
+            <ul className="space-y-1 text-sm text-muted-foreground list-disc pl-5">
+              {settlementBlueprint.integration.map(item => <li key={item}>{item}</li>)}
+            </ul>
+          </div>
+        </div>
       </div>
 
       {/* Global delivery progress */}

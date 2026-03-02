@@ -1,6 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.4";
-import { resolvePolicy, recordPolicyDecisionAudit } from "../_shared/policy.ts";
+import { resolvePolicy, resolvePolicySetDomains, recordPolicyDecisionAudit } from "../_shared/policy.ts";
 
 // CORS: restrict to allowed origins via env
 function getCorsHeaders(req: Request) {
@@ -274,9 +274,11 @@ serve(async (req: Request) => {
       });
     }
 
-    const tenantId = (body?.tenantId || user.user_metadata?.tenant_id || null) as string | null;
+    const tenantId = (body?.tenantId || null) as string | null;
+    if (!tenantId) throw new Error('tenantId is required');
 
     const calcPolicy = await resolvePolicy(supabase, 'calculate_engine', tenantId);
+    const resolvedPolicySets = await resolvePolicySetDomains(supabase, tenantId, body?.campaignId || null);
 
     const { data: runtimeRow } = await supabase
       .from('engine_runtime_config')
@@ -699,6 +701,8 @@ serve(async (req: Request) => {
           status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });
     }
+
+    result = { ...result, policySetsUsed: resolvedPolicySets };
 
     await recordPolicyDecisionAudit(supabase, {
       tenantId,

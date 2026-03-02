@@ -2,8 +2,10 @@ import { motion } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
 import StatCard from '@/components/StatCard';
 import { useOperationStats } from '@/hooks/useOperations';
-import { BarChart3, Wheat, ShoppingCart, FileText, TrendingUp, DollarSign } from 'lucide-react';
+import { BarChart3, Wheat, ShoppingCart, FileText, DollarSign } from 'lucide-react';
+import { useNavigationContext } from '@/hooks/useNavigationContext';
 import { Skeleton } from '@/components/ui/skeleton';
+import { useAppContext } from '@/contexts/AppContext';
 
 const statusColors: Record<string, string> = {
   simulacao: 'bg-info/10 text-info',
@@ -17,7 +19,8 @@ const statusColors: Record<string, string> = {
 
 export default function Dashboard() {
   const navigate = useNavigate();
-  const { data: stats, isLoading } = useOperationStats();
+  const { tenantId, campaignId } = useAppContext();
+  const { data: stats, isLoading } = useOperationStats({ tenantId, campaignId });
 
   const formatCurrency = (v: number) => {
     if (v >= 1_000_000) return `R$ ${(v / 1_000_000).toFixed(1)}M`;
@@ -28,7 +31,7 @@ export default function Dashboard() {
   const formatNum = (v: number) => v.toLocaleString('pt-BR', { maximumFractionDigits: 0 });
 
   const handleOperationClick = (opId: string) => {
-    navigate(`/operacao/${opId}`);
+    navigate(withContext(`/operacao/${opId}`));
   };
 
   return (

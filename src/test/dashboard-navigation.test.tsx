@@ -13,6 +13,10 @@ vi.mock('react-router-dom', async () => {
   };
 });
 
+
+vi.mock('@/hooks/useNavigationContext', () => ({
+  useNavigationContext: () => ({ withContext: (path: string) => path }),
+}));
 vi.mock('@/hooks/useOperations', () => ({
   useOperationStats: () => ({
     isLoading: false,

@@ -1,0 +1,69 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://oken.ag/schemas/events/settlement.completed.v1.schema.json",
+  "title": "settlement.completed.v1",
+  "description": "Evento emitido ao concluir liquidação financeira.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "event_id",
+    "occurred_at",
+    "producer",
+    "schema_version",
+    "payload"
+  ],
+  "properties": {
+    "event_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "occurred_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "producer": {
+      "type": "string",
+      "minLength": 1
+    },
+    "schema_version": {
+      "type": "string",
+      "const": "v1"
+    },
+    "dedupe_key": {
+      "type": "string",
+      "minLength": 1
+    },
+    "payload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "settlement_id",
+        "completed_at",
+        "amount",
+        "currency"
+      ],
+      "properties": {
+        "settlement_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "completed_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "amount": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "currency": {
+          "type": "string",
+          "pattern": "^[A-Z]{3}$"
+        },
+        "payment_reference": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    }
+  }
+}
