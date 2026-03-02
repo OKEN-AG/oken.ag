@@ -1,0 +1,12 @@
+{
+  "endpoint": "POST /v1/tax/documents",
+  "request": {
+    "tenant_id": "11111111-1111-1111-1111-111111111111",
+    "document_number": "NF-001",
+    "amount": 12000.0
+  },
+  "response": {
+    "id": "tax_001",
+    "status": "issued"
+  }
+}

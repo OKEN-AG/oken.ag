@@ -1,10 +1,15 @@
 import { createContext, useContext, useEffect, useState, ReactNode } from 'react';
 import { User, Session } from '@supabase/supabase-js';
 import { supabase } from '@/integrations/supabase/client';
+import { Capability, UserProfile } from '@/types/authorization';
+import { PROFILE_CAPABILITIES } from '@/config/portals';
 
 interface AuthContextType {
   user: User | null;
   session: Session | null;
+  profile: UserProfile;
+  capabilities: Capability[];
+  hasCapability: (capability: Capability) => boolean;
   loading: boolean;
   signUp: (email: string, password: string, fullName: string) => Promise<{ error: Error | null }>;
   signIn: (email: string, password: string) => Promise<{ error: Error | null }>;
@@ -13,10 +18,27 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
+const DEFAULT_PROFILE: UserProfile = 'backoffice';
+
+const isValidProfile = (value: unknown): value is UserProfile => (
+  typeof value === 'string' && value in PROFILE_CAPABILITIES
+);
+
+const getProfileFromUser = (user: User | null): UserProfile => {
+  const metadataProfile = user?.user_metadata?.profile;
+  if (isValidProfile(metadataProfile)) return metadataProfile;
+
+  const emailHint = user?.email?.split('+')[1]?.split('@')[0]?.replace('-', '_');
+  if (isValidProfile(emailHint)) return emailHint;
+  return DEFAULT_PROFILE;
+};
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
+  const profile = getProfileFromUser(user);
+  const capabilities = PROFILE_CAPABILITIES[profile] ?? [];
 
   useEffect(() => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
@@ -55,8 +77,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     await supabase.auth.signOut();
   };
 
+  const hasCapability = (capability: Capability) => capabilities.includes(capability);
+
   return (
-    <AuthContext.Provider value={{ user, session, loading, signUp, signIn, signOut }}>
+    <AuthContext.Provider value={{ user, session, profile, capabilities, hasCapability, loading, signUp, signIn, signOut }}>
       {children}
     </AuthContext.Provider>
   );

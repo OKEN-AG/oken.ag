@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.4";
+import { resolvePolicy, recordPolicyDecisionAudit } from "../_shared/policy.ts";
 
 // ─── CORS ───
 function getCorsHeaders(req: Request) {
@@ -404,7 +405,7 @@ function calculateGrossToNet(
 }
 
 // ─── ELIGIBILITY ENGINE ───
-function checkEligibility(campaign: any, input: any): EligibilityResult {
+function checkEligibility(campaign: any, input: any, eligibilityPolicy?: any): EligibilityResult {
   const warnings: string[] = [];
   const normalize = (v?: string) => String(v || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().toLowerCase();
 
@@ -423,10 +424,28 @@ function checkEligibility(campaign: any, input: any): EligibilityResult {
   const mesoregion_ok = eligMeso.length === 0 || !input.mesoregion || eligMeso.some((m: string) => normalize(m) === normalize(input.mesoregion));
   const city_ok = eligCities.length === 0 || !input.city || eligCities.some((c: string) => normalize(c) === normalize(input.city));
 
+  const geoPrecedence = Array.isArray(eligibilityPolicy?.geo_precedence)
+    ? eligibilityPolicy.geo_precedence
+    : ['city', 'mesoregion', 'state'];
+
   let geo_ok = true;
-  if (eligCities.length > 0) { geo_ok = city_ok; if (!city_ok) warnings.push(`Cidade "${input.city}" não elegível`); }
-  else if (eligMeso.length > 0) { geo_ok = mesoregion_ok; if (!mesoregion_ok) warnings.push(`Mesorregião não elegível`); }
-  else if (eligStates.length > 0) { geo_ok = state_ok; if (!state_ok) warnings.push(`Estado "${input.state}" não elegível`); }
+  for (const level of geoPrecedence) {
+    if (level === 'city' && eligCities.length > 0) {
+      geo_ok = city_ok;
+      if (!city_ok) warnings.push(`Cidade "${input.city}" não elegível`);
+      break;
+    }
+    if (level === 'mesoregion' && eligMeso.length > 0) {
+      geo_ok = mesoregion_ok;
+      if (!mesoregion_ok) warnings.push('Mesorregião não elegível');
+      break;
+    }
+    if (level === 'state' && eligStates.length > 0) {
+      geo_ok = state_ok;
+      if (!state_ok) warnings.push(`Estado "${input.state}" não elegível`);
+      break;
+    }
+  }
 
   // Segment
   const eligSegs = campaign.eligible_distributor_segments || [];
@@ -448,7 +467,8 @@ function checkEligibility(campaign: any, input: any): EligibilityResult {
   if (!whitelist_ok) warnings.push('Cliente não está na whitelist');
 
   const eligible = pf_pj_ok && geo_ok && segment_ok && client_segment_ok && min_ok && whitelist_ok;
-  const blocked = !!(campaign.block_ineligible && !eligible);
+  const blockIneligible = eligibilityPolicy?.block_ineligible ?? campaign.block_ineligible;
+  const blocked = !!(blockIneligible && !eligible);
 
   return {
     eligible, blocked,
@@ -542,6 +562,9 @@ serve(async (req: Request) => {
     const { data: { user }, error: authError } = await supabase.auth.getUser();
     if (authError || !user) return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 
+    const tenantId = (body?.tenantId || user.user_metadata?.tenant_id || null) as string | null;
+    const simulationPolicy = await resolvePolicy(supabase, 'simulation_engine', tenantId);
+
     let result: Record<string, unknown> | EligibilityResult;
 
     switch (endpoint) {
@@ -566,6 +589,51 @@ serve(async (req: Request) => {
         // 1. Fetch campaign (authoritative)
         const { data: campaign, error: cErr } = await supabase.from('campaigns').select('*').eq('id', campaignId).single();
         if (cErr || !campaign) throw new Error('Campaign not found');
+
+        const { data: eligibilityPolicyResolved, error: eligibilityPolicyErr } = await supabase.rpc('policy_resolve', {
+          p_policy_key: 'eligibility',
+          p_context: {
+            campaignId,
+            channelSegment,
+            distributorId: distributorId || null,
+            clientType: clientContext?.clientType || null,
+            state: clientContext?.state || null,
+            city: clientContext?.city || null,
+          },
+          p_decision_type: 'simulacao',
+          p_operation_id: null,
+          p_persist_snapshot: true,
+        });
+        if (eligibilityPolicyErr) throw new Error(`Policy resolve failed: ${eligibilityPolicyErr.message}`);
+        const eligibilityPolicy = eligibilityPolicyResolved?.resolved || {};
+
+        const { data: pricingPolicyResolved, error: pricingPolicyErr } = await supabase.rpc('policy_resolve', {
+          p_policy_key: 'pricing',
+          p_context: {
+            campaignId,
+            channelSegment,
+            segmentName,
+            dueMonths: dueMonths || null,
+            paymentMethodId: paymentMethodId || null,
+          },
+          p_decision_type: 'pricing',
+          p_operation_id: null,
+          p_persist_snapshot: true,
+        });
+        if (pricingPolicyErr) throw new Error(`Policy resolve failed: ${pricingPolicyErr.message}`);
+
+        const { data: formalizationPolicyResolved, error: formalizationPolicyErr } = await supabase.rpc('policy_resolve', {
+          p_policy_key: 'formalization',
+          p_context: {
+            campaignId,
+            contractPriceType: cpt || null,
+            hasContract: !!hasExistingContract,
+          },
+          p_decision_type: 'formalizacao',
+          p_operation_id: null,
+          p_persist_snapshot: true,
+        });
+        if (formalizationPolicyErr) throw new Error(`Policy resolve failed: ${formalizationPolicyErr.message}`);
 
         // 2. Fetch related data in parallel
         const [marginsRes, segmentsRes, channelSegRes, distributorsRes, pmRes, combosRes, cpRes, frRes, dlRes, buyersRes, valRes, clientsRes] = await Promise.all([
@@ -686,7 +754,11 @@ serve(async (req: Request) => {
 
         // 8. Eligibility
         const whitelist = (clientsRes.data || []).map((c: any) => c.document).filter((d: string) => String(d || '').replace(/\D/g, '').length > 0);
-        const eligibility = checkEligibility(campaign, { ...clientContext, orderAmount: grossToNet.grossRevenue, whitelist });
+        const eligibility = checkEligibility(
+          campaign,
+          { ...clientContext, orderAmount: grossToNet.grossRevenue, whitelist },
+          eligibilityPolicy,
+        );
 
         // 9. Parity (if barter)
         let parityResult: ParityResultType | null = null;
@@ -814,7 +886,7 @@ serve(async (req: Request) => {
             currency: campaign.currency,
             target: campaign.target,
             activeModules: campaign.active_modules || [],
-            aforoPercent: campaign.aforo_percent,
+            aforoPercent: Number(campaign.aforo_percent || simulationPolicy.policyPayload.defaultAforoPercent || 130),
             priceListFormat: campaign.price_list_format,
             commodities: campaign.commodities,
             contractPriceTypes: campaign.contract_price_types || ['fixo', 'a_fixar'],
@@ -831,6 +903,11 @@ serve(async (req: Request) => {
           freightOrigins: (frRes.data || []).map((fr: any) => ({ origin: fr.origin, destination: fr.destination })),
           comboDefinitions: comboDefinitions.map((c: any) => ({ id: c.id, name: c.name, discountPercent: c.discount_percent, productRefs: c.products.map((p: any) => p.ref) })),
           distributorContext: selectedDistributor ? { id: selectedDistributor.id, shortName: selectedDistributor.short_name, channelSegmentName: selectedDistributor.channel_segment_name } : null,
+          resolvedPolicies: {
+            eligibility: eligibilityPolicyResolved,
+            pricing: pricingPolicyResolved,
+            formalization: formalizationPolicyResolved,
+          },
           timestamp: new Date().toISOString(),
         };
         break;
@@ -846,10 +923,27 @@ serve(async (req: Request) => {
         const { data: campaign, error: cErr } = await supabase.from('campaigns').select('*').eq('id', campaignId).single();
         if (cErr || !campaign) throw new Error('Campaign not found');
 
+        const { data: eligibilityPolicyResolved, error: eligibilityPolicyErr } = await supabase.rpc('policy_resolve', {
+          p_policy_key: 'eligibility',
+          p_context: {
+            campaignId,
+            clientType: ctx?.clientType || null,
+            state: ctx?.state || null,
+            city: ctx?.city || null,
+            segment: ctx?.segment || null,
+            clientSegment: ctx?.clientSegment || null,
+          },
+          p_decision_type: 'eligibilidade',
+          p_operation_id: null,
+          p_persist_snapshot: true,
+        });
+        if (eligibilityPolicyErr) throw new Error(`Policy resolve failed: ${eligibilityPolicyErr.message}`);
+        const eligibilityPolicy = eligibilityPolicyResolved?.resolved || {};
+
         const { data: clients } = await supabase.from('campaign_clients').select('document').eq('campaign_id', campaignId);
         const whitelist = (clients || []).map((c: any) => c.document).filter((d: string) => String(d || '').replace(/\D/g, '').length > 0);
 
-        result = checkEligibility(campaign, { ...ctx, whitelist });
+        result = checkEligibility(campaign, { ...ctx, whitelist }, eligibilityPolicy);
         break;
       }
 
@@ -911,7 +1005,7 @@ serve(async (req: Request) => {
         const base = validGuarantees.reduce((s: number, g: any) => s + (g.estimated_value || 0), 0);
         const avgIP = validGuarantees.length > 0 ? validGuarantees.reduce((s: number, g: any) => s + (g.ip_at_evaluation || 1), 0) / validGuarantees.length : 1;
         const effective = base * avgIP;
-        const required = (operation.gross_revenue || 0) * ((campaign?.aforo_percent || 130) / 100);
+        const required = (operation.gross_revenue || 0) * ((campaign?.aforo_percent || Number(simulationPolicy.policyPayload.defaultAforoPercent || 130)) / 100);
 
         result = {
           operationStatus: operation.status,
@@ -1033,6 +1127,18 @@ serve(async (req: Request) => {
       default:
         return new Response(JSON.stringify({ error: 'Unknown endpoint' }), { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
+
+    await recordPolicyDecisionAudit(supabase, {
+      tenantId,
+      domainRef: 'simulation_engine',
+      domainId: body?.operationId || null,
+      policyKey: 'simulation_engine',
+      resolvedPolicy: simulationPolicy,
+      appliedRule: String(endpoint || 'unknown'),
+      decisionInputs: body || {},
+      decisionOutput: result || {},
+      rationale: 'Simulation executed with server-resolved policy',
+    });
 
     return new Response(JSON.stringify(result), { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
   } catch (error: unknown) {

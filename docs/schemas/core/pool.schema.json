@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://oken.ag/schemas/core/pool.schema.json",
+  "title": "Pool",
+  "description": "Pool de alocação de ofertas e ordens de investidores.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["entity", "version", "id", "tenantId", "status", "name", "currency", "createdAt"],
+  "properties": {
+    "entity": { "const": "pool" },
+    "version": { "type": "string", "pattern": "^\\d+\\.\\d+\\.\\d+$", "default": "1.0.0" },
+    "id": { "type": "string", "minLength": 1 },
+    "tenantId": { "type": "string", "minLength": 1 },
+    "programId": { "type": "string", "minLength": 1 },
+    "organizationId": { "type": "string", "minLength": 1 },
+    "managerPartyId": { "type": "string", "minLength": 1 },
+    "status": { "type": "string", "enum": ["draft", "active", "suspended", "closed", "archived"] },
+    "code": { "type": "string" },
+    "name": { "type": "string", "minLength": 1 },
+    "targetAmount": { "type": "number", "minimum": 0 },
+    "currentAmount": { "type": "number", "minimum": 0 },
+    "currency": { "type": "string", "minLength": 3, "maxLength": 3 },
+    "idempotencyKey": { "type": "string" },
+    "createdAt": { "type": "string", "format": "date-time" },
+    "updatedAt": { "type": "string", "format": "date-time" }
+  }
+}

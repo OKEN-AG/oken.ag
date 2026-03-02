@@ -10,6 +10,16 @@ export const CANONICAL_DOCUMENT_STATES = [
 
 export type CanonicalDocumentState = (typeof CANONICAL_DOCUMENT_STATES)[number];
 
+export const DOCUMENT_STATE_TRANSITIONS: Record<CanonicalDocumentState, CanonicalDocumentState[]> = {
+  pendente: ['draft'],
+  draft: ['aprovado', 'cancelado'],
+  aprovado: ['assinado', 'cancelado'],
+  assinado: ['registrado', 'substituido'],
+  registrado: ['substituido'],
+  substituido: [],
+  cancelado: [],
+};
+
 const LEGACY_TO_CANONICAL: Record<string, CanonicalDocumentState> = {
   emitido: 'draft',
   validado: 'aprovado',
@@ -17,9 +27,20 @@ const LEGACY_TO_CANONICAL: Record<string, CanonicalDocumentState> = {
   pendente: 'pendente',
   registrado: 'registrado',
   substituido: 'substituido',
+  'substituído': 'substituido',
   cancelado: 'cancelado',
   draft: 'draft',
   aprovado: 'aprovado',
+};
+
+const DOCUMENT_STATE_MACHINE: Record<CanonicalDocumentState, CanonicalDocumentState[]> = {
+  pendente: ['draft', 'cancelado'],
+  draft: ['aprovado', 'cancelado'],
+  aprovado: ['assinado', 'substituido', 'cancelado'],
+  assinado: ['registrado', 'substituido', 'cancelado'],
+  registrado: ['substituido', 'cancelado'],
+  substituido: ['draft', 'cancelado'],
+  cancelado: [],
 };
 
 export function normalizeDocumentState(state: string): CanonicalDocumentState {
@@ -41,4 +62,15 @@ export function isStateAtLeast(
   expected: CanonicalDocumentState,
 ): boolean {
   return STATE_RANK[current] >= STATE_RANK[expected];
+}
+
+export function canTransitionDocumentState(
+  current: CanonicalDocumentState,
+  next: CanonicalDocumentState,
+): boolean {
+  return DOCUMENT_STATE_MACHINE[current].includes(next);
+}
+
+export function getNextDocumentStates(current: CanonicalDocumentState): CanonicalDocumentState[] {
+  return DOCUMENT_STATE_MACHINE[current];
 }

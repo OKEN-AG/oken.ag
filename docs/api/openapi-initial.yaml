@@ -316,7 +316,7 @@ components:
       name: x-api-key
 
   headers:
-    CorrelationId:
+   https://github.com/OKEN-AG/oken.ag/pull/33/conflict?name=docs%252Fapi%252Fopenapi-initial.yaml&ancestor_oid=52d95a5cd52b38c852bccc99264f8d1c60dd76b4&base_oid=33ce90e234147e83f0db40c942a54c8c87dc5404&head_oid=f43b64562af747cd16618cb73c67fb749f5a7b91 CorrelationId:
       description: Mesmo valor recebido em `x-correlation-id` para rastreio ponta a ponta.
       schema:
         type: string
@@ -564,6 +564,13 @@ components:
       properties:
         id: { type: string, format: uuid }
         tenant_id: { type: string, format: uuid }
+        access_token: { type: string }
+        expires_at: { type: string, format: date-time }
+
+    Campaign:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
         name: { type: string }
         status: { type: string, enum: [draft, active, archived] }
     CampaignCreateInput:
@@ -684,7 +691,7 @@ components:
 
     WebhookSubscriptionInput:
       type: object
-      required: [tenant_id, endpoint_url, secret, event_types]
+      required: [tenant_id, endpoint_url, secret, domain]
       properties:
         tenant_id: { type: string, format: uuid }
         endpoint_url: { type: string, format: uri }
@@ -768,8 +775,82 @@ x-oken-webhooks:
   delivery:
     success_http_codes: [200, 201, 202, 204]
     retryable_http_codes: [408, 409, 425, 429, 500, 502, 503, 504]
-    retry_policy:
-      strategy: exponential_backoff_with_jitter
-      max_attempts: 8
-      first_retry_delay_seconds: 30
-      max_delay_seconds: 3600
+  domains:
+    identity:
+      event_types: [identity.session.created]
+      request_example:
+        headers:
+          x-oken-signature: t=1735770000,v1=abcdef123
+        body: { id: evt_001, type: identity.session.created }
+      response_example: { status_code: 204 }
+      retry_policy: { strategy: exponential_backoff_with_jitter, max_attempts: 8, first_retry_delay_seconds: 30 }
+    campaigns:
+      event_types: [campaign.created, campaign.updated]
+      request_example: { body: { id: evt_002, type: campaign.created } }
+      response_example: { status_code: 200 }
+      retry_policy: { strategy: exponential_backoff_with_jitter, max_attempts: 8, first_retry_delay_seconds: 30 }
+    eligibility:
+      event_types: [eligibility.checked]
+      request_example: { body: { id: evt_003, type: eligibility.checked } }
+      response_example: { status_code: 200 }
+      retry_policy: { strategy: exponential_backoff_with_jitter, max_attempts: 8, first_retry_delay_seconds: 30 }
+    pricing:
+      event_types: [pricing.quote.created]
+      request_example: { body: { id: evt_004, type: pricing.quote.created } }
+      response_example: { status_code: 200 }
+      retry_policy: { strategy: exponential_backoff_with_jitter, max_attempts: 8, first_retry_delay_seconds: 30 }
+    documents:
+      event_types: [document.created, document.approved]
+      request_example: { body: { id: evt_005, type: document.created } }
+      response_example: { status_code: 200 }
+      retry_policy: { strategy: exponential_backoff_with_jitter, max_attempts: 8, first_retry_delay_seconds: 30 }
+    registry:
+      event_types: [registry.entity.created]
+      request_example: { body: { id: evt_006, type: registry.entity.created } }
+      response_example: { status_code: 200 }
+      retry_policy: { strategy: exponential_backoff_with_jitter, max_attempts: 8, first_retry_delay_seconds: 30 }
+    disbursements:
+      event_types: [disbursement.created, disbursement.completed]
+      request_example: { body: { id: evt_007, type: disbursement.created } }
+      response_example: { status_code: 200 }
+      retry_policy: { strategy: exponential_backoff_with_jitter, max_attempts: 8, first_retry_delay_seconds: 30 }
+    payments:
+      event_types: [payment.created, payment.settled]
+      request_example: { body: { id: evt_008, type: payment.created } }
+      response_example: { status_code: 200 }
+      retry_policy: { strategy: exponential_backoff_with_jitter, max_attempts: 8, first_retry_delay_seconds: 30 }
+    reconciliation:
+      event_types: [reconciliation.finished, reconciliation.failed]
+      request_example: { body: { id: evt_009, type: reconciliation.finished } }
+      response_example: { status_code: 200 }
+      retry_policy: { strategy: exponential_backoff_with_jitter, max_attempts: 8, first_retry_delay_seconds: 30 }
+    offers:
+      event_types: [offer.created, offer.expired]
+      request_example: { body: { id: evt_010, type: offer.created } }
+      response_example: { status_code: 200 }
+      retry_policy: { strategy: exponential_backoff_with_jitter, max_attempts: 8, first_retry_delay_seconds: 30 }
+    investors:
+      event_types: [investor.created, investor.updated]
+      request_example: { body: { id: evt_011, type: investor.created } }
+      response_example: { status_code: 200 }
+      retry_policy: { strategy: exponential_backoff_with_jitter, max_attempts: 8, first_retry_delay_seconds: 30 }
+    orders:
+      event_types: [order.created, order.approved]
+      request_example: { body: { id: evt_012, type: order.created } }
+      response_example: { status_code: 200 }
+      retry_policy: { strategy: exponential_backoff_with_jitter, max_attempts: 8, first_retry_delay_seconds: 30 }
+    accounting:
+      event_types: [accounting.entry.created]
+      request_example: { body: { id: evt_013, type: accounting.entry.created } }
+      response_example: { status_code: 200 }
+      retry_policy: { strategy: exponential_backoff_with_jitter, max_attempts: 8, first_retry_delay_seconds: 30 }
+    tax:
+      event_types: [tax.document.issued]
+      request_example: { body: { id: evt_014, type: tax.document.issued } }
+      response_example: { status_code: 200 }
+      retry_policy: { strategy: exponential_backoff_with_jitter, max_attempts: 8, first_retry_delay_seconds: 30 }
+    admin:
+      event_types: [admin.tenant.updated]
+      request_example: { body: { id: evt_015, type: admin.tenant.updated } }
+      response_example: { status_code: 200 }
+      retry_policy: { strategy: exponential_backoff_with_jitter, max_attempts: 8, first_retry_delay_seconds: 30 }

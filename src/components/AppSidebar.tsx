@@ -3,11 +3,12 @@ import { motion } from 'framer-motion';
 import {
   LayoutDashboard, ShoppingCart, BarChart3,
   ChevronLeft, ChevronRight, LogOut,
-  FolderCog, Users, Database, ReceiptText } from 'lucide-react';
+  FolderCog, Users, Database, ReceiptText, HandCoins } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useActiveCampaigns, useCampaignData } from '@/hooks/useActiveCampaign';
 import { useSidebarCollapsed } from '@/contexts/SidebarContext';
 import type { JourneyModule } from '@/types/barter';
+import { PORTAL_DEFINITIONS } from '@/config/portals';
 import logoDark from '@/assets/logo-dark.png';
 import logoIcon from '@/assets/logo-icon.png';
 
@@ -15,6 +16,7 @@ const navItems: { to: string; icon: any; label: string; module?: JourneyModule }
   { to: '/', icon: LayoutDashboard, label: 'Dashboard' },
   { to: '/operacao/novo', icon: ShoppingCart, label: 'Nova Operação' },
   { to: '/monitoramento', icon: BarChart3, label: 'Monitoramento' },
+  { to: '/liquidacao', icon: Landmark, label: 'Liquidação' },
 ];
 
 const adminItems = [
@@ -22,12 +24,17 @@ const adminItems = [
   { to: '/admin/commodities-masterdata', icon: Database, label: 'Commodities MasterData' },
   { to: '/admin/pedidos', icon: ReceiptText, label: 'Pedidos / Operações' },
   { to: '/compradores', icon: Users, label: 'Portal Comprador' },
+  { to: '/investidores', icon: HandCoins, label: 'Portal Investidor' },
 ];
 
 export default function AppSidebar() {
   const { collapsed, setCollapsed } = useSidebarCollapsed();
   const location = useLocation();
-  const { user, signOut } = useAuth();
+  const { user, signOut, hasCapability } = useAuth();
+
+  const portalItems = PORTAL_DEFINITIONS
+    .filter(portal => hasCapability(portal.requiredCapability))
+    .map(portal => ({ to: portal.route, label: portal.title, icon: ShieldCheck }));
 
   const { data: activeCampaigns } = useActiveCampaigns();
   const firstCampaignId = activeCampaigns?.[0]?.id;
@@ -40,7 +47,7 @@ export default function AppSidebar() {
     return activeModules.includes(item.module);
   });
 
-  const renderNavItem = (item: typeof navItems[0]) => {
+  const renderNavItem = (item: { to: string; icon: any; label: string }) => {
     const active = location.pathname === item.to || (item.to !== '/' && location.pathname.startsWith(item.to));
     return (
       <NavLink
@@ -83,6 +90,17 @@ export default function AppSidebar() {
         )}
         {collapsed && <div className="border-t border-sidebar-border my-2" />}
         {adminItems.map(renderNavItem)}
+
+        {portalItems.length > 0 && (
+          <>
+            {!collapsed && (
+              <div className="pt-4 pb-1 px-3">
+                <span className="text-[10px] uppercase tracking-widest text-primary">Portais</span>
+              </div>
+            )}
+            {portalItems.map(renderNavItem)}
+          </>
+        )}
 
         <div className="border-t border-sidebar-border mt-4 pt-2 space-y-1">
           {!collapsed && user && (
