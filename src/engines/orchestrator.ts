@@ -1,4 +1,5 @@
 import type { OperationStatus, DocumentType, JourneyModule, WagonStage, GuaranteeCategory, GuaranteeCoverage } from '@/types/barter';
+import { validateMinimumDocumentRule } from '@/domains/core/formalization';
 
 /**
  * ORCHESTRATOR ENGINE
@@ -205,6 +206,15 @@ export function canAdvance(
   if (currentStatus === 'garantido') {
     if (!hasPoE(existingDocuments)) return null;
     if (!hasPoL(existingDocuments)) return null;
+
+    const minimumRule = validateMinimumDocumentRule(
+      [
+        { docType: 'termo_barter', minimumState: 'assinado' },
+        { docType: 'cpr', minimumState: 'assinado' },
+      ],
+      existingDocuments,
+    );
+    if (!minimumRule.canDisburse) return null;
   }
 
   const lastCurrentStage = currentStages[currentStages.length - 1];
@@ -226,6 +236,18 @@ export function getBlockingReason(
     if (!hasPoE(existingDocuments)) missingProofs.push('Comprovação de Produção — CPR ou laudo validado');
     if (!hasPoL(existingDocuments)) missingProofs.push('Comprovação de Contrato — CCV ou cessão validada');
     if (missingProofs.length > 0) return `Provas pendentes: ${missingProofs.join('; ')}`;
+
+    const minimumRule = validateMinimumDocumentRule(
+      [
+        { docType: 'termo_barter', minimumState: 'assinado' },
+        { docType: 'cpr', minimumState: 'assinado' },
+      ],
+      existingDocuments,
+    );
+
+    if (!minimumRule.canDisburse) {
+      return `Regra documental mínima para desembolso não atendida: ${minimumRule.missing.join(', ')}`;
+    }
   }
 
   const stages = buildWagonStages(activeModules, currentStatus, existingDocuments);
