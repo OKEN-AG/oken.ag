@@ -20,7 +20,7 @@ class FlakyAdapter extends BaseRegistryAdapter {
     return {
       idempotencyKey,
       externalStatus: 'VALIDATED',
-      state: 'validado',
+      state: 'aprovado',
       evidence: {
         protocol: String(payload.externalReference),
         attachments: ['anexo.pdf'],
