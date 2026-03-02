@@ -40,13 +40,15 @@
 | Botão Visualizar | ✅ Dialog de pré-visualização no FormalizationStep |
 | DocumentData passado do stepper | ✅ Props tipadas com dados da operação |
 
-### Bloco D — Pós-Operação (PENDENTE)
+### Bloco D — Pós-Operação ✅ COMPLETO
 | Item | Status |
 |------|--------|
-| Invoicing Engine | Stub no backend |
-| Monitoring Dashboard | Página existe — conteúdo não verificado |
-| Settlement Engine | Stub no backend |
-| Tabelas `grain_deliveries` / `settlement_entries` | Não existem |
+| Invoicing Engine | ✅ Backend completo com provisões, gates e outbox |
+| Monitoring Dashboard | ✅ Com alertas por regra, progresso de entregas, indicadores por operação |
+| Settlement Engine | ✅ Backend completo com grain_delivery, compensation, reconciliation |
+| Tabelas `grain_deliveries` / `settlement_entries` | ✅ Migration criada com RLS |
+| Tabela `monitoring_alert_rules` | ✅ Migration criada com RLS |
+| SettlementOpsPage | ✅ Com formulário de registro de entrega, progresso e conciliação |
 
 ---
 
