@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://oken.ag/schemas/core/investor_order.schema.json",
+  "title": "InvestorOrder",
+  "description": "Ordem do investidor vinculada a oferta e deal/program.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["entity", "version", "id", "tenantId", "programId", "offerId", "orderCode", "status", "orderedAmount", "currency", "createdAt"],
+  "properties": {
+    "entity": { "const": "investor_order" },
+    "version": { "type": "string", "pattern": "^\\d+\\.\\d+\\.\\d+$", "default": "1.0.0" },
+    "id": { "type": "string", "format": "uuid" },
+    "tenantId": { "type": "string", "format": "uuid" },
+    "programId": { "type": "string", "format": "uuid" },
+    "dealId": { "type": "string", "format": "uuid" },
+    "offerId": { "type": "string", "format": "uuid" },
+    "investorPartyId": { "type": "string", "format": "uuid" },
+    "orderCode": { "type": "string", "minLength": 1 },
+    "status": { "type": "string", "enum": ["pending", "confirmed", "allocated", "settled", "cancelled", "rejected"] },
+    "orderedAmount": { "type": "number", "minimum": 0 },
+    "allocatedAmount": { "type": "number", "minimum": 0 },
+    "currency": { "type": "string", "minLength": 3, "maxLength": 3 },
+    "idempotencyKey": { "type": "string", "minLength": 1 },
+    "metadata": { "type": "object", "default": {} },
+    "createdAt": { "type": "string", "format": "date-time" },
+    "updatedAt": { "type": "string", "format": "date-time" }
+  }
+}
