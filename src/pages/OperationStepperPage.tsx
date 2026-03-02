@@ -53,23 +53,8 @@ const STEPS = [
   { id: 'summary', label: 'Resumo', icon: Check },
 ];
 
-const statusConfig: Record<string, { icon: any; color: string; bg: string; label: string }> = {
-  validado: { icon: CheckCircle, color: 'text-success', bg: 'bg-success/10', label: 'Validado' },
-  assinado: { icon: CheckCircle, color: 'text-primary', bg: 'bg-primary/10', label: 'Assinado' },
-  emitido: { icon: Clock, color: 'text-warning', bg: 'bg-warning/10', label: 'Emitido' },
-  pendente: { icon: AlertTriangle, color: 'text-muted-foreground', bg: 'bg-muted', label: 'Pendente' },
-};
-
-const allDocTypes: { type: DocumentType; label: string; category?: 'poe' | 'pol' | 'pod' }[] = [
-  { type: 'termo_adesao', label: 'Termo de Adesão' },
-  { type: 'pedido', label: 'Pedido de Compra' },
-  { type: 'termo_barter', label: 'Termo de Barter' },
-  { type: 'ccv', label: 'CCV', category: 'pol' },
-  { type: 'cessao_credito', label: 'Cessão de Crédito', category: 'pol' },
-  { type: 'cpr', label: 'CPR', category: 'poe' },
-  { type: 'duplicata', label: 'Duplicata' },
-  { type: 'certificado_aceite', label: 'Certificado de Aceite', category: 'pod' },
-];
+// Re-exported from constants (used by FormalizationStep directly)
+import { statusConfig, allDocTypes } from '@/pages/steps/constants';
 
 // ─── Combo recommendation logic ───
 function getComboRecommendations(
@@ -1512,295 +1497,100 @@ export default function OperationStepperPage() {
 
           {/* ═══ SIMULATION STEP ═══ */}
           {/* Discount never shown per product — only total in footer */}
-          <SimulationStep isActive={currentStepDef.id === 'simulation' && selections.length > 0}>
-            <div className="glass-card p-5 space-y-4">
-              <h2 className="text-sm font-semibold text-foreground flex items-center gap-2"><ShoppingCart className="w-4 h-4 text-primary" /> Breakdown da Simulação</h2>
-              <div className="space-y-1">
-                {pricingResults.map(pr => {
-                  const prod = products.find(p => p.id === pr.productId)!;
-                  return (
-                    <div key={pr.productId} className="flex items-center justify-between text-sm py-1.5 border-b border-border/50">
-                      <span className="text-foreground">{prod.name}</span>
-                      <div className="flex items-center gap-4 font-mono text-xs">
-                        <span className="text-muted-foreground">{pr.quantity.toFixed(0)} {prod.unitType}</span>
-                        <span className="text-muted-foreground">{formatCurrency(pr.normalizedPrice)}/{prod.unitType}</span>
-                        <span className="text-foreground font-medium w-28 text-right">{formatCurrency(pr.subtotal)}</span>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-3 pt-3 border-t border-border">
-                <div><div className="stat-label">Receita Bruta</div><div className="font-mono font-bold text-foreground">{formatCurrency(grossToNet.grossRevenue)}</div></div>
-                <div><div className="stat-label">Desconto Total</div><div className="font-mono font-bold text-warning">-{formatCurrency(grossToNet.comboDiscount + (grossToNet.directIncentiveDiscount || 0))}</div></div>
-                <div><div className="stat-label">Margem Canal</div><div className="font-mono text-muted-foreground">{formatCurrency(grossToNet.distributorMargin)}</div></div>
-                <div><div className="stat-label">Total a Pagar</div><div className="font-mono font-bold text-xl text-success">{formatCurrency(grossToNet.netRevenue)}</div></div>
-              </div>
-            </div>
-          </SimulationStep>
+          <SimulationStep
+            isActive={currentStepDef.id === 'simulation' && selections.length > 0}
+            products={products}
+            pricingResults={pricingResults}
+            grossToNet={grossToNet}
+            formatCurrency={formatCurrency}
+          />
 
           {/* ═══ PAYMENT STEP ═══ */}
-          <PaymentStep isActive={currentStepDef.id === 'payment'}>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="glass-card p-4">
-                <label className="stat-label">Meio de Pagamento</label>
-                <Select value={selectedPaymentMethod || selectedPM?.id || ''} onValueChange={setSelectedPaymentMethod}>
-                  <SelectTrigger className="mt-1 bg-muted border-border text-foreground"><SelectValue placeholder="Selecione..." /></SelectTrigger>
-                  <SelectContent>{paymentMethods?.map(pm => <SelectItem key={pm.id} value={pm.id}>{pm.method_name} {pm.markup_percent !== 0 ? `(${pm.markup_percent > 0 ? '+' : ''}${pm.markup_percent}%)` : ''}</SelectItem>)}</SelectContent>
-                </Select>
-              </div>
-              <div className="glass-card p-4 relative">
-                {simLoading && <div className="absolute inset-0 bg-background/50 backdrop-blur-sm rounded-lg flex items-center justify-center z-10"><Loader2 className="w-5 h-5 animate-spin text-primary" /></div>}
-                <div className="stat-label">Montante Final</div>
-                <div className="font-mono text-2xl font-bold text-success mt-2">{formatCurrency(grossToNet.netRevenue)}</div>
-                <div className="text-xs text-muted-foreground mt-1">Juros: {formatCurrency(grossToNet.financialRevenue)} | Margem: {formatCurrency(grossToNet.distributorMargin)}</div>
-              </div>
-            </div>
-          </PaymentStep>
+          <PaymentStep
+            isActive={currentStepDef.id === 'payment'}
+            paymentMethods={paymentMethods}
+            selectedPaymentMethod={selectedPaymentMethod}
+            selectedPM={selectedPM}
+            onPaymentMethodChange={setSelectedPaymentMethod}
+            grossToNet={grossToNet}
+            simLoading={simLoading}
+            formatCurrency={formatCurrency}
+          />
 
           {/* ═══ BARTER STEP (with buyer select + valorization) ═══ */}
-          <BarterStep isActive={currentStepDef.id === 'barter'}>
-            <div className="space-y-4">
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                <div className="glass-card p-4">
-                  <label className="stat-label">Local de Entrega</label>
-                  <Select value={freightOrigin} onValueChange={v => {
-                    setFreightOrigin(v);
-                    // Auto-select port from freight reducer destination
-                    const fr = freightReducers.find(f => f.origin === v);
-                    if (fr?.destination) setPort(fr.destination);
-                  }}>
-                    <SelectTrigger className="mt-1 bg-muted border-border text-foreground"><SelectValue placeholder="Selecione o local..." /></SelectTrigger>
-                    <SelectContent>
-                      {deliveryLocations.length > 0
-                        ? deliveryLocations.map((loc: any) => <SelectItem key={loc.id} value={loc.warehouse_name}>{loc.warehouse_name} — {loc.city}/{loc.state}</SelectItem>)
-                        : freightReducers.map(f => <SelectItem key={f.origin} value={f.origin}>{f.origin} → {f.destination} ({f.distanceKm}km)</SelectItem>)
-                      }
-                    </SelectContent>
-                  </Select>
-                </div>
-                {freightReducer && freightReducer.totalReducer > 0 && (
-                  <div className="glass-card p-4">
-                    <div className="text-xs text-muted-foreground">Redutor logístico: R$ {freightReducer.totalReducer.toFixed(2)}/sc ({freightReducer.distanceKm}km) — Porto: {port || '—'}</div>
-                  </div>
-                )}
-                <div className="glass-card p-4">
-                  <label className="stat-label">Comprador</label>
-                  <Select value={selectedBuyerId} onValueChange={setSelectedBuyerId}>
-                    <SelectTrigger className="mt-1 bg-muted border-border text-foreground"><SelectValue placeholder="Selecione..." /></SelectTrigger>
-                    <SelectContent>
-                      {(buyers || []).map((b: any) => <SelectItem key={b.id} value={b.id}>{b.buyer_name} {b.fee ? `(fee: ${b.fee}%)` : ''}</SelectItem>)}
-                      <SelectItem value="__other__">Outro (informar)</SelectItem>
-                    </SelectContent>
-                  </Select>
-                  {selectedBuyerId === '__other__' && (
-                    <Input value={counterpartyOther} onChange={e => setCounterpartyOther(e.target.value)} placeholder="Nome do comprador" className="mt-2 bg-muted border-border text-foreground text-xs" />
-                  )}
-                </div>
-                <div className="glass-card p-4">
-                  <label className="stat-label">Tipo de Preço</label>
-                  <Select value={contractPriceType} onValueChange={v => setContractPriceType(v as ContractPriceType)}>
-                    <SelectTrigger className="mt-1 bg-muted border-border text-foreground"><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="fixo">Preço Fixo (PF)</SelectItem>
-                      <SelectItem value="a_fixar">A Fixar (PAF)</SelectItem>
-                      <SelectItem value="pre_existente">Pré-existente</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="glass-card p-4">
-                  <div className="flex items-center gap-2 mb-2">
-                    <Switch checked={hasContract} onCheckedChange={setHasContract} />
-                    <Label className="text-xs">Contrato existente</Label>
-                  </div>
-                  {hasContract && <NumericInput value={userPrice} onChange={setUserPrice} decimals={2} prefix="R$" placeholder="0,00" className="bg-muted border-border text-foreground" />}
-                </div>
-              </div>
-              <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-                <div className="glass-card p-4"><div className="stat-label">Preço Net/sc</div><div className="font-mono text-lg font-bold text-foreground">{formatCurrency(commodityNetPrice)}</div></div>
-                <div className="glass-card p-4"><div className="stat-label">Sacas</div><div className="font-mono text-lg font-bold text-success">{parity.quantitySacas.toLocaleString('pt-BR')}</div></div>
-                <div className="glass-card p-4"><div className="stat-label">Preço Valorizado</div><div className="font-mono text-lg font-bold text-info">{formatCurrency(parity.referencePrice)}</div></div>
-                <div className="glass-card p-4"><div className="stat-label">Valorização</div><div className={`font-mono text-lg font-bold ${parity.valorization >= 0 ? 'text-success' : 'text-destructive'}`}>{parity.valorization.toFixed(1)}%</div></div>
-                <div className="glass-card p-4"><div className="stat-label">Diferença</div><div className={`font-mono text-lg font-bold ${parity.valorization >= 0 ? 'text-success' : 'text-destructive'}`}>{formatCurrency(parity.referencePrice - parity.commodityPricePerUnit)}/sc</div></div>
-              </div>
-              {ivp < 1 && (
-                <div className="text-xs text-warning bg-warning/10 border border-warning/20 rounded px-3 py-1.5">
-                  <AlertTriangle className="w-3.5 h-3.5 inline mr-1" />
-                  Contrato "A Fixar" — fator de ajuste: {(ivp * 100).toFixed(0)}% (desconto de {((1 - ivp) * 100).toFixed(0)}% por risco de variação de preço)
-                </div>
-              )}
-              {buyerFee > 0 && (
-                <div className="text-xs text-muted-foreground bg-muted/50 rounded px-3 py-1.5">Fee do comprador: {buyerFee}% — já aplicado no preço net/sc</div>
-              )}
-              {selectedValorization && (
-                <div className="text-xs text-muted-foreground bg-muted/50 rounded px-3 py-1.5">
-                  Valorização: {selectedValorization.use_percent ? `${selectedValorization.percent_value}%` : `R$ ${selectedValorization.nominal_value}/sc`} — já aplicada
-                </div>
-              )}
-              <div className="glass-card p-4">
-                <div className="flex items-center gap-2 mb-2"><Switch checked={showInsurance} onCheckedChange={setShowInsurance} /><Label className="text-xs">Seguro de Mercado (Opção)</Label></div>
-                {showInsurance && insurancePremium && (
-                  <div className="grid grid-cols-3 gap-3 mt-2">
-                    <div><div className="stat-label">Prêmio/sc</div><div className="font-mono text-foreground">{formatCurrency(insurancePremium.premiumPerSaca)}</div></div>
-                    <div><div className="stat-label">Sacas adicionais</div><div className="font-mono text-warning">{insurancePremium.additionalSacas}</div></div>
-                    <div><div className="stat-label">Total c/ seguro</div><div className="font-mono font-bold text-success">{insurancePremium.totalSacas.toLocaleString('pt-BR')} sc</div></div>
-                  </div>
-                )}
-              </div>
-            </div>
-          </BarterStep>
+          <BarterStep
+            isActive={currentStepDef.id === 'barter'}
+            freightOrigin={freightOrigin}
+            onFreightOriginChange={setFreightOrigin}
+            freightReducers={freightReducers}
+            deliveryLocations={deliveryLocations}
+            port={port}
+            onPortChange={setPort}
+            selectedBuyerId={selectedBuyerId}
+            onBuyerChange={setSelectedBuyerId}
+            buyers={buyers}
+            counterpartyOther={counterpartyOther}
+            onCounterpartyOtherChange={setCounterpartyOther}
+            contractPriceType={contractPriceType}
+            onContractPriceTypeChange={setContractPriceType}
+            hasContract={hasContract}
+            onHasContractChange={setHasContract}
+            userPrice={userPrice}
+            onUserPriceChange={setUserPrice}
+            commodityNetPrice={commodityNetPrice}
+            parity={parity}
+            freightReducer={freightReducer}
+            ivp={ivp}
+            buyerFee={buyerFee}
+            selectedValorization={selectedValorization}
+            showInsurance={showInsurance}
+            onShowInsuranceChange={setShowInsurance}
+            insurancePremium={insurancePremium}
+            formatCurrency={formatCurrency}
+          />
 
           {/* ═══ FORMALIZATION STEP ═══ */}
-          <FormalizationStep isActive={currentStepDef.id === 'formalization'}>
-            <div className="space-y-4">
-              {!isNewOperation && wagonStages.length > 0 && (
-                <div className="glass-card p-4">
-                  <h3 className="text-sm font-semibold text-foreground flex items-center gap-2 mb-3"><Train className="w-4 h-4 text-primary" /> Certificação</h3>
-                  <TrainTrack stages={wagonStages} />
-                  {nextStatus && (
-                    <div className="mt-3 flex justify-end">
-                      <Button size="sm" onClick={handleAdvanceStatus} className="bg-success text-success-foreground"><ArrowRight className="w-4 h-4 mr-1" /> Avançar para {nextStatus}</Button>
-                    </div>
-                  )}
-                </div>
-              )}
-              {isNewOperation && <div className="glass-card p-6 text-center text-muted-foreground">Salve a operação primeiro para acessar a formalização.</div>}
-              {!isNewOperation && (
-                <div className="space-y-4">
-                  {/* PoE/PoL/PoD grouped checklist */}
-                  {[
-                    { cat: 'poe', title: 'Comprovação de Produção', icon: ShieldCheck, color: 'text-success' },
-                    { cat: 'pol', title: 'Comprovação de Contrato', icon: Lock, color: 'text-primary' },
-                    { cat: 'pod', title: 'Comprovação de Entrega', icon: Check, color: 'text-info' },
-                    { cat: undefined, title: 'Outros Documentos', icon: FileText, color: 'text-muted-foreground' },
-                  ].map(group => {
-                    const docs = allDocTypes.filter(d => d.category === group.cat);
-                    if (docs.length === 0) return null;
-                    const GroupIcon = group.icon;
-                    return (
-                      <div key={group.cat || 'other'}>
-                        <h4 className={`text-xs font-semibold ${group.color} flex items-center gap-1.5 mb-2`}>
-                          <GroupIcon className="w-3.5 h-3.5" /> {group.title}
-                        </h4>
-                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-                          {docs.map(doc => {
-                            const existing = docMap.get(doc.type);
-                            const status = (existing?.status as keyof typeof statusConfig) || 'pendente';
-                            const config = statusConfig[status];
-                            const Icon = config.icon;
-                            return (
-                              <div key={doc.type} className="glass-card p-4">
-                                <div className="flex items-center justify-between mb-2">
-                                  <span className="text-sm font-semibold text-foreground">{doc.label}</span>
-                                  <span className={`engine-badge ${config.bg} ${config.color} text-xs`}><Icon className="w-3 h-3 inline mr-1" />{config.label}</span>
-                                </div>
-                                <div className="flex gap-2 flex-wrap">
-                                  {status === 'pendente' && <Button size="sm" variant="outline" className="flex-1 text-xs" disabled={emitting === doc.type} onClick={() => handleDocAction(doc.type, 'emit')}>{emitting === doc.type ? '...' : 'Emitir'}</Button>}
-                                  {status === 'emitido' && <Button size="sm" variant="outline" className="flex-1 text-xs" disabled={emitting === doc.type} onClick={() => handleDocAction(doc.type, 'sign')}><PenLine className="w-3 h-3 mr-1" />Assinar</Button>}
-                                  {status === 'assinado' && <Button size="sm" variant="outline" className="flex-1 text-xs" disabled={emitting === doc.type} onClick={() => handleDocAction(doc.type, 'validate')}><ShieldCheck className="w-3 h-3 mr-1" />Validar</Button>}
-                                  {/* F1: Cessão notification controls */}
-                                  {doc.type === 'cessao_credito' && existing && (status === 'emitido' || status === 'assinado') && (
-                                    (() => {
-                                      const docData = (existing as any).data || {};
-                                      const notified = docData.counterparty_notified;
-                                      return notified ? (
-                                        <span className="text-xs text-success flex items-center gap-1"><CheckCircle className="w-3 h-3" />Comprador notificado ({docData.notification_method || 'notificação'})</span>
-                                      ) : (
-                                        <div className="flex gap-1 w-full mt-1">
-                                          <Button size="sm" variant="outline" className="flex-1 text-xs border-warning text-warning" onClick={async () => {
-                                            await supabase.from('operation_documents').update({ data: { ...docData, counterparty_notified: true, notification_method: 'notificacao', notified_at: new Date().toISOString() } } as any).eq('id', existing.id);
-                                            toast.success('Comprador notificado (notificação simples)');
-                                            refetchDocs();
-                                          }}>Notificar</Button>
-                                          <Button size="sm" variant="outline" className="flex-1 text-xs border-primary text-primary" onClick={async () => {
-                                            await supabase.from('operation_documents').update({ data: { ...docData, counterparty_notified: true, cession_accepted: true, notification_method: 'tripartite', notified_at: new Date().toISOString() } } as any).eq('id', existing.id);
-                                            toast.success('Cessão tripartite registrada');
-                                            refetchDocs();
-                                          }}>Tripartite</Button>
-                                        </div>
-                                      );
-                                    })()
-                                  )}
-                                </div>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      </div>
-                    );
-                  })}
-
-                  {/* Guarantee Coverage Panel */}
-                  <div className="glass-card p-4">
-                    <h4 className="text-sm font-semibold text-foreground flex items-center gap-2 mb-3"><ShieldCheck className="w-4 h-4 text-primary" /> Cobertura de Garantias</h4>
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-3">
-                      <div>
-                        <div className="stat-label">Índice de Cumprimento</div>
-                        <div className="flex items-center gap-2 mt-1">
-                          <NumericInput value={performanceIndex} onChange={setPerformanceIndex} min={0} max={100} decimals={0} className="h-8 w-20 bg-muted border-border text-xs text-foreground" />
-                          <span className="text-xs text-muted-foreground">%</span>
-                        </div>
-                      </div>
-                      <div>
-                        <div className="stat-label">Aforo Exigido</div>
-                        <div className="font-mono text-foreground">{rawCampaign?.aforo_percent ?? '—'}%</div>
-                      </div>
-                      <div>
-                        <div className="stat-label">Montante Operação</div>
-                        <div className="font-mono text-foreground">{formatCurrency(grossToNet.netRevenue)}</div>
-                      </div>
-                      <div>
-                        <div className="stat-label">Sacas Efetivas</div>
-                        <div className="font-mono text-foreground">{Math.round(parity.quantitySacas * (performanceIndex / 100)).toLocaleString('pt-BR')} sc</div>
-                      </div>
-                    </div>
-                    <Progress value={performanceIndex} className="h-2 bg-muted" />
-                    {performanceIndex < 80 && (
-                      <div className="mt-2 text-xs text-warning bg-warning/10 border border-warning/20 rounded px-3 py-1.5">
-                        <AlertTriangle className="w-3.5 h-3.5 inline mr-1" /> Índice de Cumprimento abaixo de 80% — risco elevado de não entrega
-                      </div>
-                    )}
-                  </div>
-                </div>
-              )}
-            </div>
-          </FormalizationStep>
+          <FormalizationStep
+            isActive={currentStepDef.id === 'formalization'}
+            isNewOperation={isNewOperation}
+            wagonStages={wagonStages}
+            nextStatus={nextStatus}
+            onAdvanceStatus={handleAdvanceStatus}
+            docMap={docMap}
+            emitting={emitting}
+            onDocAction={handleDocAction}
+            onCessaoNotify={async (docId, method) => {
+              const existing = existingDocs?.find(d => d.id === docId);
+              if (!existing) return;
+              const docData = (existing as any).data || {};
+              const update = method === 'tripartite'
+                ? { counterparty_notified: true, cession_accepted: true, notification_method: 'tripartite', notified_at: new Date().toISOString() }
+                : { counterparty_notified: true, notification_method: 'notificacao', notified_at: new Date().toISOString() };
+              await supabase.from('operation_documents').update({ data: { ...docData, ...update } } as any).eq('id', docId);
+              toast.success(method === 'tripartite' ? 'Cessão tripartite registrada' : 'Comprador notificado (notificação simples)');
+              refetchDocs();
+            }}
+            performanceIndex={performanceIndex}
+            onPerformanceIndexChange={setPerformanceIndex}
+            aforoPercent={rawCampaign?.aforo_percent}
+            netRevenue={grossToNet.netRevenue}
+            quantitySacas={parity.quantitySacas}
+            formatCurrency={formatCurrency}
+          />
 
           {/* ═══ SUMMARY STEP ═══ */}
-          <SummaryStep isActive={currentStepDef.id === 'summary'}>
-            <div className="space-y-4">
-              <div className="glass-card p-5">
-                <h2 className="text-sm font-semibold text-foreground mb-3">Resumo Final</h2>
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                  <div><div className="stat-label">Cliente</div><div className="text-foreground font-medium">{clientName || '—'}</div></div>
-                  <div><div className="stat-label">Área</div><div className="font-mono text-foreground">{area} ha</div></div>
-                  <div><div className="stat-label">Produtos</div><div className="font-mono text-foreground">{selections.length}</div></div>
-                  <div><div className="stat-label">Receita Bruta</div><div className="font-mono font-bold text-foreground">{formatCurrency(grossToNet.grossRevenue)}</div></div>
-                  <div><div className="stat-label">Desconto Total</div><div className="font-mono text-warning">-{formatCurrency(grossToNet.comboDiscount + (grossToNet.directIncentiveDiscount || 0))}</div></div>
-                  <div><div className="stat-label">Total a Pagar</div><div className="font-mono font-bold text-success text-xl">{formatCurrency(grossToNet.netRevenue)}</div></div>
-                  <div><div className="stat-label">Sacas</div><div className="font-mono font-bold text-foreground">{(insurancePremium?.totalSacas ?? parity.quantitySacas).toLocaleString('pt-BR')}</div></div>
-                  <div><div className="stat-label">Valorização</div><div className={`font-mono font-bold ${parity.valorization >= 0 ? 'text-success' : 'text-destructive'}`}>{parity.valorization.toFixed(1)}%</div></div>
-                </div>
-              </div>
-              {/* Consumption ledger */}
-              {simResult?.consumptionLedger && Object.keys(simResult.consumptionLedger).length > 0 && (
-                <div className="glass-card p-4">
-                  <h3 className="text-sm font-semibold text-foreground mb-2">Ledger de Consumo (Combos)</h3>
-                  {Object.entries(simResult.consumptionLedger).map(([comboId, refs]) => {
-                    const ca = comboActivations.find(a => a.comboId === comboId);
-                    return (
-                      <div key={comboId} className="mb-2">
-                        <div className="text-xs font-medium text-foreground">{ca?.comboName || comboId}</div>
-                        <div className="flex gap-2 mt-1">
-                          {Object.entries(refs as Record<string, number>).map(([ref, qty]) => <span key={ref} className="engine-badge bg-muted text-muted-foreground text-xs">{ref}: {qty.toFixed(0)}</span>)}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-          </SummaryStep>
+          <SummaryStep
+            isActive={currentStepDef.id === 'summary'}
+            clientName={clientName}
+            area={area}
+            selections={selections}
+            grossToNet={grossToNet}
+            parity={parity}
+            insurancePremium={insurancePremium}
+            consumptionLedger={simResult?.consumptionLedger}
+            comboActivations={comboActivations}
+            formatCurrency={formatCurrency}
+          />
         </motion.div>
       </AnimatePresence>
 
