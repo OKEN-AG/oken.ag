@@ -23,6 +23,10 @@ import CommoditiesMasterDataPage from "@/pages/admin/CommoditiesMasterDataPage";
 import LegacyRouteRedirectPage from "@/pages/LegacyRouteRedirectPage";
 import OrdersListPage from "@/pages/admin/OrdersListPage";
 import PricingAnalysisPage from "@/pages/PricingAnalysisPage";
+import ProductsManagementPage from "@/pages/admin/ProductsManagementPage";
+import FreightManagementPage from "@/pages/admin/FreightManagementPage";
+import OperationDetailPage from "@/pages/OperationDetailPage";
+import GrossToNetReportPage from "@/pages/reports/GrossToNetReportPage";
 import CredorOemPortalPage from "@/pages/portals/CredorOemPortalPage";
 import BackofficePortalPage from "@/pages/portals/BackofficePortalPage";
 import TomadorPortalPage from "@/pages/portals/TomadorPortalPage";
@@ -99,10 +103,14 @@ const App = () => (
                     <Route path="/operacao/novo" element={<OperationStepperPage />} />
                     <Route path="/operacao/:id" element={<OperationStepperPage />} />
                     <Route path="/operacao/:id/analise-precos" element={<PricingAnalysisPage />} />
+                    <Route path="/operacao/:id/detalhe" element={<OperationDetailPage />} />
                     <Route path="/admin/campanhas" element={<CampaignsListPage />} />
                     <Route path="/admin/campanhas/:id" element={<CampaignFormPage />} />
+                    <Route path="/admin/produtos" element={<ProductsManagementPage />} />
+                    <Route path="/admin/frete" element={<FreightManagementPage />} />
                     <Route path="/admin/commodities-masterdata" element={<CommoditiesMasterDataPage />} />
                     <Route path="/admin/pedidos" element={<OrdersListPage />} />
+                    <Route path="/relatorios/gross-to-net" element={<GrossToNetReportPage />} />
                     <Route path="/compradores" element={<BuyerPortalPage />} />
                     <Route path="/investidores" element={<InvestorPortalPage />} />
                     {Object.values(portalRoutesByProfile).map(({ path, capability, element }) => (

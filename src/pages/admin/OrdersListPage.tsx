@@ -106,9 +106,10 @@ export default function OrdersListPage() {
                   <td className="p-3 font-mono">{formatCurrency(row.gross_revenue || 0, currency)}</td>
                   <td className="p-3 font-mono">{formatCurrency(row.net_revenue || 0, currency)}</td>
                   <td className="p-3">{new Date(row.created_at).toLocaleString('pt-BR')}</td>
-                  <td className="p-3">
-                    <Button size="sm" variant="outline" onClick={() => navigate(`/operacao/${row.id}`)}>Abrir</Button>
-                  </td>
+                  <td className="p-3 flex gap-1">
+                      <Button size="sm" variant="outline" onClick={() => navigate(`/operacao/${row.id}`)}>Editar</Button>
+                      <Button size="sm" variant="ghost" onClick={() => navigate(`/operacao/${row.id}/detalhe`)}>Detalhe</Button>
+                    </td>
                 </tr>
               );
             })}
