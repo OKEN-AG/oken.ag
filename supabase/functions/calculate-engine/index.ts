@@ -274,7 +274,8 @@ serve(async (req: Request) => {
       });
     }
 
-    const tenantId = (body?.tenantId || user.user_metadata?.tenant_id || null) as string | null;
+    const tenantId = (body?.tenantId || null) as string | null;
+    if (!tenantId) throw new Error('tenantId is required');
 
     const calcPolicy = await resolvePolicy(supabase, 'calculate_engine', tenantId);
     const resolvedPolicySets = await resolvePolicySetDomains(supabase, tenantId, body?.campaignId || null);

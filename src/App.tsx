@@ -9,6 +9,8 @@ import ProtectedRoute from '@/components/ProtectedRoute';
 import CapabilityRoute from '@/components/security/CapabilityRoute';
 import ContextGuard from '@/components/ContextGuard';
 import AppLayout from '@/components/AppLayout';
+import CampaignContextGate from '@/components/CampaignContextGate';
+import { AppContextResolver } from '@/contexts/AppContext';
 import Dashboard from '@/pages/Dashboard';
 
 import MonitoringPage from '@/pages/MonitoringPage';
@@ -68,44 +70,47 @@ const App = () => (
       <BrowserRouter>
         <AuthProvider>
           <AuditTrailProvider>
-            <Routes>
-              <Route path="/auth" element={<AuthPage />} />
-              <Route path="/*" element={<ProtectedRoute><AppLayout><Routes>
-                <Route path="/" element={<ContextGuard><Dashboard /></ContextGuard>} />
-                <Route path="/simulacao" element={<ContextGuard><LegacyRouteRedirectPage source="simulacao" /></ContextGuard>} />
-                <Route path="/paridade" element={<ContextGuard><LegacyRouteRedirectPage source="paridade" /></ContextGuard>} />
-                <Route path="/documentos" element={<ContextGuard><LegacyRouteRedirectPage source="documentos" /></ContextGuard>} />
-                <Route path="/monitoramento" element={<ContextGuard><MonitoringPage /></ContextGuard>} />
-                <Route path="/liquidacao" element={<ContextGuard><SettlementOpsPage /></ContextGuard>} />
-                <Route path="/operacao/novo" element={<ContextGuard><OperationStepperPage /></ContextGuard>} />
-                <Route path="/operacao/:id" element={<ContextGuard><OperationStepperPage /></ContextGuard>} />
-                <Route path="/operacao/:id/analise-precos" element={<ContextGuard><PricingAnalysisPage /></ContextGuard>} />
-                <Route path="/operacao/:id/detalhe" element={<ContextGuard><OperationDetailPage /></ContextGuard>} />
-
-                <Route path="/campanhas/resumo" element={<ContextGuard><CampaignSummaryPage /></ContextGuard>} />
-                <Route path="/campanhas/incentivos" element={<ContextGuard><AdminPlaceholderPage title="Incentivos da Campanha" /></ContextGuard>} />
-                <Route path="/campanhas/whitelists" element={<ContextGuard><AdminPlaceholderPage title="Whitelists da Campanha" /></ContextGuard>} />
-                <Route path="/campanhas/due-dates" element={<ContextGuard><AdminPlaceholderPage title="Due Dates da Campanha" /></ContextGuard>} />
-
-                <Route path="/admin/usuarios" element={<AdminPlaceholderPage title="Administração de Usuários" />} />
-                <Route path="/admin/capacidades" element={<AdminPlaceholderPage title="Capacidades" />} />
-                <Route path="/admin/integracoes" element={<AdminPlaceholderPage title="Integrações" />} />
-                <Route path="/admin/templates-globais" element={<AdminPlaceholderPage title="Templates Globais" />} />
-                <Route path="/admin/campanhas" element={<CampaignsListPage />} />
-                <Route path="/admin/campanhas/:id" element={<CampaignFormPage />} />
-                <Route path="/admin/produtos" element={<ContextGuard><ProductsManagementPage /></ContextGuard>} />
-                <Route path="/admin/frete" element={<ContextGuard><FreightManagementPage /></ContextGuard>} />
-                <Route path="/admin/commodities-masterdata" element={<ContextGuard><CommoditiesMasterDataPage /></ContextGuard>} />
-                <Route path="/admin/pedidos" element={<ContextGuard><OrdersListPage /></ContextGuard>} />
-                <Route path="/relatorios/gross-to-net" element={<ContextGuard><GrossToNetReportPage /></ContextGuard>} />
-                <Route path="/compradores" element={<BuyerPortalPage />} />
-                <Route path="/investidores" element={<InvestorPortalPage />} />
-                {Object.values(portalRoutesByProfile).map(({ path, capability, element }) => (
-                  <Route key={path} path={path} element={<CapabilityRoute capability={capability}>{element}</CapabilityRoute>} />
-                ))}
-                <Route path="*" element={<NotFound />} />
-              </Routes></AppLayout></ProtectedRoute>} />
-            </Routes>
+            <AppContextResolver>
+          <Routes>
+            <Route path="/auth" element={<AuthPage />} />
+            <Route path="/*" element={
+              <ProtectedRoute>
+                <AppLayout>
+                  <Routes>
+                    <Route path="/" element={<Dashboard />} />
+                    
+                    <Route path="/simulacao" element={<LegacyRouteRedirectPage source="simulacao" />} />
+                    <Route path="/paridade" element={<LegacyRouteRedirectPage source="paridade" />} />
+                    <Route path="/documentos" element={<LegacyRouteRedirectPage source="documentos" />} />
+                    <Route path="/monitoramento" element={<CampaignContextGate><MonitoringPage /></CampaignContextGate>} />
+                    <Route path="/liquidacao" element={<CampaignContextGate><SettlementOpsPage /></CampaignContextGate>} />
+                    <Route path="/operacao/novo" element={<CampaignContextGate><OperationStepperPage /></CampaignContextGate>} />
+                    <Route path="/operacao/:id" element={<CampaignContextGate><OperationStepperPage /></CampaignContextGate>} />
+                    <Route path="/operacao/:id/analise-precos" element={<CampaignContextGate><PricingAnalysisPage /></CampaignContextGate>} />
+                    <Route path="/operacao/:id/detalhe" element={<CampaignContextGate><OperationDetailPage /></CampaignContextGate>} />
+                    <Route path="/admin/campanhas" element={<CampaignsListPage />} />
+                    <Route path="/admin/campanhas/:id" element={<CampaignFormPage />} />
+                    <Route path="/admin/produtos" element={<ProductsManagementPage />} />
+                    <Route path="/admin/frete" element={<FreightManagementPage />} />
+                    <Route path="/admin/commodities-masterdata" element={<CommoditiesMasterDataPage />} />
+                    <Route path="/admin/pedidos" element={<OrdersListPage />} />
+                    <Route path="/relatorios/gross-to-net" element={<GrossToNetReportPage />} />
+                    <Route path="/compradores" element={<BuyerPortalPage />} />
+                    <Route path="/investidores" element={<InvestorPortalPage />} />
+                    {Object.values(portalRoutesByProfile).map(({ path, capability, element }) => (
+                      <Route
+                        key={path}
+                        path={path}
+                        element={<CapabilityRoute capability={capability}>{element}</CapabilityRoute>}
+                      />
+                    ))}
+                    <Route path="*" element={<NotFound />} />
+                  </Routes>
+                </AppLayout>
+              </ProtectedRoute>
+            } />
+          </Routes>
+            </AppContextResolver>
           </AuditTrailProvider>
         </AuthProvider>
       </BrowserRouter>

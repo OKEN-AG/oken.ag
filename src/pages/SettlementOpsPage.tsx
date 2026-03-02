@@ -14,10 +14,12 @@ import { Progress } from '@/components/ui/progress';
 import { useOperations } from '@/hooks/useOperations';
 import { toast } from 'sonner';
 import { motion } from 'framer-motion';
+import { useAppContext } from '@/contexts/AppContext';
 
 export default function SettlementOpsPage() {
   const queryClient = useQueryClient();
-  const { data: operations = [], isLoading: opsLoading } = useOperations();
+  const { tenantId, campaignId } = useAppContext();
+  const { data: operations = [], isLoading: opsLoading } = useOperations({ tenantId, campaignId });
   const [selectedOpId, setSelectedOpId] = useState<string>('');
   const [dialogOpen, setDialogOpen] = useState(false);
   const [deliveryForm, setDeliveryForm] = useState({

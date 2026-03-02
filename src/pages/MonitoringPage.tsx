@@ -10,6 +10,7 @@ import { useQuery } from '@tanstack/react-query';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Badge } from '@/components/ui/badge';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
+import { useAppContext } from '@/contexts/AppContext';
 import { computeOperationIndicators, evaluateMonitoringAlerts, type MonitoringAlertRule, type MonitoringOperationInput } from '../../supabase/functions/server/engines/monitoring';
 
 const healthColor = (v: number) => v >= 90 ? 'text-success' : v >= 70 ? 'text-warning' : 'text-destructive';
@@ -22,7 +23,8 @@ const severityColor: Record<string, string> = {
 
 export default function MonitoringPage() {
   const navigate = useNavigate();
-  const { data: operations, isLoading } = useOperations();
+  const { tenantId, campaignId } = useAppContext();
+  const { data: operations, isLoading } = useOperations({ tenantId, campaignId });
 
   const { data: grainDeliveries = [] } = useQuery({
     queryKey: ['monitoring-grain-deliveries'],

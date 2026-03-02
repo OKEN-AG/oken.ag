@@ -8,6 +8,8 @@ import {
   Workflow, FileCheck2, Activity, Landmark,
 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
+import { useCampaignData } from '@/hooks/useActiveCampaign';
+import { useAppContext } from '@/contexts/AppContext';
 import { useSidebarCollapsed } from '@/contexts/SidebarContext';
 import { useNavigationContext } from '@/hooks/useNavigationContext';
 import logoDark from '@/assets/logo-dark.png';
@@ -43,7 +45,16 @@ export default function AppSidebar() {
   const { collapsed, setCollapsed } = useSidebarCollapsed();
   const location = useLocation();
   const { user, signOut } = useAuth();
-  const { withContext } = useNavigationContext();
+
+  const { campaignId } = useAppContext();
+  const { campaign } = useCampaignData(campaignId);
+  const activeModules = campaign?.activeModules || [];
+
+  const visibleNavItems = navItems.filter(item => {
+    if (!item.module) return true;
+    if (activeModules.length === 0) return true;
+    return activeModules.includes(item.module);
+  });
 
   const renderNavItem = (item: { to: string; icon: any; label: string }) => {
     const target = withContext(item.to);

@@ -3,6 +3,7 @@ import AppSidebar from './AppSidebar';
 import JourneyHeader from './JourneyHeader';
 import { SidebarProvider } from '@/contexts/SidebarContext';
 import { useIsMobile } from '@/hooks/use-mobile';
+import AppContextSwitcher from '@/components/AppContextSwitcher';
 
 export default function AppLayout({ children }: { children: ReactNode }) {
   const isMobile = useIsMobile();
@@ -25,6 +26,9 @@ export default function AppLayout({ children }: { children: ReactNode }) {
           style={{ marginLeft: collapsed ? 64 : 260 }}
         >
           <JourneyHeader />
+          <div className="px-6 py-3 border-b border-border/50">
+            <AppContextSwitcher />
+          </div>
           <div className="flex-1">{children}</div>
         </main>
       </div>

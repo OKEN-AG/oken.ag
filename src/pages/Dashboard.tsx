@@ -5,6 +5,7 @@ import { useOperationStats } from '@/hooks/useOperations';
 import { BarChart3, Wheat, ShoppingCart, FileText, DollarSign } from 'lucide-react';
 import { useNavigationContext } from '@/hooks/useNavigationContext';
 import { Skeleton } from '@/components/ui/skeleton';
+import { useAppContext } from '@/contexts/AppContext';
 
 const statusColors: Record<string, string> = {
   simulacao: 'bg-info/10 text-info',
@@ -18,8 +19,8 @@ const statusColors: Record<string, string> = {
 
 export default function Dashboard() {
   const navigate = useNavigate();
-  const { data: stats, isLoading } = useOperationStats();
-  const { withContext } = useNavigationContext();
+  const { tenantId, campaignId } = useAppContext();
+  const { data: stats, isLoading } = useOperationStats({ tenantId, campaignId });
 
   const formatCurrency = (v: number) => {
     if (v >= 1_000_000) return `R$ ${(v / 1_000_000).toFixed(1)}M`;
