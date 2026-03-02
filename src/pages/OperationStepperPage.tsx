@@ -41,6 +41,7 @@ import { PaymentStep } from '@/pages/steps/PaymentStep';
 import { BarterStep } from '@/pages/steps/BarterStep';
 import { FormalizationStep } from '@/pages/steps/FormalizationStep';
 import { SummaryStep } from '@/pages/steps/SummaryStep';
+import { OPERATION_VISIBLE_STEP_CONTRACTS, buildImmutableOperationSnapshot } from '@/domains/operation/step-flow';
 
 
 // ─── Step definitions ───
@@ -861,6 +862,7 @@ export default function OperationStepperPage() {
   }, [existingOp, existingDocs, activeModules]);
 
   const [emitting, setEmitting] = useState<string | null>(null);
+  const pendingStepResultsRef = useRef<any[]>([]);
   const docMap = new Map((existingDocs || []).map(d => [d.doc_type, d]));
 
   const handleDocAction = async (docType: DocumentType, action: 'emit' | 'sign' | 'validate') => {
@@ -896,72 +898,71 @@ export default function OperationStepperPage() {
     finally { setEmitting(null); }
   };
 
-  const handleDocumentUpload = async (docType: DocumentType, file: File) => {
-    if (!operationId || !user) return;
-    const existing = existingDocs?.find(d => d.doc_type === docType);
-    const metadata = {
-      file_name: file.name,
-      file_size: file.size,
-      mime_type: file.type,
-      uploaded_at: new Date().toISOString(),
-      uploaded_by: user.id,
-      hash: `${file.name}-${file.size}-${file.lastModified}`,
-      signers: [],
-      timestamps: { upload: new Date().toISOString() },
-      operation_id: operationId,
+
+  const mapToVisibleStepId = (stepId: string): 'context' | 'order' | 'simulation' | 'payment_barter' | 'formalization' | 'summary_approval' => {
+    if (stepId === 'payment' || stepId === 'barter') return 'payment_barter';
+    if (stepId === 'summary') return 'summary_approval';
+    return stepId as any;
+  };
+
+  const buildStepInputPayload = (stepId: string) => {
+    switch (mapToVisibleStepId(stepId)) {
+      case 'context':
+        return { campaignId: selectedCampaignId, clientName, distributorId: selectedDistributorId };
+      case 'order':
+        return { selectedProductsCount: selectedProducts.size, area: effectiveArea };
+      case 'simulation':
+        return { grossRevenue: grossToNet.grossRevenue, netRevenue: grossToNet.netRevenue };
+      case 'payment_barter':
+        return { paymentMethod: resolvePaymentMethod(selectedPM?.method_name), counterparty: selectedBuyerId === '__other__' ? counterpartyOther : selectedBuyer?.buyerName || null };
+      case 'formalization':
+        return { documentsTracked: (existingDocs || []).length };
+      case 'summary_approval':
+        return { approved: currentStepDef.id === 'summary', currentStatus: existingOp?.status || 'simulacao' };
+      default:
+        return {};
+    }
+  };
+
+  const persistStepResult = async (params: { opId?: string; fromStepId: string; toStepId: string }) => {
+    const visibleFrom = mapToVisibleStepId(params.fromStepId);
+    const visibleTo = mapToVisibleStepId(params.toStepId);
+    const contract = OPERATION_VISIBLE_STEP_CONTRACTS.find((c) => c.id === visibleFrom);
+    const input = buildStepInputPayload(params.fromStepId);
+
+    if (!contract) return;
+    const parse = contract.inputSchema.safeParse(input);
+    if (!parse.success) return;
+
+    const stepResult = {
+      step_id: visibleFrom,
+      step_label: contract.label,
+      feed: contract.feed,
+      input: parse.data,
+      precedent: contract.precedent,
+      output: contract.output,
+      transitioned_to: visibleTo,
+      transitioned_at: new Date().toISOString(),
     };
 
-    if (existing) {
-      await supabase.from('operation_documents').update({ data: { ...((existing as any).data || {}), ...metadata } } as any).eq('id', existing.id);
-    } else {
-      await supabase.from('operation_documents').insert({
-        operation_id: operationId,
-        doc_type: docType,
-        status: 'pendente',
-        data: metadata,
-      } as any);
+    if (!params.opId) {
+      pendingStepResultsRef.current.push(stepResult);
+      return;
     }
 
-    await supabase.from('operation_logs').insert({
-      operation_id: operationId,
-      user_id: user.id,
-      action: `documento_upload_${docType}`,
-      details: metadata,
+    await supabase.from('order_pricing_snapshots').insert({
+      operation_id: params.opId,
+      snapshot_type: 'operation_step_result',
+      snapshot: stepResult as any,
+      created_by: user?.id,
     });
-    toast.success(`Upload registrado para ${docType}`);
-    refetchDocs();
-  };
 
-  const handleDocumentReview = async (docType: DocumentType, decision: 'approved' | 'rejected', reason?: string) => {
-    if (!operationId || !user) return;
-    const existing = existingDocs?.find(d => d.doc_type === docType);
-    if (!existing) return;
-    const review = {
-      review_status: decision,
-      review_reason: reason || null,
-      reviewed_at: new Date().toISOString(),
-      reviewed_by: user.id,
-    };
-    await supabase.from('operation_documents').update({ data: { ...((existing as any).data || {}), ...review } } as any).eq('id', existing.id);
     await supabase.from('operation_logs').insert({
-      operation_id: operationId,
-      user_id: user.id,
-      action: `documento_${decision}_${docType}`,
-      details: review,
+      operation_id: params.opId,
+      user_id: user?.id,
+      action: 'operation_step_transition',
+      details: { from_step: visibleFrom, to_step: visibleTo, operation_step_result: stepResult },
     });
-    toast.success(`Documento ${decision === 'approved' ? 'aprovado' : 'reprovado'}`);
-    refetchDocs();
-  };
-
-  const handleCounterpartyAcceptance = async () => {
-    if (!operationId || !user) return;
-    await supabase.from('operation_logs').insert({
-      operation_id: operationId,
-      user_id: user.id,
-      action: 'contraparte_aceite_registrado',
-      details: { accepted_at: new Date().toISOString() },
-    });
-    toast.success('Aceite da contraparte registrado');
   };
 
   const handleAdvanceStatus = async () => {
@@ -1175,6 +1176,55 @@ export default function OperationStepperPage() {
         created_by: user.id,
       });
 
+      const immutableSnapshot = await buildImmutableOperationSnapshot({
+        normalizedInputs: {
+          campaign_id: selectedCampaignId,
+          client_document: onlyDigits(clientDocument || ''),
+          due_months: dueMonths,
+          selected_payment_method: resolvePaymentMethod(selectedPM?.method_name),
+          selected_commodity: normalizeCommodityCode(selectedCommodity),
+        },
+        policyVersionIds: [String((campaign as any)?.id || selectedCampaignId)],
+        calculationOutput: {
+          ledger: grossToNet,
+          summary: {
+            parity,
+            insurance: insurancePremium,
+            selections: simResult.selections,
+          },
+        },
+      });
+
+      await supabase.from('order_pricing_snapshots').insert({
+        operation_id: opId!,
+        snapshot: immutableSnapshot as any,
+        snapshot_type: 'operation_snapshot',
+        created_by: user.id,
+      });
+
+      if (pendingStepResultsRef.current.length > 0) {
+        for (const stepResult of pendingStepResultsRef.current) {
+          await supabase.from('order_pricing_snapshots').insert({
+            operation_id: opId!,
+            snapshot_type: 'operation_step_result',
+            snapshot: stepResult as any,
+            created_by: user.id,
+          });
+          await supabase.from('operation_logs').insert({
+            operation_id: opId!,
+            user_id: user.id,
+            action: 'operation_step_transition',
+            details: {
+              from_step: stepResult.step_id,
+              to_step: stepResult.transitioned_to,
+              operation_step_result: stepResult,
+              replay_source: 'pending_step_results_buffer',
+            },
+          });
+        }
+        pendingStepResultsRef.current = [];
+      }
+
       await createLog.mutateAsync({
         operation_id: opId!, user_id: user.id,
         action: isNewOperation ? (currentStepDef.id === 'summary' ? 'pedido_criado' : 'simulacao_criada') : 'operacao_atualizada',
@@ -1202,13 +1252,20 @@ export default function OperationStepperPage() {
     }
   };
 
-  const goNext = () => { if (currentStep < visibleSteps.length - 1 && canProceed(visibleSteps[currentStep].id)) setCurrentStep(currentStep + 1); };
+  const goNext = async () => {
+    if (currentStep >= visibleSteps.length - 1 || !canProceed(visibleSteps[currentStep].id)) return;
+    const fromStep = visibleSteps[currentStep];
+    const toStep = visibleSteps[currentStep + 1];
+    await persistStepResult({ opId: operationId, fromStepId: fromStep.id, toStepId: toStep.id });
+    setCurrentStep(currentStep + 1);
+  };
   const goPrev = () => { if (currentStep > 0) setCurrentStep(currentStep - 1); };
 
   // Montantes do pedido usam a moeda de saída informada pelo motor (server-authoritative)
   const moneyCurrency = simResult?.moneyCurrency || 'BRL';
   const formatCurrency = (v: number) => v.toLocaleString('pt-BR', { style: 'currency', currency: moneyCurrency });
   const currentStepDef = visibleSteps[currentStep];
+  const currentStepContract = OPERATION_VISIBLE_STEP_CONTRACTS.find((c) => c.id === mapToVisibleStepId(currentStepDef?.id || 'context'));
 
   if (loadingCampaigns) return <div className="p-6"><Skeleton className="h-64 w-full" /></div>;
 
@@ -1256,7 +1313,7 @@ export default function OperationStepperPage() {
               );
             })}
           </div>
-          <Button size="sm" onClick={goNext} disabled={currentStep >= visibleSteps.length - 1 || !canProceed(currentStepDef.id)} className="bg-primary text-primary-foreground h-7 px-2 shrink-0">
+          <Button size="sm" onClick={() => void goNext()} disabled={currentStep >= visibleSteps.length - 1 || !canProceed(currentStepDef.id)} className="bg-primary text-primary-foreground h-7 px-2 shrink-0">
             <ChevronRight className="w-3.5 h-3.5" />
           </Button>
         </div>
@@ -1265,6 +1322,15 @@ export default function OperationStepperPage() {
       {/* Step content */}
       <AnimatePresence mode="wait">
         <motion.div key={currentStepDef.id} initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} transition={{ duration: 0.15 }}>
+
+          {currentStepContract && (
+            <div className="glass-card p-3 mb-3 text-xs space-y-1">
+              <div><span className="font-semibold">Feed:</span> {currentStepContract.feed}</div>
+              <div><span className="font-semibold">Input:</span> formulário validado por schema</div>
+              <div><span className="font-semibold">Precedente:</span> {currentStepContract.precedent || 'início do fluxo'}</div>
+              <div><span className="font-semibold">Output:</span> {currentStepContract.output}</div>
+            </div>
+          )}
 
           {/* ═══ CONTEXT STEP ═══ */}
           <ContextStep
