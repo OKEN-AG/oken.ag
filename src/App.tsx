@@ -94,6 +94,14 @@ const App = () => (
                     <Route path="/admin/frete" element={<FreightManagementPage />} />
                     <Route path="/admin/commodities-masterdata" element={<CommoditiesMasterDataPage />} />
                     <Route path="/admin/pedidos" element={<OrdersListPage />} />
+                    <Route path="/admin/usuarios" element={<AdminPlaceholderPage title="Usuários & Roles" />} />
+                    <Route path="/admin/capacidades" element={<AdminPlaceholderPage title="Capacidades" />} />
+                    <Route path="/admin/integracoes" element={<AdminPlaceholderPage title="Integrações" />} />
+                    <Route path="/admin/templates-globais" element={<AdminPlaceholderPage title="Templates Globais" />} />
+                    <Route path="/campanhas/resumo" element={<CampaignContextGate><CampaignSummaryPage /></CampaignContextGate>} />
+                    <Route path="/campanhas/incentivos" element={<CampaignContextGate><AdminPlaceholderPage title="Incentivos (Combos)" /></CampaignContextGate>} />
+                    <Route path="/campanhas/whitelists" element={<CampaignContextGate><AdminPlaceholderPage title="Whitelists" /></CampaignContextGate>} />
+                    <Route path="/campanhas/due-dates" element={<CampaignContextGate><AdminPlaceholderPage title="Due Dates" /></CampaignContextGate>} />
                     <Route path="/relatorios/gross-to-net" element={<GrossToNetReportPage />} />
                     <Route path="/compradores" element={<BuyerPortalPage />} />
                     <Route path="/investidores" element={<InvestorPortalPage />} />
