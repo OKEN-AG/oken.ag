@@ -100,3 +100,21 @@ Após revisão da fundação inicial, foi definido endurecimento mínimo de banc
 
 ---
 
+
+## 7) Segurança tenant-aware (Fase 1.2)
+
+A evolução seguinte da segurança substitui leitura global por leitura **escopada por tenant**:
+
+- função `public.current_tenant_id()` para resolver `tenant_id` do JWT com fallback seguro;
+- políticas RLS de `SELECT/INSERT/UPDATE` por `tenant_id`, com exceção administrativa;
+- `event_outbox` escopado por tenant via relacionamento com `business_events`;
+- índices por `tenant_id` para manter performance das políticas RLS.
+
+### Checklist operacional para ativação
+1. Garantir emissão de `tenant_id` no JWT para usuários autenticados.
+2. Iniciar backfill de `tenant_id` em registros legados migrados para o core.
+3. Evoluir para `tenant_id NOT NULL` nas tabelas canônicas quando backfill concluir.
+4. Configurar testes de regressão de acesso cruzado entre tenants.
+
+---
+
