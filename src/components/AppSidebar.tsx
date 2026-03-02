@@ -3,7 +3,7 @@ import { motion } from 'framer-motion';
 import {
   LayoutDashboard, ShoppingCart, BarChart3,
   ChevronLeft, ChevronRight, LogOut,
-  FolderCog, Users, Database, ReceiptText, HandCoins } from 'lucide-react';
+  FolderCog, Users, Database, ReceiptText, HandCoins, Landmark, ShieldCheck } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useActiveCampaigns, useCampaignData } from '@/hooks/useActiveCampaign';
 import { useSidebarCollapsed } from '@/contexts/SidebarContext';

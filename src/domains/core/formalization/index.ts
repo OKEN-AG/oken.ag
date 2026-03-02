@@ -4,3 +4,4 @@ export * from './clause-library';
 export * from './draft-versioning';
 export * from './minimum-document-rule';
 export * from './document-components';
+export * from './snapshot-document-generator';

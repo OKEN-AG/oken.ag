@@ -23,6 +23,14 @@ import CommoditiesMasterDataPage from "@/pages/admin/CommoditiesMasterDataPage";
 import LegacyRouteRedirectPage from "@/pages/LegacyRouteRedirectPage";
 import OrdersListPage from "@/pages/admin/OrdersListPage";
 import PricingAnalysisPage from "@/pages/PricingAnalysisPage";
+import CredorOemPortalPage from "@/pages/portals/CredorOemPortalPage";
+import BackofficePortalPage from "@/pages/portals/BackofficePortalPage";
+import TomadorPortalPage from "@/pages/portals/TomadorPortalPage";
+import FornecedorPortalPage from "@/pages/portals/FornecedorPortalPage";
+import InvestidorPortalPage from "@/pages/portals/InvestidorPortalPage";
+import ComplianceAuditoriaPortalPage from "@/pages/portals/ComplianceAuditoriaPortalPage";
+import { PORTAL_BY_PROFILE } from '@/config/portals';
+import type { UserProfile } from '@/types/authorization';
 
 const queryClient = new QueryClient({
   defaultOptions: {
