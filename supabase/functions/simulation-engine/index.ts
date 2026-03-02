@@ -2,6 +2,7 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.4";
 import { resolvePolicy, recordPolicyDecisionAudit } from "../_shared/policy.ts";
 import { calculateInsurance } from "../server/engines/insurance.ts";
+import { calculateFreightBreakdown } from "../server/engines/freight.ts";
 
 // ─── CORS ───
 function getCorsHeaders(req: Request) {
@@ -933,7 +934,7 @@ serve(async (req: Request) => {
         const { data: clients } = await supabase.from('campaign_clients').select('document').eq('campaign_id', campaignId);
         const whitelist = (clients || []).map((c: any) => c.document).filter((d: string) => String(d || '').replace(/\D/g, '').length > 0);
 
-        result = checkEligibility(campaign, { ...ctx, whitelist }, eligibilityPolicy);
+        result = checkEligibility(campaign, { ...ctx, whitelist }, eligibilityPolicy) as unknown as Record<string, unknown>;
         break;
       }
 
@@ -1137,13 +1138,12 @@ serve(async (req: Request) => {
     }
 
     if (endpoint === 'simulate' || endpoint === 'calculate-parity') {
-      await persistDecisionSnapshot(supabase, {
-        tenantId,
-        userId: user.id,
-        endpoint: String(endpoint || 'unknown'),
-        body: body || {},
-        result,
-      });
+      await supabase.from('order_pricing_snapshots').insert({
+        operation_id: body?.operationId || null,
+        snapshot_type: 'decision',
+        snapshot: { endpoint: String(endpoint || 'unknown'), input: body || {}, output: result },
+        created_by: user?.id || null,
+      }).then(() => {});
     }
 
     await recordPolicyDecisionAudit(supabase, {

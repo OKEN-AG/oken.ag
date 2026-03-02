@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { calculateFreightBreakdown } from './freight';
+import { calculateFreightBreakdown } from './freight.ts';
 
 describe('calculateFreightBreakdown', () => {
   it('aplica redutor específico quando origem/destino casam', () => {

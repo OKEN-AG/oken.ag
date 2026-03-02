@@ -4,7 +4,9 @@ import {
   calculateOperationCosts,
   generateCreditSchedule,
   persistOrderInstallments,
-} from "./credit";
+  type CreditInstallment,
+  type PaymentMethodCostResult,
+} from "./credit.ts";
 
 describe("credit engine schedules", () => {
   it("generates PRICE schedule with decreasing interest and zero ending balance", () => {
@@ -18,7 +20,7 @@ describe("credit engine schedules", () => {
     expect(schedule).toHaveLength(4);
     expect(schedule[0].interest).toBeGreaterThan(schedule[1].interest);
     expect(schedule[3].balance).toBe(0);
-    expect(schedule.reduce((acc, item) => acc + item.principal, 0)).toBeCloseTo(1000, 2);
+    expect(schedule.reduce((acc: number, item: CreditInstallment) => acc + item.principal, 0)).toBeCloseTo(1000, 2);
   });
 
   it("generates SAC schedule with constant principal amortization", () => {
@@ -61,8 +63,8 @@ describe("credit engine edge cases", () => {
       method: "PRICE",
     });
 
-    expect(schedule.every((item) => item.interest === 0)).toBe(true);
-    expect(schedule.map((item) => item.payment)).toEqual([300, 300, 300]);
+    expect(schedule.every((item: CreditInstallment) => item.interest === 0)).toBe(true);
+    expect(schedule.map((item: CreditInstallment) => item.payment)).toEqual([300, 300, 300]);
   });
 
   it("handles short term with one installment", () => {
@@ -87,7 +89,7 @@ describe("credit engine edge cases", () => {
       method: "SAC",
     });
 
-    const principalSum = schedule.reduce((acc, item) => acc + item.principal, 0);
+    const principalSum = schedule.reduce((acc: number, item: CreditInstallment) => acc + item.principal, 0);
     expect(principalSum).toBeCloseTo(1000, 2);
     expect(schedule[2].principal).toBe(333.34);
   });
@@ -112,7 +114,7 @@ describe("CET and persistence", () => {
     expect(result.cetAnnual).toBeGreaterThan(result.cetMonthly);
     expect(result.byPaymentMethod).toHaveLength(2);
 
-    const card = result.byPaymentMethod.find((item) => item.paymentMethod === "CARD");
+    const card = result.byPaymentMethod.find((item: PaymentMethodCostResult) => item.paymentMethod === "CARD");
     expect(card).toBeDefined();
     expect(card!.cetAnnual).toBeGreaterThan(result.cetAnnual);
     expect(card!.totalCost).toBeGreaterThan(result.totalCost);
