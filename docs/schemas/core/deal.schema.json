@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://oken.ag/schemas/core/deal.schema.json",
+  "title": "Deal",
+  "description": "Acordo comercial com vínculo a programa e partes envolvidas.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["entity", "version", "id", "programId", "buyerPartyId", "sellerPartyId", "status", "currency", "createdAt"],
+  "properties": {
+    "entity": { "const": "deal" },
+    "version": { "type": "string", "pattern": "^\\d+\\.\\d+\\.\\d+$", "default": "1.0.0" },
+    "id": { "type": "string", "minLength": 1 },
+    "programId": { "type": "string", "minLength": 1 },
+    "buyerPartyId": { "type": "string", "minLength": 1 },
+    "sellerPartyId": { "type": "string", "minLength": 1 },
+    "status": { "type": "string", "enum": ["proposed", "approved", "rejected", "settled", "cancelled"] },
+    "grossAmount": { "type": "number", "minimum": 0 },
+    "currency": { "type": "string", "minLength": 3, "maxLength": 3 },
+    "evidenceIds": { "type": "array", "items": { "type": "string" }, "default": [] },
+    "createdAt": { "type": "string", "format": "date-time" },
+    "updatedAt": { "type": "string", "format": "date-time" }
+  },
+  "x-compatibilityPolicy": {
+    "backward": "Leitores devem manter suporte para status existentes e aceitar campos opcionais adicionados sem impacto.",
+    "forward": "Escritores não devem remover campos mandatórios e devem manter semântica de status até próximo MAJOR.",
+    "breakingChange": "Mudança de identificação de parties, programId ou estado de lifecycle exige MAJOR + coexistência de versão."
+  }
+}

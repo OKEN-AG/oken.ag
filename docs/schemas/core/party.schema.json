@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://oken.ag/schemas/core/party.schema.json",
+  "title": "Party",
+  "description": "Entidade principal para pessoas e organizações participantes do domínio.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["entity", "version", "id", "type", "name", "createdAt"],
+  "properties": {
+    "entity": { "const": "party" },
+    "version": { "type": "string", "pattern": "^\\d+\\.\\d+\\.\\d+$", "default": "1.0.0" },
+    "id": { "type": "string", "minLength": 1 },
+    "type": { "type": "string", "enum": ["person", "organization"] },
+    "name": { "type": "string", "minLength": 1 },
+    "document": { "type": "string" },
+    "roles": {
+      "type": "array",
+      "items": { "type": "string", "enum": ["producer", "retailer", "supplier", "internal"] },
+      "uniqueItems": true,
+      "default": []
+    },
+    "status": { "type": "string", "enum": ["active", "inactive"], "default": "active" },
+    "createdAt": { "type": "string", "format": "date-time" },
+    "updatedAt": { "type": "string", "format": "date-time" }
+  },
+  "x-compatibilityPolicy": {
+    "backward": "Consumidores da mesma versão MAJOR devem aceitar novos campos opcionais e novos valores de enum documentados.",
+    "forward": "Produtores devem evitar remover/renomear campos na mesma MAJOR e manter campos legados até versão MAJOR subsequente.",
+    "breakingChange": "Remoção de campo obrigatório, tornar opcional em obrigatório, ou alteração de semântica de type/document exige incremento MAJOR."
+  }
+}

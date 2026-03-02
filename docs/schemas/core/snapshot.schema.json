@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://oken.ag/schemas/core/snapshot.schema.json",
+  "title": "Snapshot",
+  "description": "Instantâneo auditável de estado consolidado de entidade de domínio.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["entity", "version", "id", "aggregateType", "aggregateId", "capturedAt", "payload"],
+  "properties": {
+    "entity": { "const": "snapshot" },
+    "version": { "type": "string", "pattern": "^\\d+\\.\\d+\\.\\d+$", "default": "1.0.0" },
+    "id": { "type": "string", "minLength": 1 },
+    "aggregateType": { "type": "string", "enum": ["party", "program", "deal"] },
+    "aggregateId": { "type": "string", "minLength": 1 },
+    "capturedAt": { "type": "string", "format": "date-time" },
+    "payload": { "type": "object" },
+    "checksum": { "type": "string" },
+    "sourceEventId": { "type": "string" }
+  },
+  "x-compatibilityPolicy": {
+    "backward": "Leitores devem processar snapshots de versões anteriores da mesma MAJOR preservando estrutura mínima comum.",
+    "forward": "Produtores devem incluir campos adicionais apenas como opcionais e não alterar semanticamente aggregateType na mesma MAJOR.",
+    "breakingChange": "Mudança estrutural de payload ou aggregateType exige MAJOR e estratégia de replay/backfill descrita em RFC."
+  }
+}

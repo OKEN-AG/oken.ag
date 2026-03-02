@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://oken.ag/schemas/core/evidence.schema.json",
+  "title": "Evidence",
+  "description": "Documento ou prova vinculada a eventos, deals e processos de auditoria.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["entity", "version", "id", "dealId", "kind", "uri", "hash", "capturedAt"],
+  "properties": {
+    "entity": { "const": "evidence" },
+    "version": { "type": "string", "pattern": "^\\d+\\.\\d+\\.\\d+$", "default": "1.0.0" },
+    "id": { "type": "string", "minLength": 1 },
+    "dealId": { "type": "string", "minLength": 1 },
+    "kind": { "type": "string", "enum": ["invoice", "receipt", "image", "contract", "other"] },
+    "uri": { "type": "string", "minLength": 1 },
+    "hash": { "type": "string", "minLength": 1 },
+    "metadata": {
+      "type": "object",
+      "additionalProperties": { "type": ["string", "number", "boolean", "null"] },
+      "default": {}
+    },
+    "capturedAt": { "type": "string", "format": "date-time" },
+    "verifiedAt": { "type": "string", "format": "date-time" }
+  },
+  "x-compatibilityPolicy": {
+    "backward": "Novos metadados podem ser adicionados sem quebra; campos obrigatórios devem permanecer estáveis por MAJOR.",
+    "forward": "Consumidores devem ignorar pares chave/valor adicionais em metadata e tratar kind desconhecido como other quando viável.",
+    "breakingChange": "Alterar formato de hash, URI, ou obrigatoriedade dos campos centrais exige incremento MAJOR."
+  }
+}

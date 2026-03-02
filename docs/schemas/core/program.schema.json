@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://oken.ag/schemas/core/program.schema.json",
+  "title": "Program",
+  "description": "Programa de incentivos e suas regras operacionais.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["entity", "version", "id", "name", "status", "startDate", "endDate", "createdAt"],
+  "properties": {
+    "entity": { "const": "program" },
+    "version": { "type": "string", "pattern": "^\\d+\\.\\d+\\.\\d+$", "default": "1.0.0" },
+    "id": { "type": "string", "minLength": 1 },
+    "name": { "type": "string", "minLength": 1 },
+    "status": { "type": "string", "enum": ["draft", "active", "paused", "closed"] },
+    "sponsorPartyId": { "type": "string" },
+    "startDate": { "type": "string", "format": "date" },
+    "endDate": { "type": "string", "format": "date" },
+    "incentiveRules": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["ruleId", "metric", "operator", "target", "rewardType", "rewardValue"],
+        "properties": {
+          "ruleId": { "type": "string" },
+          "metric": { "type": "string" },
+          "operator": { "type": "string", "enum": ["gte", "gt", "lte", "lt", "eq"] },
+          "target": { "type": "number" },
+          "rewardType": { "type": "string", "enum": ["amount", "percent"] },
+          "rewardValue": { "type": "number" }
+        }
+      },
+      "default": []
+    },
+    "createdAt": { "type": "string", "format": "date-time" },
+    "updatedAt": { "type": "string", "format": "date-time" }
+  },
+  "x-compatibilityPolicy": {
+    "backward": "Campos novos devem ser opcionais na mesma MAJOR; consumidores devem ignorar propriedades desconhecidas no pipeline de leitura.",
+    "forward": "Produtores devem manter campos obrigatórios atuais durante toda a MAJOR e publicar depreciações com antecedência.",
+    "breakingChange": "Mudanças em status, incentiveRules e contratos obrigatórios exigem MAJOR com plano de migração via RFC."
+  }
+}
