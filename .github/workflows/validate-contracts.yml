@@ -1,6 +1,7 @@
 name: validate-contracts
 
 on:
+  workflow_dispatch:
   pull_request:
     paths:
       - 'docs/api/openapi-core.yaml'
@@ -10,6 +11,10 @@ on:
       - 'docs/architecture/naming-conventions.md'
   push:
     branches: [ main ]
+
+concurrency:
+  group: validate-contracts-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   validate-contracts:
