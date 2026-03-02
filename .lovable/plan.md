@@ -22,9 +22,9 @@ A decomposição dos steps **não foi completada**. O arquivo `OperationStepperP
 ### Bloco 0 — Estabilização (INCOMPLETO)
 | Item | Status |
 |------|--------|
-| Extrair ContextStep real | Falta — wrapper vazio |
-| Extrair OrderStep real | Falta — wrapper vazio |
-| Mover lógica de combo/produto para hook | Falta — `getComboRecommendations`, `toggleProduct`, `productGroups` etc. vivem no monolítico |
+| Extrair ContextStep real | ✅ Feito — componente com props tipadas |
+| Extrair OrderStep real | ✅ Feito — componente com props tipadas |
+| Mover lógica de combo/produto para hook | ✅ Feito — `useProductSelection` + `useComboEngine` |
 | Remover rotas legacy | Não verificado |
 
 ### Bloco A — Motor Financeiro
