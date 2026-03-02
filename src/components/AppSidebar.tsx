@@ -3,7 +3,7 @@ import { motion } from 'framer-motion';
 import {
   LayoutDashboard, ShoppingCart, BarChart3,
   ChevronLeft, ChevronRight, LogOut,
-  FolderCog, Users, Database, ReceiptText, Landmark } from 'lucide-react';
+  FolderCog, Users, Database, ReceiptText, HandCoins } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useActiveCampaigns, useCampaignData } from '@/hooks/useActiveCampaign';
 import { useSidebarCollapsed } from '@/contexts/SidebarContext';
@@ -24,7 +24,7 @@ const adminItems = [
   { to: '/admin/commodities-masterdata', icon: Database, label: 'Commodities MasterData' },
   { to: '/admin/pedidos', icon: ReceiptText, label: 'Pedidos / Operações' },
   { to: '/compradores', icon: Users, label: 'Portal Comprador' },
-  { to: '/portal/investidores', icon: Users, label: 'Portal Investidor' },
+  { to: '/investidores', icon: HandCoins, label: 'Portal Investidor' },
 ];
 
 export default function AppSidebar() {

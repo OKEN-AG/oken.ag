@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://oken.ag/schemas/core/investor-event-compliance-evidence.schema.json",
+  "title": "Investor Event Compliance Evidence",
+  "description": "Evidências regulatórias anexadas a cada evento de lifecycle de oferta/investimento.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["entity", "version", "id", "tenantId", "eventName", "aggregateType", "aggregateId", "evidenceType", "hashSha256", "provider", "capturedAt"],
+  "properties": {
+    "entity": { "const": "investor_event_compliance_evidence" },
+    "version": { "type": "string", "pattern": "^\\d+\\.\\d+\\.\\d+$", "default": "1.0.0" },
+    "id": { "type": "string", "format": "uuid" },
+    "tenantId": { "type": "string", "format": "uuid" },
+    "eventName": {
+      "type": "string",
+      "enum": [
+        "investor.onboarding.started",
+        "investor.kyc.completed",
+        "investor.suitability.completed",
+        "investor.regulatory.accepted",
+        "investor.order.submitted",
+        "investor.order.allocated",
+        "investor.order.settled",
+        "investor.distribution.booked",
+        "investor.statement.generated",
+        "investor.tax_document.generated"
+      ]
+    },
+    "aggregateType": { "type": "string", "enum": ["investor", "investor_order"] },
+    "aggregateId": { "type": "string", "format": "uuid" },
+    "evidenceType": { "type": "string", "enum": ["kyc", "kyb", "suitability", "risk", "regulatory_acceptance"] },
+    "subjectId": { "type": "string", "format": "uuid" },
+    "hashSha256": { "type": "string", "minLength": 1 },
+    "provider": { "type": "string", "minLength": 1 },
+    "metadata": {
+      "type": "object",
+      "additionalProperties": { "type": ["string", "number", "boolean", "null"] },
+      "default": {}
+    },
+    "capturedAt": { "type": "string", "format": "date-time" }
+  }
+}

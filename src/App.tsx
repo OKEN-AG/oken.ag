@@ -18,6 +18,7 @@ import CampaignsListPage from "@/pages/admin/CampaignsListPage";
 import CampaignFormPage from "@/pages/admin/CampaignFormPage";
 import OperationStepperPage from "@/pages/OperationStepperPage";
 import BuyerPortalPage from "@/pages/BuyerPortalPage";
+import InvestorPortalPage from "@/pages/InvestorPortalPage";
 import CommoditiesMasterDataPage from "@/pages/admin/CommoditiesMasterDataPage";
 import LegacyRouteRedirectPage from "@/pages/LegacyRouteRedirectPage";
 import OrdersListPage from "@/pages/admin/OrdersListPage";
@@ -94,6 +95,7 @@ const App = () => (
                     <Route path="/admin/commodities-masterdata" element={<CommoditiesMasterDataPage />} />
                     <Route path="/admin/pedidos" element={<OrdersListPage />} />
                     <Route path="/compradores" element={<BuyerPortalPage />} />
+                    <Route path="/investidores" element={<InvestorPortalPage />} />
                     <Route path="*" element={<NotFound />} />
                   </Routes>
                 </AppLayout>

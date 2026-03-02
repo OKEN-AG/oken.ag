@@ -24,24 +24,29 @@ servers:
   - url: https://api.oken.ag
     description: Production
 tags:
-  - { name: Identity, description: Identidade, autenticação e contexto de acesso. }
-  - { name: Campaigns, description: Campanhas comerciais e regras de adesão. }
-  - { name: Eligibility, description: Motor de elegibilidade para ofertas e produtos. }
-  - { name: Pricing, description: Simulação e precificação de operações. }
-  - { name: Documents, description: Gestão documental e compliance. }
-  - { name: Registry, description: Cadastro mestre de entidades e contas. }
-  - { name: Disbursements, description: Orquestração de desembolsos e liquidações. }
-  - { name: Payments, description: Cobranças, pagamentos e baixa financeira. }
-  - { name: Reconciliation, description: Reconciliação transacional e contábil. }
-  - { name: Offers, description: Ofertas de crédito e produtos financeiros. }
-  - { name: Investors, description: Cadastro e posição de investidores. }
-  - { name: Orders, description: Pedidos operacionais e execução. }
-  - { name: Accounting, description: Lançamentos e razão contábil. }
-  - { name: Tax, description: Apuração fiscal e documentos tributários. }
-  - { name: Admin, description: Configuração operacional e governança. }
-  - { name: Webhooks, description: Assinaturas e entrega de eventos de domínio. }
+  - name: Parties
+    description: Cadastro e consulta de participantes.
+  - name: Programs
+    description: Programas comerciais e vigência.
+  - name: Deals
+    description: Negócios/contratos operacionais.
+  - name: Evidence
+    description: Evidências documentais e de compliance.
+  - name: Events
+    description: Trilha de eventos de domínio.
+  - name: Webhooks
+    description: Assinaturas e entrega de eventos externos.
+  - name: Investors
+    description: Módulo dedicado de investidor, suitability e ordens de investimento.
 security:
-  - OAuth2ClientCredentials: []
+  - OAuth2ClientCredentials:
+      - parties:read
+      - programs:read
+      - deals:read
+      - evidence:read
+      - events:read
+      - investors:read
+      - investors:write
   - ApiKeyAuth: []
 
 paths:
@@ -246,27 +251,107 @@ paths:
       operationId: createTaxDocument
       parameters:
         - $ref: '#/components/parameters/CorrelationId'
+        - $ref: '#/components/parameters/TenantId'
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+        - name: aggregate_type
+          in: query
+          schema:
+            type: string
+            enum: [party, program, deal, evidence, investor, investor_order]
+        - name: aggregate_id
+          in: query
+          schema:
+            type: string
+            format: uuid
+        - $ref: '#/components/parameters/DateFrom'
+        - $ref: '#/components/parameters/DateTo'
+      responses:
+        '200':
+          description: Lista paginada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedEvents'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /investors:
+    get:
+      tags: [Investors]
+      summary: Lista investidores e status de onboarding
+      operationId: listInvestors
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+        - $ref: '#/components/parameters/TenantId'
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: Lista paginada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedInvestors'
+    post:
+      tags: [Investors]
+      summary: Inicia onboarding de investidor
+      operationId: createInvestor
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
         - $ref: '#/components/parameters/IdempotencyKey'
       requestBody:
         required: true
         content:
           application/json:
-            schema: { $ref: '#/components/schemas/TaxDocumentCreateInput' }
+            schema:
+              $ref: '#/components/schemas/InvestorCreateInput'
       responses:
-        '201': { $ref: '#/components/responses/TaxDocumentCreated' }
-        '400': { $ref: '#/components/responses/BadRequest' }
-
-  /v1/admin/tenants:
+        '201':
+          description: Investidor criado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Investor'
+  /investor-orders:
     get:
-      tags: [Admin]
-      summary: Lista tenants habilitados
-      operationId: listTenants
-      parameters: [ { $ref: '#/components/parameters/CorrelationId' }, { $ref: '#/components/parameters/Cursor' }, { $ref: '#/components/parameters/Limit' } ]
+      tags: [Investors]
+      summary: Lista ordens do investidor
+      operationId: listInvestorOrders
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+        - $ref: '#/components/parameters/TenantId'
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
       responses:
-        '200': { $ref: '#/components/responses/PaginatedTenants' }
-        '400': { $ref: '#/components/responses/BadRequest' }
+        '200':
+          description: Lista paginada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedInvestorOrders'
+    post:
+      tags: [Investors]
+      summary: Cria ordem de investimento com validação de suitability
+      operationId: createInvestorOrder
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InvestorOrderCreateInput'
+      responses:
+        '201':
+          description: Ordem criada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InvestorOrder'
 
-  /v1/webhooks/subscriptions:
+  /webhooks/subscriptions:
     post:
       tags: [Webhooks]
       summary: Cria assinatura de webhook por domínio
@@ -298,7 +383,14 @@ components:
       flows:
         clientCredentials:
           tokenUrl: https://auth.oken.ag/oauth/token
-          scopes: {}
+          scopes:
+            parties:read: Leitura de partes
+            programs:read: Leitura de programas
+            deals:read: Leitura de deals
+            evidence:read: Leitura de evidências
+            events:read: Leitura de eventos
+            investors:read: Leitura de investidores e ordens
+            investors:write: Escrita de onboarding e ordens de investimento
     ApiKeyAuth:
       type: apiKey
       in: header
@@ -602,25 +694,65 @@ components:
       required: [tenant_id, document_number, amount]
       properties:
         tenant_id: { type: string, format: uuid }
-        document_number: { type: string }
+        type: { type: string, example: deal.approved }
+        aggregate_type:
+          type: string
+          enum: [party, program, deal, evidence, investor, investor_order]
+        aggregate_id: { type: string, format: uuid }
+        payload:
+          type: object
+          additionalProperties: true
+        occurred_at: { type: string, format: date-time }
+    Investor:
+      type: object
+      required: [id, tenant_id, party_id, wrapper, status, created_at, updated_at]
+      properties:
+        id: { type: string, format: uuid }
+        tenant_id: { type: string, format: uuid }
+        party_id: { type: string, format: uuid }
+        wrapper:
+          type: string
+          enum: [platform_88, fund_management, securitization]
+        status:
+          type: string
+          enum: [prospect, onboarding, active, suspended, offboarded]
+        onboarding_completed_at: { type: string, format: date-time, nullable: true }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    InvestorCreateInput:
+      type: object
+      required: [tenant_id, party_id, wrapper]
+      properties:
+        tenant_id: { type: string, format: uuid }
+        party_id: { type: string, format: uuid }
+        wrapper:
+          type: string
+          enum: [platform_88, fund_management, securitization]
+    InvestorOrder:
+      type: object
+      required: [id, tenant_id, investor_id, offer_id, status, amount, allocated_amount, settled_amount, created_at, updated_at]
+      properties:
+        id: { type: string, format: uuid }
+        tenant_id: { type: string, format: uuid }
+        investor_id: { type: string, format: uuid }
+        offer_id: { type: string, format: uuid }
+        status:
+          type: string
+          enum: [draft, submitted, allocated, partially_settled, settled, canceled]
         amount: { type: number, format: double }
-    TaxDocument:
+        allocated_amount: { type: number, format: double }
+        settled_amount: { type: number, format: double }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    InvestorOrderCreateInput:
       type: object
+      required: [tenant_id, investor_id, offer_id, amount]
       properties:
-        id: { type: string, format: uuid }
-        status: { type: string, enum: [issued, canceled] }
-
-    Tenant:
-      type: object
-      properties:
-        id: { type: string, format: uuid }
-        name: { type: string }
-        status: { type: string, enum: [active, inactive] }
-    PaginatedTenants:
-      type: object
-      properties:
-        data: { type: array, items: { $ref: '#/components/schemas/Tenant' } }
-        page_info: { $ref: '#/components/schemas/PageInfo' }
+        tenant_id: { type: string, format: uuid }
+        investor_id: { type: string, format: uuid }
+        offer_id: { type: string, format: uuid }
+        amount: { type: number, format: double }
+        requires_professional_investor: { type: boolean, default: false }
 
     WebhookSubscriptionCreateInput:
       type: object
@@ -650,21 +782,70 @@ components:
     WebhookRetryPolicy:
       type: object
       properties:
-        strategy: { type: string, enum: [exponential_backoff_with_jitter] }
-        max_attempts: { type: integer, default: 8 }
-        first_retry_delay_seconds: { type: integer, default: 30 }
-        max_delay_seconds: { type: integer, default: 3600 }
-        timeout_seconds: { type: integer, default: 10 }
-
-x-contract-evolution:
-  current_version: v1
-  compatibility:
-    additive_changes_allowed: true
-    breaking_changes_require_new_version: true
-  deprecation:
-    minimum_notice_days: 180
-    communication_channels: [changelog, status_page, email]
-
+        strategy:
+          type: string
+          enum: [exponential_backoff_with_jitter]
+        max_attempts:
+          type: integer
+          default: 8
+        first_retry_delay_seconds:
+          type: integer
+          default: 30
+        max_delay_seconds:
+          type: integer
+          default: 3600
+        timeout_seconds:
+          type: integer
+          default: 10
+    PaginatedParties:
+      type: object
+      properties:
+        data:
+          type: array
+          items: { $ref: '#/components/schemas/Party' }
+        page_info: { $ref: '#/components/schemas/PageInfo' }
+    PaginatedPrograms:
+      type: object
+      properties:
+        data:
+          type: array
+          items: { $ref: '#/components/schemas/Program' }
+        page_info: { $ref: '#/components/schemas/PageInfo' }
+    PaginatedDeals:
+      type: object
+      properties:
+        data:
+          type: array
+          items: { $ref: '#/components/schemas/Deal' }
+        page_info: { $ref: '#/components/schemas/PageInfo' }
+    PaginatedEvidence:
+      type: object
+      properties:
+        data:
+          type: array
+          items: { $ref: '#/components/schemas/Evidence' }
+        page_info: { $ref: '#/components/schemas/PageInfo' }
+    PaginatedInvestors:
+      type: object
+      properties:
+        data:
+          type: array
+          items: { $ref: '#/components/schemas/Investor' }
+        page_info: { $ref: '#/components/schemas/PageInfo' }
+    PaginatedInvestorOrders:
+      type: object
+      properties:
+        data:
+          type: array
+          items: { $ref: '#/components/schemas/InvestorOrder' }
+        page_info: { $ref: '#/components/schemas/PageInfo' }
+    PaginatedEvents:
+      type: object
+      properties:
+        data:
+          type: array
+          items: { $ref: '#/components/schemas/Event' }
+        page_info: { $ref: '#/components/schemas/PageInfo' }
 x-oken-webhooks:
   signing:
     algorithm: HMAC-SHA256
