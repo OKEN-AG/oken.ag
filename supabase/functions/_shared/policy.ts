@@ -11,6 +11,34 @@ export interface ResolvedPolicy {
   resolutionSource: 'published' | 'fallback' | null;
 }
 
+export type PolicyDomain =
+  | 'product_price_policy'
+  | 'commodity_pricing_policy'
+  | 'freight_policy'
+  | 'incentive_policy'
+  | 'due_date_policy';
+
+export interface ResolvedPolicySet {
+  policySetId: string | null;
+  domain: PolicyDomain;
+  version: number | null;
+  validFrom: string | null;
+  validTo: string | null;
+  status: 'draft' | 'published' | 'archived' | null;
+  tenantId: string | null;
+  campaignId: string | null;
+  policyPayload: Record<string, unknown>;
+  resolutionSource: 'tenant_override' | 'campaign' | 'global_default' | null;
+}
+
+const POLICY_DOMAINS: PolicyDomain[] = [
+  'product_price_policy',
+  'commodity_pricing_policy',
+  'freight_policy',
+  'incentive_policy',
+  'due_date_policy',
+];
+
 export async function resolvePolicy(
   supabase: any,
   policyKey: string,
@@ -70,4 +98,43 @@ export async function recordPolicyDecisionAudit(
   if (error) {
     throw new Error(`Policy decision audit insert failed: ${error.message}`);
   }
+}
+
+export async function resolvePolicySet(
+  supabase: any,
+  domain: PolicyDomain,
+  tenantId: string | null,
+  campaignId: string | null,
+): Promise<ResolvedPolicySet> {
+  const { data, error } = await supabase.rpc('resolve_policy_set', {
+    p_domain: domain,
+    p_tenant_id: tenantId,
+    p_campaign_id: campaignId,
+  });
+
+  if (error) {
+    throw new Error(`Policy-set resolution failed for ${domain}: ${error.message}`);
+  }
+
+  const row = Array.isArray(data) ? data[0] : null;
+  return {
+    policySetId: row?.policy_set_id ?? null,
+    domain,
+    version: row?.version ?? null,
+    validFrom: row?.valid_from ?? null,
+    validTo: row?.valid_to ?? null,
+    status: row?.status ?? null,
+    tenantId: row?.tenant_id ?? null,
+    campaignId: row?.campaign_id ?? null,
+    policyPayload: (row?.policy_payload as Record<string, unknown>) ?? {},
+    resolutionSource: row?.resolution_source ?? null,
+  };
+}
+
+export async function resolvePolicySetDomains(
+  supabase: any,
+  tenantId: string | null,
+  campaignId: string | null,
+): Promise<ResolvedPolicySet[]> {
+  return Promise.all(POLICY_DOMAINS.map((domain) => resolvePolicySet(supabase, domain, tenantId, campaignId)));
 }
