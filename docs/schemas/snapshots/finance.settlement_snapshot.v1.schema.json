@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://oken.ag/schemas/snapshots/finance.settlement_snapshot.v1.schema.json",
+  "title": "finance.settlement_snapshot.v1",
+  "type": "object",
+  "required": ["snapshot_id", "as_of", "schema_version", "origin", "checksum"],
+  "properties": {
+    "snapshot_id": { "type": "string" },
+    "as_of": { "type": "string", "format": "date-time" },
+    "schema_version": { "const": "v1" },
+    "origin": {
+      "type": "object",
+      "required": ["context", "aggregate", "aggregate_version"],
+      "properties": {
+        "context": { "const": "finance" },
+        "aggregate": { "type": "string" },
+        "aggregate_version": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "checksum": { "type": "string" }
+  }
+}

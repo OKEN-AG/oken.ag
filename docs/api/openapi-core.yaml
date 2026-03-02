@@ -1,0 +1,98 @@
+openapi: 3.0.3
+info:
+  title: Oken Common Core API
+  version: 1.0.0
+servers:
+  - url: /api
+tags:
+  - name: Identity
+  - name: Deals
+  - name: Finance
+  - name: Vault
+  - name: Workflow
+paths:
+  /v1/deals:
+    post:
+      tags: [Deals]
+      summary: Create a deal
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DealCreateRequest'
+            examples:
+              basic:
+                value:
+                  external_ref: "CNH-123"
+                  currency: "BRL"
+                  deal_type: "INDEXED_CONSIGNMENT"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DealResponse'
+        "400":
+          $ref: '#/components/responses/BadRequest'
+        "409":
+          $ref: '#/components/responses/Conflict'
+  /v1/deals/{deal_id}/approve:
+    post:
+      tags: [Deals]
+      summary: Approve a deal (state transition)
+      parameters:
+        - $ref: '#/components/parameters/DealId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        "202":
+          description: Accepted (async propagation via events)
+        "409":
+          $ref: '#/components/responses/Conflict'
+components:
+  parameters:
+    DealId:
+      name: deal_id
+      in: path
+      required: true
+      schema: { type: string }
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: false
+      schema: { type: string, maxLength: 128 }
+  responses:
+    BadRequest:
+      description: Bad Request
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    Conflict:
+      description: Conflict (state, idempotency, concurrency)
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+  schemas:
+    Error:
+      type: object
+      required: [code, message, trace_id]
+      properties:
+        code: { type: string }
+        message: { type: string }
+        trace_id: { type: string }
+    DealCreateRequest:
+      type: object
+      required: [external_ref, currency, deal_type]
+      properties:
+        external_ref: { type: string }
+        currency: { type: string, enum: [BRL, USD] }
+        deal_type: { type: string }
+    DealResponse:
+      type: object
+      required: [deal_id, status]
+      properties:
+        deal_id: { type: string }
+        status: { type: string }
