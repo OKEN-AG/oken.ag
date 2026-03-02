@@ -3,8 +3,7 @@ import { motion } from 'framer-motion';
 import {
   LayoutDashboard, ShoppingCart, BarChart3,
   ChevronLeft, ChevronRight, LogOut,
-  FolderCog, Users, Database, ReceiptText, ShieldCheck,
-} from 'lucide-react';
+  FolderCog, Users, Database, ReceiptText, Landmark } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useActiveCampaigns, useCampaignData } from '@/hooks/useActiveCampaign';
 import { useSidebarCollapsed } from '@/contexts/SidebarContext';
@@ -17,6 +16,7 @@ const navItems: { to: string; icon: any; label: string; module?: JourneyModule }
   { to: '/', icon: LayoutDashboard, label: 'Dashboard' },
   { to: '/operacao/novo', icon: ShoppingCart, label: 'Nova Operação' },
   { to: '/monitoramento', icon: BarChart3, label: 'Monitoramento' },
+  { to: '/liquidacao', icon: Landmark, label: 'Liquidação' },
 ];
 
 const adminItems = [
