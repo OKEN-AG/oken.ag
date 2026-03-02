@@ -39,6 +39,7 @@ import InvestidorPortalPage from '@/pages/portals/InvestidorPortalPage';
 import ComplianceAuditoriaPortalPage from '@/pages/portals/ComplianceAuditoriaPortalPage';
 import CampaignSummaryPage from '@/pages/CampaignSummaryPage';
 import AdminPlaceholderPage from '@/pages/admin/AdminPlaceholderPage';
+import UsersManagementPage from '@/pages/admin/UsersManagementPage';
 import { PORTAL_BY_PROFILE } from '@/config/portals';
 import type { UserProfile } from '@/types/authorization';
 
@@ -94,7 +95,7 @@ const App = () => (
                     <Route path="/admin/frete" element={<FreightManagementPage />} />
                     <Route path="/admin/commodities-masterdata" element={<CommoditiesMasterDataPage />} />
                     <Route path="/admin/pedidos" element={<OrdersListPage />} />
-                    <Route path="/admin/usuarios" element={<AdminPlaceholderPage title="Usuários & Roles" />} />
+                    <Route path="/admin/usuarios" element={<UsersManagementPage />} />
                     <Route path="/admin/capacidades" element={<AdminPlaceholderPage title="Capacidades" />} />
                     <Route path="/admin/integracoes" element={<AdminPlaceholderPage title="Integrações" />} />
                     <Route path="/admin/templates-globais" element={<AdminPlaceholderPage title="Templates Globais" />} />
