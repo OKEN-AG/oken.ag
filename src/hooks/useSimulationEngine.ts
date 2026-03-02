@@ -136,6 +136,7 @@ export interface OperationStatusResult {
 }
 
 export interface SimulateInput {
+  tenantId: string;
   campaignId: string;
   selections: SimulationSelection[];
   segmentName: string;
@@ -216,8 +217,8 @@ export function useSimulationEngine() {
     setLoading(false);
   }, []);
 
-  const checkEligibility = useCallback(async (campaignId: string, clientContext: Record<string, unknown>): Promise<EligibilityResult> => {
-    return invoke<EligibilityResult>('check-eligibility', { campaignId, clientContext });
+  const checkEligibility = useCallback(async (tenantId: string, campaignId: string, clientContext: Record<string, unknown>): Promise<EligibilityResult> => {
+    return invoke<EligibilityResult>('check-eligibility', { tenantId, campaignId, clientContext });
   }, [invoke]);
 
   const getOperationStatus = useCallback(async (operationId: string): Promise<OperationStatusResult> => {

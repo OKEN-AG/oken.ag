@@ -5,6 +5,7 @@ import { useParams, useNavigate, useSearchParams, Link } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '@/contexts/AuthContext';
 import { useActiveCampaigns, useCampaignData } from '@/hooks/useActiveCampaign';
+import { useAppContext } from '@/contexts/AppContext';
 import { useCommodityOptions } from '@/hooks/useCommoditiesMasterData';
 import { normalizeCommodityCode } from '@/lib/commodity';
 import { useOperation, useOperationItems, useOperationDocuments, useCreateOperation, useCreateOperationItems, useCreateOperationLog, useReplaceOperationItems, useUpdateOperation } from '@/hooks/useOperations';
@@ -194,9 +195,10 @@ export default function OperationStepperPage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { user } = useAuth();
+  const { tenantId, campaignId: contextCampaignId } = useAppContext();
 
   const isNewOperation = !operationId || operationId === 'novo';
-  const initialCampaignId = searchParams.get('campaignId') || '';
+  const initialCampaignId = contextCampaignId || searchParams.get('campaignId') || '';
 
   // ─── Data fetching ───
   const { data: activeCampaigns, isLoading: loadingCampaigns } = useActiveCampaigns();
@@ -225,7 +227,7 @@ export default function OperationStepperPage() {
   const effectiveArea = area * comboQty;
 
   // ─── Mutations ───
-  const createOperation = useCreateOperation();
+  const createOperation = useCreateOperation({ tenantId, campaignId: selectedCampaignId || null });
   const createItems = useCreateOperationItems();
   const replaceItems = useReplaceOperationItems();
   const createLog = useCreateOperationLog();
@@ -593,7 +595,7 @@ export default function OperationStepperPage() {
 
   // ─── Trigger simulation on input changes (server-authoritative) ───
   useEffect(() => {
-    if (!selectedCampaignId || selectedProducts.size === 0 || !dueMonths || hasDueDateConfigIssue || !segment || !selectedDistributorId) return;
+    if (!tenantId || !selectedCampaignId || selectedProducts.size === 0 || !dueMonths || hasDueDateConfigIssue || !segment || !selectedDistributorId) return;
     if (lastSimulationKeyRef.current === simulationKey) return;
     lastSimulationKeyRef.current = simulationKey;
 
@@ -602,6 +604,7 @@ export default function OperationStepperPage() {
       overrideQuantity: quantityMode === 'livre' ? (freeQuantities.get(id) || undefined) : undefined,
     }));
     simulateDebounced({
+      tenantId,
       campaignId: selectedCampaignId, selections: inputSelections, distributorId: selectedDistributorId || undefined, channelSegmentName: channelSegmentName || undefined, commercialSegmentName: segment, segmentName: segment, channelSegment: channelEnum, dueMonths, dueDate: selectedDueDate || undefined,
       paymentMethodId: selectedPaymentMethod || undefined,
       commodityCode: selectedCommodity || undefined,
@@ -620,7 +623,7 @@ export default function OperationStepperPage() {
       selectedCommodity, port, freightOrigin, selectedDeliveryLocationId, hasContract, userPrice, showInsurance,
       selectedBuyerId, contractPriceType, performanceIndex, clientState, selectedCityName,
       clientCityCode, usesIbgeCityEligibility, clientType, clientDocument, quantityMode, freeQuantities,
-      simulationKey, hasDueDateConfigIssue, selectedDeliveryLocationId]);
+      simulationKey, hasDueDateConfigIssue, selectedDeliveryLocationId, tenantId]);
 
   // ─── Eligibility from backend result ───
   const eligibility = simResult?.eligibility ?? null;
@@ -937,7 +940,7 @@ export default function OperationStepperPage() {
 
       if (isNewOperation) {
         const op = await createOperation.mutateAsync({
-          campaign_id: selectedCampaignId, user_id: user.id, client_name: clientName || 'Sem nome',
+          client_name: clientName || 'Sem nome',
           client_document: clientDocument || undefined, channel: channelEnum, distributor_id: selectedDistributorId || undefined, city: clientCity || undefined, area_hectares: effectiveArea,
           state: clientState || undefined, due_months: dueMonths,
           gross_revenue: grossToNet.grossRevenue, combo_discount: grossToNet.comboDiscount,

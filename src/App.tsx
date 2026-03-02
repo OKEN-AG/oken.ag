@@ -8,6 +8,8 @@ import { AuditTrailProvider } from '@/contexts/audit/AuditTrailContext';
 import ProtectedRoute from '@/components/ProtectedRoute';
 import CapabilityRoute from '@/components/security/CapabilityRoute';
 import AppLayout from '@/components/AppLayout';
+import CampaignContextGate from '@/components/CampaignContextGate';
+import { AppContextResolver } from '@/contexts/AppContext';
 import Dashboard from '@/pages/Dashboard';
 
 import MonitoringPage from "@/pages/MonitoringPage";
@@ -93,6 +95,7 @@ const App = () => (
       <BrowserRouter>
         <AuthProvider>
           <AuditTrailProvider>
+            <AppContextResolver>
           <Routes>
             <Route path="/auth" element={<AuthPage />} />
             <Route path="/*" element={
@@ -104,12 +107,12 @@ const App = () => (
                     <Route path="/simulacao" element={<LegacyRouteRedirectPage source="simulacao" />} />
                     <Route path="/paridade" element={<LegacyRouteRedirectPage source="paridade" />} />
                     <Route path="/documentos" element={<LegacyRouteRedirectPage source="documentos" />} />
-                    <Route path="/monitoramento" element={<MonitoringPage />} />
-                    <Route path="/liquidacao" element={<SettlementOpsPage />} />
-                    <Route path="/operacao/novo" element={<OperationStepperPage />} />
-                    <Route path="/operacao/:id" element={<OperationStepperPage />} />
-                    <Route path="/operacao/:id/analise-precos" element={<PricingAnalysisPage />} />
-                    <Route path="/operacao/:id/detalhe" element={<OperationDetailPage />} />
+                    <Route path="/monitoramento" element={<CampaignContextGate><MonitoringPage /></CampaignContextGate>} />
+                    <Route path="/liquidacao" element={<CampaignContextGate><SettlementOpsPage /></CampaignContextGate>} />
+                    <Route path="/operacao/novo" element={<CampaignContextGate><OperationStepperPage /></CampaignContextGate>} />
+                    <Route path="/operacao/:id" element={<CampaignContextGate><OperationStepperPage /></CampaignContextGate>} />
+                    <Route path="/operacao/:id/analise-precos" element={<CampaignContextGate><PricingAnalysisPage /></CampaignContextGate>} />
+                    <Route path="/operacao/:id/detalhe" element={<CampaignContextGate><OperationDetailPage /></CampaignContextGate>} />
                     <Route path="/admin/campanhas" element={<CampaignsListPage />} />
                     <Route path="/admin/campanhas/:id" element={<CampaignFormPage />} />
                     <Route path="/admin/produtos" element={<ProductsManagementPage />} />
@@ -132,6 +135,7 @@ const App = () => (
               </ProtectedRoute>
             } />
           </Routes>
+            </AppContextResolver>
           </AuditTrailProvider>
         </AuthProvider>
       </BrowserRouter>

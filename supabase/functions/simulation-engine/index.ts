@@ -546,7 +546,8 @@ serve(async (req: Request) => {
     const { data: { user }, error: authError } = await supabase.auth.getUser();
     if (authError || !user) return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 
-    const tenantId = (body?.tenantId || user.user_metadata?.tenant_id || null) as string | null;
+    const tenantId = (body?.tenantId || null) as string | null;
+    if (!tenantId) throw new Error('tenantId is required');
     const simulationPolicy = await resolvePolicy(supabase, 'simulation_engine', tenantId);
 
     let result: Record<string, unknown>;

@@ -8,7 +8,8 @@ import {
   Building2, Headphones, Scale, Tractor, Factory, HandCoins, ShieldCheck, Users
 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
-import { useActiveCampaigns, useCampaignData } from '@/hooks/useActiveCampaign';
+import { useCampaignData } from '@/hooks/useActiveCampaign';
+import { useAppContext } from '@/contexts/AppContext';
 import { useSidebarCollapsed } from '@/contexts/SidebarContext';
 import type { JourneyModule } from '@/types/barter';
 import logoDark from '@/assets/logo-dark.png';
@@ -46,9 +47,8 @@ export default function AppSidebar() {
   const location = useLocation();
   const { user, signOut } = useAuth();
 
-  const { data: activeCampaigns } = useActiveCampaigns();
-  const firstCampaignId = activeCampaigns?.[0]?.id;
-  const { campaign } = useCampaignData(firstCampaignId);
+  const { campaignId } = useAppContext();
+  const { campaign } = useCampaignData(campaignId);
   const activeModules = campaign?.activeModules || [];
 
   const visibleNavItems = navItems.filter(item => {
