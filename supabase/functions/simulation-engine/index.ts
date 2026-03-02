@@ -90,6 +90,41 @@ interface ParityResultType {
   userOverridePrice: number | null; hasExistingContract: boolean;
 }
 
+function pickSnapshotEnvelope(raw: any) {
+  if (!raw || typeof raw !== 'object') return null;
+  if (raw?.snapshotType === 'pricing_snapshot') return raw;
+  if (raw?.metadata && raw?.inputs && raw?.outputs) return raw;
+  return null;
+}
+
+function buildRuleTrailFromSnapshot(snapshotEnvelope: any) {
+  const rows = (snapshotEnvelope?.outputs?.pricingDebugRows || []) as any[];
+  return rows.map((row) => ({
+    productId: row.productId,
+    productName: row.productName,
+    numbers: {
+      basePrice: row.priceAfterFx,
+      interestPerUnit: row.interestPerUnit,
+      marginPerUnit: row.marginPerUnit,
+      segmentAdjustmentPerUnit: row.segmentAdjPerUnit,
+      paymentMarkupPerUnit: row.paymentMarkupPerUnit,
+      normalizedPrice: row.normalizedPrice,
+      subtotal: row.subtotal,
+    },
+    rules: {
+      sourceField: row.sourceField,
+      fxSourceUsed: row.fxSourceUsed,
+      channelSegment: row.channelSegment,
+      segmentName: row.segmentName,
+      marginPercent: row.marginPercent,
+      segmentAdjustmentPercent: row.segmentAdjustmentPercent,
+      paymentMethodMarkupPercent: row.paymentMethodMarkupPercent,
+      interestMultiplier: row.interestMultiplier,
+      dueMonths: row.dueMonths,
+    },
+  }));
+}
+
 // ─── AGRONOMIC ENGINE ───
 function calculateAgronomic(product: ProductRow, areaHectares: number, dosePerHectare: number, overrideQuantity?: number): AgronomicResult {
   const dose = dosePerHectare || product.dose_per_hectare;
@@ -903,6 +938,50 @@ serve(async (req: Request) => {
           },
           timestamp: new Date().toISOString(),
         };
+
+        const pricingSnapshotEnvelope: Record<string, unknown> = {
+          snapshotType: 'pricing_snapshot',
+          metadata: {
+            tenantId,
+            campaignId,
+            operationId: body?.operationId || null,
+            decisionType: body?.decisionType || 'simulation',
+            policyVersions: {
+              eligibility: eligibilityPolicyResolved?.version ?? null,
+              pricing: pricingPolicyResolved?.version ?? null,
+              formalization: formalizationPolicyResolved?.version ?? null,
+            },
+            actor: {
+              userId: user?.id || null,
+              email: user?.email || null,
+            },
+            createdAt: new Date().toISOString(),
+          },
+          inputs: body || {},
+          resolvedPolicies: {
+            eligibility: eligibilityPolicyResolved,
+            pricing: pricingPolicyResolved,
+            formalization: formalizationPolicyResolved,
+          },
+          outputs: result,
+          ruleTrail: buildRuleTrailFromSnapshot({ outputs: result }),
+        };
+
+        const encoder = new TextEncoder();
+        const hashBuffer = await crypto.subtle.digest('SHA-256', encoder.encode(JSON.stringify(pricingSnapshotEnvelope)));
+        const hashArray = Array.from(new Uint8Array(hashBuffer));
+        const snapshotHash = hashArray.map((b) => b.toString(16).padStart(2, '0')).join('');
+        pricingSnapshotEnvelope.metadata = {
+          ...(pricingSnapshotEnvelope.metadata as Record<string, unknown>),
+          snapshotHash,
+        };
+
+        await supabase.from('order_pricing_snapshots').insert({
+          operation_id: body?.operationId || null,
+          snapshot_type: 'pricing_snapshot',
+          snapshot: pricingSnapshotEnvelope,
+          created_by: user?.id || null,
+        }).then(() => {});
         break;
       }
 
@@ -953,6 +1032,14 @@ serve(async (req: Request) => {
         const { data: campaign } = await supabase.from('campaigns').select('active_modules, aforo_percent').eq('id', operation.campaign_id).single();
         const { data: docs } = await supabase.from('operation_documents').select('doc_type, status, guarantee_category, data').eq('operation_id', operationId);
         const { data: guarantees } = await supabase.from('operation_guarantees').select('estimated_value, ip_at_evaluation, status').eq('operation_id', operationId);
+        const { data: persistedPricingSnapshot } = await supabase
+          .from('order_pricing_snapshots')
+          .select('id, snapshot, created_at')
+          .eq('operation_id', operationId)
+          .eq('snapshot_type', 'pricing_snapshot')
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
 
         const activeModules = campaign?.active_modules || [];
         if (activeModules.length === 0) throw new Error('Campaign has no active_modules configured');
@@ -998,7 +1085,14 @@ serve(async (req: Request) => {
         const base = validGuarantees.reduce((s: number, g: any) => s + (g.estimated_value || 0), 0);
         const avgIP = validGuarantees.length > 0 ? validGuarantees.reduce((s: number, g: any) => s + (g.ip_at_evaluation || 1), 0) / validGuarantees.length : 1;
         const effective = base * avgIP;
-        const required = (operation.gross_revenue || 0) * ((campaign?.aforo_percent || Number(simulationPolicy.policyPayload.defaultAforoPercent || 130)) / 100);
+        if (!persistedPricingSnapshot && ['formalizado', 'garantido', 'faturado', 'monitorando', 'liquidado'].includes(operation.status)) {
+          throw new Error('Fase bloqueada: snapshot de pricing persistido ausente para formalização/liquidação.');
+        }
+        const snapshotAforo = Number((persistedPricingSnapshot?.snapshot as any)?.outputs?.campaignConfig?.aforoPercent || 0);
+        const aforoPercent = snapshotAforo > 0
+          ? snapshotAforo
+          : Number(campaign?.aforo_percent || simulationPolicy.policyPayload.defaultAforoPercent || 130);
+        const required = (operation.gross_revenue || 0) * (aforoPercent / 100);
 
         result = {
           policySetsUsed: resolvedPolicySets,
@@ -1006,6 +1100,49 @@ serve(async (req: Request) => {
           wagonStages: stages,
           nextStatus,
           guaranteeCoverage: { base, effective, required, sufficient: effective >= required },
+          pricingSnapshot: persistedPricingSnapshot
+            ? {
+              id: persistedPricingSnapshot.id,
+              createdAt: persistedPricingSnapshot.created_at,
+              metadata: (persistedPricingSnapshot.snapshot as any)?.metadata || null,
+            }
+            : null,
+        };
+        break;
+      }
+
+      case 'replay-snapshot': {
+        const { operationId, snapshotId } = body;
+        if (!operationId && !snapshotId) throw new Error('operationId ou snapshotId é obrigatório');
+
+        let query = supabase
+          .from('order_pricing_snapshots')
+          .select('id, operation_id, snapshot_type, snapshot, created_at, created_by')
+          .eq('snapshot_type', 'pricing_snapshot')
+          .order('created_at', { ascending: false })
+          .limit(1);
+
+        query = snapshotId ? query.eq('id', snapshotId) : query.eq('operation_id', operationId);
+
+        const { data: snapshotRow, error: snapshotErr } = await query.maybeSingle();
+        if (snapshotErr) throw new Error(snapshotErr.message);
+        if (!snapshotRow) throw new Error('Pricing snapshot não encontrado');
+
+        const envelope = pickSnapshotEnvelope(snapshotRow.snapshot);
+        if (!envelope) throw new Error('Snapshot inválido para replay');
+
+        result = {
+          replay: {
+            snapshotId: snapshotRow.id,
+            operationId: snapshotRow.operation_id,
+            createdAt: snapshotRow.created_at,
+            createdBy: snapshotRow.created_by,
+            metadata: envelope.metadata || {},
+            inputs: envelope.inputs || {},
+            resolvedPolicies: envelope.resolvedPolicies || {},
+            outputs: envelope.outputs || {},
+            ruleTrail: buildRuleTrailFromSnapshot(envelope),
+          },
         };
         break;
       }

@@ -895,6 +895,24 @@ export default function OperationStepperPage() {
 
   const handleAdvanceStatus = async () => {
     if (!operationId || !nextStatus || !user) return;
+    if (['formalizado', 'garantido', 'faturado', 'monitorando', 'liquidado'].includes(nextStatus)) {
+      const { data: persistedPricingSnapshot, error: snapshotErr } = await supabase
+        .from('order_pricing_snapshots')
+        .select('id')
+        .eq('operation_id', operationId)
+        .eq('snapshot_type', 'pricing_snapshot')
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (snapshotErr) {
+        toast.error(`Falha ao validar snapshot de pricing: ${snapshotErr.message}`);
+        return;
+      }
+      if (!persistedPricingSnapshot) {
+        toast.error('Transição bloqueada: é obrigatório snapshot de pricing persistido para seguir para formalização/liquidação.');
+        return;
+      }
+    }
     const fromStatus = existingOp?.status || 'simulacao';
     await supabase.from('operations').update({ status: nextStatus }).eq('id', operationId);
     // C1: Write to operation_status_history for formal audit trail
@@ -993,11 +1011,96 @@ export default function OperationStepperPage() {
         });
       }
 
-      // Save snapshot — entire simulation result IS the authoritative snapshot
+      // Save snapshot — persistir entradas + políticas resolvidas + outputs para replay/auditoria
+      const pricingSnapshotEnvelope: Record<string, unknown> = {
+        snapshotType: 'pricing_snapshot',
+        metadata: {
+          tenantId: (user.user_metadata as any)?.tenant_id || null,
+          campaignId: selectedCampaignId,
+          operationId: opId,
+          decisionType: currentStepDef.id === 'summary' ? 'final_approval_simulation' : 'simulation',
+          policyVersions: {
+            eligibility: (simResult.resolvedPolicies as any)?.eligibility?.version ?? null,
+            pricing: (simResult.resolvedPolicies as any)?.pricing?.version ?? null,
+            formalization: (simResult.resolvedPolicies as any)?.formalization?.version ?? null,
+          },
+          actor: {
+            userId: user.id,
+            email: user.email || null,
+          },
+          createdAt: new Date().toISOString(),
+        },
+        inputs: {
+          campaignId: selectedCampaignId,
+          segment,
+          channelSegmentName,
+          distributorId: selectedDistributorId,
+          dueMonths,
+          dueDate: selectedDueDate,
+          paymentMethodId: selectedPaymentMethod,
+          commodityCode: selectedCommodity,
+          port,
+          freightOrigin,
+          deliveryLocationId: selectedDeliveryLocationId,
+          hasContract,
+          userOverridePrice: userPrice,
+          showInsurance,
+          barterDiscountPercent: 0,
+          buyerId: selectedBuyerId,
+          contractPriceType,
+          performanceIndex,
+          clientContext: {
+            clientType,
+            state: clientState,
+            city: clientCity,
+            clientDocument,
+          },
+          selections: (simResult.selections || []).map((s) => ({
+            productId: s.productId,
+            dosePerHectare: s.dosePerHectare,
+            areaHectares: s.areaHectares,
+            overrideQuantity: s.rawQuantity,
+          })),
+        },
+        resolvedPolicies: simResult.resolvedPolicies || {},
+        outputs: simResult,
+        ruleTrail: ((simResult as any).pricingDebugRows || []).map((row: any) => ({
+          productId: row.productId,
+          productName: row.productName,
+          numbers: {
+            basePrice: row.priceAfterFx,
+            interestPerUnit: row.interestPerUnit,
+            marginPerUnit: row.marginPerUnit,
+            segmentAdjustmentPerUnit: row.segmentAdjPerUnit,
+            paymentMarkupPerUnit: row.paymentMarkupPerUnit,
+            normalizedPrice: row.normalizedPrice,
+            subtotal: row.subtotal,
+          },
+          rules: {
+            sourceField: row.sourceField,
+            fxSourceUsed: row.fxSourceUsed,
+            channelSegment: row.channelSegment,
+            segmentName: row.segmentName,
+            marginPercent: row.marginPercent,
+            segmentAdjustmentPercent: row.segmentAdjustmentPercent,
+            paymentMethodMarkupPercent: row.paymentMethodMarkupPercent,
+            interestMultiplier: row.interestMultiplier,
+            dueMonths: row.dueMonths,
+          },
+        })),
+      };
+
+      const hashBuffer = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(JSON.stringify(pricingSnapshotEnvelope)));
+      const snapshotHash = Array.from(new Uint8Array(hashBuffer)).map((b) => b.toString(16).padStart(2, '0')).join('');
+      pricingSnapshotEnvelope.metadata = {
+        ...(pricingSnapshotEnvelope.metadata as Record<string, unknown>),
+        snapshotHash,
+      };
+
       await supabase.from('order_pricing_snapshots').insert({
         operation_id: opId!,
-        snapshot: simResult as any,
-        snapshot_type: isNewOperation ? 'simulation' : 'order',
+        snapshot: pricingSnapshotEnvelope,
+        snapshot_type: 'pricing_snapshot',
         created_by: user.id,
       });
 

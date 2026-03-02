@@ -94,7 +94,25 @@ export default function OperationDetailPage() {
     },
   });
 
+  const { data: pricingSnapshot } = useQuery({
+    queryKey: ['operation-detail-pricing-snapshot', id],
+    enabled: !!id,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('order_pricing_snapshots')
+        .select('id, snapshot, snapshot_type, created_at')
+        .eq('operation_id', id!)
+        .eq('snapshot_type', 'pricing_snapshot')
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (error) throw error;
+      return data;
+    },
+  });
+
   const fmt = (v: number | null) => (v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+  const trailRows = (((pricingSnapshot?.snapshot as any)?.ruleTrail || []) as any[]);
 
   if (isLoading) return <div className="p-6"><Skeleton className="h-64 w-full" /></div>;
   if (!operation) return <div className="p-6 text-center text-muted-foreground">Operação não encontrada.</div>;
@@ -201,6 +219,46 @@ export default function OperationDetailPage() {
           </div>
         </CardContent>
       </Card>
+
+      {trailRows.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-sm">Trilha de regras (qual regra gerou qual número)</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Produto</TableHead>
+                  <TableHead>Regra de origem</TableHead>
+                  <TableHead>Base</TableHead>
+                  <TableHead>Juros</TableHead>
+                  <TableHead>Margem</TableHead>
+                  <TableHead>Ajuste seg.</TableHead>
+                  <TableHead>Markup PM</TableHead>
+                  <TableHead>Preço final</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {trailRows.map((row: any, index: number) => (
+                  <TableRow key={`${row.productId || 'item'}-${index}`}>
+                    <TableCell className="font-medium">{row.productName || row.productId || '—'}</TableCell>
+                    <TableCell className="text-xs text-muted-foreground">
+                      {row.rules?.sourceField || '—'} · FX {row.rules?.fxSourceUsed || '—'} · seg {row.rules?.segmentName || '—'}
+                    </TableCell>
+                    <TableCell className="font-mono">{fmt(row.numbers?.basePrice || 0)}</TableCell>
+                    <TableCell className="font-mono">{fmt(row.numbers?.interestPerUnit || 0)}</TableCell>
+                    <TableCell className="font-mono">{fmt(row.numbers?.marginPerUnit || 0)}</TableCell>
+                    <TableCell className="font-mono">{fmt(row.numbers?.segmentAdjustmentPerUnit || 0)}</TableCell>
+                    <TableCell className="font-mono">{fmt(row.numbers?.paymentMarkupPerUnit || 0)}</TableCell>
+                    <TableCell className="font-mono font-semibold">{fmt(row.numbers?.normalizedPrice || 0)}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Documents */}
       {documents.length > 0 && (
