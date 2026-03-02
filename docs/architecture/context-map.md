@@ -1,15 +1,26 @@
-# Context Map do Common Core
+# Oken — Context Map (Common Core)
 
-| Upstream | Downstream | Relação DDD | Contrato publicado | Risco principal |
-| --- | --- | --- | --- | --- |
-| Identity | Deals | Published Language | API `identity/v1/claims` | drift de autorização |
-| Deals | Finance | ACL | Evento `deal.approved.v1` | quebra de semântica de aprovação |
-| Finance | Accounting/Tax | Conformist | Evento `finance.entry.posted.v1` | atraso na classificação fiscal |
-| Deals | Vault | Published Language | Snapshot `deal.snapshot.v1` | perda de evidência temporal |
-| Rails | Workflow/Case | ACL | Evento `rails.execution.failed.v1` | retry sem deduplicação |
-| Core (multi) | Data/BI | Published Language | Snapshots versionados por domínio | inconsistência histórica |
+Regra: relacionamento entre contexts é explicitado por tipo de integração e contrato.
+Legenda: U/D = Upstream/Downstream; Rel = Relationship.
 
-## Diretrizes
+## Mapa (alto nível)
 
-- Todo contrato deve informar owner, versão e estratégia de depreciação.
-- Contextos downstream implementam anti-corruption layer quando consumirem parceiros externos.
+| Upstream | Downstream | Rel | Contrato principal | Observações |
+|---|---|---|---|---|
+| Identity | Todos | Published Language | eventos identity.* + API /identity | Todos consomem claims/policies, sem dependência de DB |
+| Deals | Finance | Published Language | deals.deal_approved.v1 | Finance inicia settlement a partir de deal aprovado |
+| Deals | Vault | ACL | comando “CreateDealSnapshot” (via Rails) | Vault só armazena evidência; sem regra de Deal |
+| Finance | Accounting/Tax | Published Language | finance.* facts -> tax/accounting | Accounting/Tax deriva classificação |
+| Rails | Workflow/Case | Conformist | workflow.* / rails.* | Workflow orquestra exceções; Rails executa steps |
+| Vault | Data/BI | Published Language | snapshots + eventos vault.* | Data consome para analytics e auditoria |
+| Finance | Data/BI | Published Language | snapshots finance.* | Data consolida KPIs e histórico |
+
+## Anti-corruption layers (ACLs) obrigatórios
+- Interfaces -> Core: validações de borda + normalização de linguagem
+- Adapters/Wrappers -> Core: tradução de protocolos externos para contratos internos
+- Deals -> Vault: Vault não entende “Deal”; apenas snapshot/evidência padronizada
+
+## Contratos de referência
+- APIs: `docs/api/openapi-core.yaml`
+- Eventos: `docs/events/catalog.md`
+- Schemas: `docs/schemas/events/*` e `docs/schemas/snapshots/*`

@@ -1,0 +1,25 @@
+name: validate-contracts
+
+on:
+  pull_request:
+    paths:
+      - 'docs/api/openapi-core.yaml'
+      - 'docs/events/catalog.md'
+      - 'docs/schemas/**/*.json'
+      - 'scripts/validate-contracts.sh'
+      - 'docs/architecture/naming-conventions.md'
+  push:
+    branches: [ main ]
+
+jobs:
+  validate-contracts:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install dependencies
+        run: pip install pyyaml
+      - name: Validate contracts
+        run: ./scripts/validate-contracts.sh

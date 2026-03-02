@@ -1,39 +1,46 @@
-## Resumo
+## Contexto
+- Feature/Issue:
+- Bounded Context primário:
+- Contextos afetados:
+- Squads R/A/C/I:
 
-<!-- objetivo da mudança, contexto e impacto -->
+## Tipo de mudança
+- [ ] Core (domínio/invariantes)
+- [ ] Contrato (API/evento/snapshot)
+- [ ] Adapter/Wrapper (integração externa)
+- [ ] Observabilidade/Runbook
+- [ ] Segurança/Compliance
 
-## Bounded context e boundary
+## Checklist Arquitetural
+### Boundary e domínio
+- [ ] Sem acesso direto a DB de outro contexto
+- [ ] Linguagem e naming consistentes com o contexto dono
 
-- [ ] Contexto principal identificado
-- [ ] Contextos afetados listados
-- [ ] Sem acesso direto a banco de outro contexto
+### Contratos e compatibilidade
+- [ ] OpenAPI/Schema atualizado e versionado (v1/v2)
+- [ ] Backward compatibility definida (ou v2 criada)
+- [ ] Exemplos canônicos atualizados
 
-## Contratos e compatibilidade
+### Resiliência
+- [ ] Timeout/deadline em síncrono
+- [ ] Idempotência em escrita sensível
+- [ ] Async com retry + DLQ + dedupe
 
-- [ ] API/evento/snapshot versionado
-- [ ] Estratégia de backward compatibility definida
-- [ ] Campos críticos validados com testes
+### Segurança e auditoria
+- [ ] AuthZ revisado (Identity policies/claims)
+- [ ] Audit trail para ações críticas
+- [ ] LGPD/regulatório considerado
 
-## Integração e resiliência
+### Blockchain (se aplicável)
+- [ ] Uso apenas via Adapter (subledger/anchor/rail)
+- [ ] Core opera sem blockchain
+- [ ] Fallback documentado
 
-- [ ] Timeout + erro + idempotência (fluxo síncrono)
-- [ ] Retry + DLQ + deduplicação (fluxo assíncrono)
-- [ ] Snapshot com `as_of`, versão e origem
+### Operação
+- [ ] Runbook atualizado
+- [ ] Métricas/SLOs atualizados
+- [ ] Plano de rollback/reprocessamento definido
 
-## Segurança, compliance e auditoria
-
-- [ ] Revisão de autenticação/autorização
-- [ ] Trilhas de auditoria para operações críticas
-- [ ] Impacto regulatório (financeiro/fiscal/LGPD) revisado
-
-## Blockchain (quando aplicável)
-
-- [ ] Encapsulada em adapter
-- [ ] Core sem dependência hard
-- [ ] Uso explícito: subledger, anchor e/ou rail
-
-## Operação
-
-- [ ] RACI da feature (R/A/C/I)
-- [ ] Runbook/observabilidade atualizados
-- [ ] Rollback/reprocessamento definidos
+## Evidências
+- Logs/prints:
+- Links para docs alterados:
