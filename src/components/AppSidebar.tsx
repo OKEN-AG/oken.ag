@@ -3,13 +3,14 @@ import { motion } from 'framer-motion';
 import {
   LayoutDashboard, ShoppingCart, BarChart3,
   ChevronLeft, ChevronRight, LogOut,
-  FolderCog, Users, Database, ReceiptText, HandCoins, Landmark, ShieldCheck,
-  Package, Truck, PieChart } from 'lucide-react';
+  FolderCog, Database, ReceiptText, Landmark,
+  Package, Truck, PieChart,
+  Building2, Headphones, Scale, Tractor, Factory, HandCoins, ShieldCheck, Users
+} from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useActiveCampaigns, useCampaignData } from '@/hooks/useActiveCampaign';
 import { useSidebarCollapsed } from '@/contexts/SidebarContext';
 import type { JourneyModule } from '@/types/barter';
-import { PORTAL_DEFINITIONS } from '@/config/portals';
 import logoDark from '@/assets/logo-dark.png';
 import logoIcon from '@/assets/logo-icon.png';
 
@@ -24,21 +25,26 @@ const adminItems = [
   { to: '/admin/campanhas', icon: FolderCog, label: 'Campanhas' },
   { to: '/admin/produtos', icon: Package, label: 'Produtos' },
   { to: '/admin/frete', icon: Truck, label: 'Frete / Redutores' },
-  { to: '/admin/commodities-masterdata', icon: Database, label: 'Commodities MasterData' },
+  { to: '/admin/commodities-masterdata', icon: Database, label: 'Commodities' },
   { to: '/admin/pedidos', icon: ReceiptText, label: 'Pedidos / Operações' },
   { to: '/relatorios/gross-to-net', icon: PieChart, label: 'Gross-to-Net' },
-  { to: '/compradores', icon: Users, label: 'Portal Comprador' },
-  { to: '/investidores', icon: HandCoins, label: 'Portal Investidor' },
+];
+
+const portalItems = [
+  { to: '/portal/credor-oem', icon: Building2, label: 'Credor / OEM' },
+  { to: '/portal/backoffice', icon: Headphones, label: 'Backoffice' },
+  { to: '/portal/juridico', icon: Scale, label: 'Jurídico' },
+  { to: '/portal/tomador', icon: Tractor, label: 'Tomador' },
+  { to: '/portal/fornecedor', icon: Factory, label: 'Fornecedor' },
+  { to: '/compradores', icon: Users, label: 'Comprador' },
+  { to: '/portal/investidor', icon: HandCoins, label: 'Investidor' },
+  { to: '/portal/compliance-auditoria', icon: ShieldCheck, label: 'Compliance' },
 ];
 
 export default function AppSidebar() {
   const { collapsed, setCollapsed } = useSidebarCollapsed();
   const location = useLocation();
-  const { user, signOut, hasCapability } = useAuth();
-
-  const portalItems = PORTAL_DEFINITIONS
-    .filter(portal => hasCapability(portal.requiredCapability))
-    .map(portal => ({ to: portal.route, label: portal.title, icon: ShieldCheck }));
+  const { user, signOut } = useAuth();
 
   const { data: activeCampaigns } = useActiveCampaigns();
   const firstCampaignId = activeCampaigns?.[0]?.id;
@@ -69,6 +75,18 @@ export default function AppSidebar() {
     );
   };
 
+  const renderSection = (title: string, items: typeof navItems) => (
+    <>
+      {!collapsed && (
+        <div className="pt-4 pb-1 px-3">
+          <span className="text-[10px] uppercase tracking-widest text-primary">{title}</span>
+        </div>
+      )}
+      {collapsed && <div className="border-t border-sidebar-border my-2" />}
+      {items.map(renderNavItem)}
+    </>
+  );
+
   return (
     <motion.aside
       animate={{ width: collapsed ? 64 : 240 }}
@@ -87,24 +105,8 @@ export default function AppSidebar() {
 
       <div className="flex-1 overflow-y-auto py-4 space-y-1 px-2">
         {visibleNavItems.map(renderNavItem)}
-        {!collapsed && (
-          <div className="pt-4 pb-1 px-3">
-            <span className="text-[10px] uppercase tracking-widest text-primary">Administração</span>
-          </div>
-        )}
-        {collapsed && <div className="border-t border-sidebar-border my-2" />}
-        {adminItems.map(renderNavItem)}
-
-        {portalItems.length > 0 && (
-          <>
-            {!collapsed && (
-              <div className="pt-4 pb-1 px-3">
-                <span className="text-[10px] uppercase tracking-widest text-primary">Portais</span>
-              </div>
-            )}
-            {portalItems.map(renderNavItem)}
-          </>
-        )}
+        {renderSection('Administração', adminItems)}
+        {renderSection('Portais', portalItems)}
 
         <div className="border-t border-sidebar-border mt-4 pt-2 space-y-1">
           {!collapsed && user && (

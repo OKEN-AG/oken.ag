@@ -29,6 +29,7 @@ import OperationDetailPage from "@/pages/OperationDetailPage";
 import GrossToNetReportPage from "@/pages/reports/GrossToNetReportPage";
 import CredorOemPortalPage from "@/pages/portals/CredorOemPortalPage";
 import BackofficePortalPage from "@/pages/portals/BackofficePortalPage";
+import JuridicoPortalPage from "@/pages/portals/JuridicoPortalPage";
 import TomadorPortalPage from "@/pages/portals/TomadorPortalPage";
 import FornecedorPortalPage from "@/pages/portals/FornecedorPortalPage";
 import InvestidorPortalPage from "@/pages/portals/InvestidorPortalPage";
@@ -56,6 +57,11 @@ const portalRoutesByProfile: Record<UserProfile, { path: string; capability: (ty
     path: PORTAL_BY_PROFILE.backoffice.route,
     capability: PORTAL_BY_PROFILE.backoffice.requiredCapability,
     element: <BackofficePortalPage />,
+  },
+  juridico: {
+    path: PORTAL_BY_PROFILE.juridico.route,
+    capability: PORTAL_BY_PROFILE.juridico.requiredCapability,
+    element: <JuridicoPortalPage />,
   },
   tomador: {
     path: PORTAL_BY_PROFILE.tomador.route,
