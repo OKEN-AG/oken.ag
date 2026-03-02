@@ -118,3 +118,13 @@ A evolução seguinte da segurança substitui leitura global por leitura **escop
 
 ---
 
+
+## 8) Ponte legado/core para estabilização da migração (Fase 1.3)
+
+Para suportar operação paralela com legado sem perda de rastreabilidade:
+
+- Trigger `sync_legacy_operation_to_core_deal_trigger` sincroniza escrita de `operations` para `deals` no fluxo atual de criação/atualização.
+- `core_snapshots` são persistidos nos pontos de decisão de `simulacao`, `pedido` (aprovação) e `formalizado`.
+- `business_events` são emitidos com `snapshot_id` e `idempotency_key` determinística por operação/status/timestamp.
+- Logs de reconciliação ficam em `operation_deal_reconciliation_logs` para auditoria de divergências legado x core.
+- View `operations_deals_divergence_dashboard` publica o dashboard SQL de divergência para estabilização da migração.
