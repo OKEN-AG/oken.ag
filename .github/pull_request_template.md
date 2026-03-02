@@ -1,21 +1,39 @@
 ## Resumo
 
-<!-- Descreva brevemente a mudança e o objetivo de negócio/técnico. -->
+<!-- objetivo da mudança, contexto e impacto -->
 
-## Checklist obrigatório — mudanças de domínio
+## Bounded context e boundary
 
-> Preencha este bloco quando a PR alterar entidades, regras de negócio, eventos, APIs ou dados.
+- [ ] Contexto principal identificado
+- [ ] Contextos afetados listados
+- [ ] Sem acesso direto a banco de outro contexto
 
-- [ ] Identifiquei os bounded contexts impactados.
-- [ ] RFC criada/aprovada (ou justifiquei por que não é necessária).
-- [ ] Avaliei impacto em **eventos** (novos, alterados, removidos, versionados).
-- [ ] Avaliei impacto em **APIs** (request/response, contratos, consumers/producers).
-- [ ] Avaliei impacto em **dados** (schema, migrações, backfill, retenção, auditoria).
-- [ ] Atualizei versionamento semântico dos schemas afetados (`MAJOR.MINOR.PATCH`).
-- [ ] Documentei política de compatibilidade (backward/forward) para os contratos alterados.
-- [ ] Defini plano de rollout e rollback para mudanças com risco de incompatibilidade.
+## Contratos e compatibilidade
 
-## Evidências de validação
+- [ ] API/evento/snapshot versionado
+- [ ] Estratégia de backward compatibility definida
+- [ ] Campos críticos validados com testes
 
-- [ ] Testes automatizados relevantes executados.
-- [ ] Verificações manuais/documentais relevantes executadas.
+## Integração e resiliência
+
+- [ ] Timeout + erro + idempotência (fluxo síncrono)
+- [ ] Retry + DLQ + deduplicação (fluxo assíncrono)
+- [ ] Snapshot com `as_of`, versão e origem
+
+## Segurança, compliance e auditoria
+
+- [ ] Revisão de autenticação/autorização
+- [ ] Trilhas de auditoria para operações críticas
+- [ ] Impacto regulatório (financeiro/fiscal/LGPD) revisado
+
+## Blockchain (quando aplicável)
+
+- [ ] Encapsulada em adapter
+- [ ] Core sem dependência hard
+- [ ] Uso explícito: subledger, anchor e/ou rail
+
+## Operação
+
+- [ ] RACI da feature (R/A/C/I)
+- [ ] Runbook/observabilidade atualizados
+- [ ] Rollback/reprocessamento definidos

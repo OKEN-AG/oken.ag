@@ -253,3 +253,164 @@ Toda feature que altere contratos, fluxo de domínio ou integração deve atende
 ## Decisão arquitetural consolidada
 
 A plataforma Oken evolui com **Common Core canônico + integrações desacopladas por Adapters/Wrappers + Interfaces orientadas a produto**, assegurando governança por bounded context, contratos versionados e responsabilidade explícita por domínio.
+
+---
+
+## 7) Arquivos a criar no repositório para estruturar a arquitetura
+
+Para sair do nível conceitual e operacionalizar a arquitetura alvo, recomenda-se criar os artefatos abaixo.
+
+### 7.1 Governança e boundaries
+
+- `docs/architecture/bounded-contexts.md`  
+  Catálogo de contextos, responsabilidades, entidades e eventos por contexto.
+- `docs/architecture/context-map.md`  
+  Mapa de relações entre contextos (upstream/downstream, conformist, ACL, published language).
+- `docs/architecture/raci-matrix.md`  
+  Versão operacional da RACI com owners por squad e fluxo de escalonamento.
+
+### 7.2 Contratos síncronos e assíncronos
+
+- `docs/api/openapi-core.yaml`  
+  Contrato canônico de APIs do Core versionado.
+- `docs/events/catalog.md`  
+  Catálogo de eventos por domínio (nome, produtor, consumidor, versão, idempotência).
+- `docs/schemas/events/*.schema.json`  
+  Schemas JSON versionados dos eventos assíncronos.
+- `docs/schemas/snapshots/*.schema.json`  
+  Schemas de snapshots com `as_of`, versão e rastreabilidade.
+
+### 7.3 Core por domínio
+
+- `docs/domains/identity/README.md`
+- `docs/domains/deals/README.md`
+- `docs/domains/vault/README.md`
+- `docs/domains/rails/README.md`
+- `docs/domains/finance/README.md`
+- `docs/domains/accounting-tax/README.md`
+- `docs/domains/workflow-case/README.md`
+- `docs/domains/data-bi/README.md`
+
+Cada `README.md` de domínio deve conter: escopo, invariantes, agregados, comandos, eventos, integrações e checklist de compliance.
+
+### 7.4 Adapters e Wrappers
+
+- `docs/adapters/README.md`  
+  Padrões de implementação de adapters (timeout, retry, idempotência, observabilidade).
+- `docs/adapters/blockchain-adapter-policy.md`  
+  Política específica para uso opcional de blockchain (subledger/anchor/rail).
+- `docs/wrappers/README.md`  
+  Critérios de uso de wrappers para legados/parceiros e estratégia de migração.
+
+### 7.5 Operação e qualidade arquitetural
+
+- `.github/pull_request_template.md`  
+  Template de PR técnico com checklist arquitetural obrigatório.
+- `docs/runbooks/integration-failure-recovery.md`  
+  Runbook para falhas entre camadas (API/eventos/snapshots).
+- `docs/observability/architecture-slos.md`  
+  SLOs e métricas mínimas por camada e por contrato.
+
+### 7.6 Estrutura mínima sugerida (fase inicial)
+
+Se for necessário priorizar, a ordem mínima recomendada é:
+
+1. `docs/architecture/bounded-contexts.md`
+2. `docs/architecture/context-map.md`
+3. `docs/api/openapi-core.yaml`
+4. `docs/events/catalog.md`
+5. `docs/adapters/blockchain-adapter-policy.md`
+6. `.github/pull_request_template.md`
+
+---
+
+## 8) Plano de desenvolvimento por frentes de trabalho
+
+A seguir, um plano prático para construir os arquivos recomendados, organizado por frentes, com entregáveis, dependências, responsáveis e critérios de pronto.
+
+### 8.1 Frente A — Governança de domínio e boundaries
+
+**Objetivo:** estabilizar ownership, boundaries e regras de interação entre contexts.
+
+**Arquivos-alvo**
+
+- `docs/architecture/bounded-contexts.md`
+- `docs/architecture/context-map.md`
+- `docs/architecture/raci-matrix.md`
+
+**Dependências:** nenhuma (frente fundacional).
+
+### 8.2 Frente B — Contratos de integração (API, eventos, snapshots)
+
+**Objetivo:** versionar e padronizar os contratos entre camadas e contexts.
+
+**Arquivos-alvo**
+
+- `docs/api/openapi-core.yaml`
+- `docs/events/catalog.md`
+- `docs/schemas/events/*.schema.json`
+- `docs/schemas/snapshots/*.schema.json`
+
+**Dependências:** usar `bounded-contexts.md` e `context-map.md` como insumo.
+
+### 8.3 Frente C — Documentação executável dos domínios Core
+
+**Objetivo:** transformar cada domínio em unidade autônoma de evolução.
+
+**Arquivos-alvo**
+
+- `docs/domains/identity/README.md`
+- `docs/domains/deals/README.md`
+- `docs/domains/vault/README.md`
+- `docs/domains/rails/README.md`
+- `docs/domains/finance/README.md`
+- `docs/domains/accounting-tax/README.md`
+- `docs/domains/workflow-case/README.md`
+- `docs/domains/data-bi/README.md`
+
+**Dependências:** Frentes A e B (boundaries e contratos definidos).
+
+### 8.4 Frente D — Adapters e Wrappers (incluindo blockchain)
+
+**Objetivo:** padronizar integração externa sem contaminar o núcleo de domínio.
+
+**Arquivos-alvo**
+
+- `docs/adapters/README.md`
+- `docs/adapters/blockchain-adapter-policy.md`
+- `docs/wrappers/README.md`
+
+**Dependências:** Frente B para alinhar contratos de integração.
+
+### 8.5 Frente E — Operação, PR técnico e observabilidade
+
+**Objetivo:** incorporar governança arquitetural no fluxo diário de desenvolvimento.
+
+**Arquivos-alvo**
+
+- `.github/pull_request_template.md`
+- `docs/runbooks/integration-failure-recovery.md`
+- `docs/observability/architecture-slos.md`
+
+**Dependências:** Frentes B e D (contratos e integração padronizados).
+
+### 8.6 Modelo de execução AI-first (sem cronograma)
+
+Como o desenvolvimento será conduzido por IA, o plano deve ser orientado por **pacotes de trabalho independentes**, com prompts claros, critérios de validação automatizáveis e gates de revisão humana apenas para decisões de negócio/risco.
+
+### 8.7 Backlog de tarefas AI por frente
+
+- Frente A: A1 `bounded-contexts.md`, A2 `context-map.md`, A3 `raci-matrix.md`.
+- Frente B: B1 `openapi-core.yaml`, B2 `events/catalog.md`, B3 schemas de eventos, B4 schemas de snapshots.
+- Frente C: C1-C8 documentação por domínio em `docs/domains/*`.
+- Frente D: D1 padrão de adapters, D2 policy de blockchain, D3 padrão de wrappers.
+- Frente E: E1 template de PR, E2 runbook de falhas, E3 SLOs arquiteturais.
+
+### 8.8 Riscos e mitigação em execução por IA
+
+- **Risco:** documentação desatualizar rapidamente.  
+  **Mitigação:** checklist obrigatório de atualização documental em PR técnico.
+- **Risco:** sobreposição de ownership entre squads.  
+  **Mitigação:** enforce de RACI com único Accountable por decisão.
+- **Risco:** contratos divergirem da implementação real.  
+  **Mitigação:** validação automatizada de OpenAPI/schemas em CI.

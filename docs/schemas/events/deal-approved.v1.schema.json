@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://oken.ag/schemas/events/deal-approved.v1.schema.json",
+  "title": "deal.approved.v1",
+  "type": "object",
+  "required": ["event_id", "occurred_at", "schema_version", "payload"],
+  "properties": {
+    "event_id": { "type": "string", "format": "uuid" },
+    "occurred_at": { "type": "string", "format": "date-time" },
+    "schema_version": { "const": "1.0.0" },
+    "payload": {
+      "type": "object",
+      "required": ["deal_id", "tenant_id", "approved_by"],
+      "properties": {
+        "deal_id": { "type": "string", "format": "uuid" },
+        "tenant_id": { "type": "string", "format": "uuid" },
+        "approved_by": { "type": "string", "format": "uuid" }
+      }
+    }
+  }
+}

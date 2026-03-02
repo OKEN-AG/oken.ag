@@ -1,0 +1,53 @@
+openapi: 3.0.3
+info:
+  title: Oken Common Core API
+  version: 1.0.0
+servers:
+  - url: https://api.oken.local/core/v1
+paths:
+  /deals/{deal_id}/approve:
+    post:
+      summary: Aprova um deal
+      operationId: approveDeal
+      parameters:
+        - in: header
+          name: Idempotency-Key
+          required: true
+          schema: { type: string }
+        - in: path
+          name: deal_id
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [approved_by]
+              properties:
+                approved_by: { type: string, format: uuid }
+      responses:
+        '202': { description: Deal aprovado para processamento assíncrono }
+        '409': { description: Transição de estado inválida }
+  /vault/snapshots/{snapshot_id}:
+    get:
+      summary: Consulta snapshot consolidado
+      operationId: getSnapshot
+      parameters:
+        - in: path
+          name: snapshot_id
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Snapshot encontrado
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [snapshot_id, as_of, schema_version]
+                properties:
+                  snapshot_id: { type: string }
+                  as_of: { type: string, format: date-time }
+                  schema_version: { type: string }
