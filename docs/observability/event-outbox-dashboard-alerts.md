@@ -2,11 +2,12 @@
 
 ## Fonte dos dados
 
-Todos os painéis abaixo partem da view `public.event_outbox_operational_metrics` e das tabelas:
+Todos os painéis abaixo partem da view `public.event_outbox_operational_metrics` e das tabelas/views:
 
 - `public.event_outbox`
 - `public.event_outbox_publish_attempts`
 - `public.event_outbox_dlq`
+- `public.event_outbox_destination_failures_1h`
 
 ## Dashboard (Grafana / Supabase SQL)
 
@@ -48,7 +49,28 @@ select measured_at, avg_latency_ms, latency_p95_ms
 from public.event_outbox_operational_metrics;
 ```
 
-### 4) Taxa de retry (1h)
+### 4) Tempo de publicação médio e p95 (1h)
+
+**Métrica:** `avg_publish_time_ms` e `publish_time_p95_ms` (tempo desde criação no outbox até tentativa de publicação).  
+**Query sugerida:**
+
+```sql
+select measured_at, avg_publish_time_ms, publish_time_p95_ms
+from public.event_outbox_operational_metrics;
+```
+
+### 5) Falhas por destino (1h)
+
+**Métrica:** tentativas com `retry` ou `dead_lettered` por `destination`.  
+**Query sugerida:**
+
+```sql
+select destination, failed_attempts, total_attempts, failure_rate, last_attempt_at
+from public.event_outbox_destination_failures_1h
+order by failed_attempts desc;
+```
+
+### 6) Taxa de retry (1h)
 
 **Métrica:** `retry_rate`.  
 **Query sugerida:**
@@ -76,10 +98,17 @@ from public.event_outbox_operational_metrics;
 
 ### Alerta C — tempo médio de publicação elevado
 
-- **Nome:** `event_outbox_publish_latency_high`
-- **Condição:** `avg_latency_ms > 2000` por 15 minutos
+- **Nome:** `event_outbox_publish_time_high`
+- **Condição:** `avg_publish_time_ms > 120000` por 15 minutos
 - **Severidade:** warning
-- **Ação:** validar latência de rede, timeout dos destinos e saturação de worker.
+- **Ação:** validar backlog, concorrência do worker e saturação de banco.
+
+### Alerta D — falhas por destino elevadas
+
+- **Nome:** `event_outbox_destination_failure_rate_high`
+- **Condição:** `failure_rate > 0.05` por destino por 15 minutos
+- **Severidade:** warning
+- **Ação:** acionar time dono do destino e validar contrato/payload.
 
 ## Exemplo de regra (Prometheus-like)
 
@@ -99,8 +128,14 @@ groups:
         labels:
           severity: critical
 
-      - alert: event_outbox_publish_latency_high
-        expr: event_outbox_avg_latency_ms_1h > 2000
+      - alert: event_outbox_publish_time_high
+        expr: event_outbox_avg_publish_time_ms_1h > 120000
+        for: 15m
+        labels:
+          severity: warning
+
+      - alert: event_outbox_destination_failure_rate_high
+        expr: event_outbox_destination_failure_rate_1h > 0.05
         for: 15m
         labels:
           severity: warning
