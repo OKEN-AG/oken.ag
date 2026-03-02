@@ -128,3 +128,24 @@ Para suportar operação paralela com legado sem perda de rastreabilidade:
 - `business_events` são emitidos com `snapshot_id` e `idempotency_key` determinística por operação/status/timestamp.
 - Logs de reconciliação ficam em `operation_deal_reconciliation_logs` para auditoria de divergências legado x core.
 - View `operations_deals_divergence_dashboard` publica o dashboard SQL de divergência para estabilização da migração.
+
+---
+
+## 9) Wrappers operacionais (Fase 1.4)
+
+Para transformar wrappers em fronteiras técnicas reais sem contaminar o Common Core:
+
+- Catálogo técnico formal em `wrapper_boundaries` com os wrappers oficiais:
+  - `oken_tech_servicing`
+  - `platform_88`
+  - `gestao`
+  - `okensec`
+- Feature flags/capabilities por `tenant + wrapper` em `tenant_wrapper_capabilities`.
+- Segregação obrigatória por wrapper para:
+  - relatórios (`wrapper_reports`)
+  - trilhas (`wrapper_audit_trails`)
+  - obrigações regulatórias (`wrapper_regulatory_obligations`)
+- Regras regulatórias restritas por wrapper/tenant em `wrapper_regulatory_rules`.
+- Função `current_wrapper()` baseada em claim JWT `wrapper`, aplicada em políticas RLS para impedir acesso cruzado entre wrappers do mesmo tenant.
+
+> Resultado: o Common Core continua neutro (entidades/eventos/snapshots canônicos), enquanto a semântica regulatória fica encapsulada em tabelas wrapper-aware.
