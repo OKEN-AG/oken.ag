@@ -1,0 +1,16 @@
+{
+  "endpoint": "GET /v1/investors",
+  "response": {
+    "data": [
+      {
+        "id": "inv_001",
+        "name": "Fundo Alpha",
+        "status": "active"
+      }
+    ],
+    "page_info": {
+      "next_cursor": null,
+      "has_next_page": false
+    }
+  }
+}

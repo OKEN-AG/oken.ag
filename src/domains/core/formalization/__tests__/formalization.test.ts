@@ -3,6 +3,9 @@ import {
   ClauseLibrary,
   DraftVersioningService,
   TemplateRegistry,
+  canTransitionDocumentState,
+  generateDocumentFromSnapshot,
+  isDocumentDone,
   normalizeDocumentState,
   validateMinimumDocumentRule,
 } from '@/domains/core/formalization';
@@ -82,5 +85,43 @@ describe('formalization core', () => {
 
     expect(result.canDisburse).toBe(false);
     expect(result.missing).toEqual(['cpr']);
+  });
+
+  it('valida transições permitidas da máquina de estados', () => {
+    expect(canTransitionDocumentState('draft', 'aprovado')).toBe(true);
+    expect(canTransitionDocumentState('aprovado', 'registrado')).toBe(false);
+  });
+
+  it('gera documento com payload congelado a partir de core snapshot', () => {
+    const snapshot = {
+      id: 'snap-1',
+      payload: { operationId: 'op-1', amount: 10 },
+      payloadHash: 'hash-1',
+      createdAt: new Date().toISOString(),
+    };
+
+    const draft = generateDocumentFromSnapshot(snapshot, {
+      id: 'tv-1',
+      body: 'template body',
+      versionNumber: 1,
+    });
+
+    expect(draft.snapshotId).toBe('snap-1');
+    expect(draft.payloadFrozen).toEqual(snapshot.payload);
+    expect(draft.contentHash).toBe('hash-1');
+  });
+
+  it('expõe document_done para gate de desembolso', () => {
+    const required = [
+      { docType: 'termo_barter', minimumState: 'assinado' as const },
+      { docType: 'cpr', minimumState: 'assinado' as const },
+    ];
+
+    const existing = [
+      { doc_type: 'termo_barter', status: 'assinado' },
+      { doc_type: 'cpr', status: 'assinado' },
+    ];
+
+    expect(isDocumentDone(required, existing)).toBe(true);
   });
 });
