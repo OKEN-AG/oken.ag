@@ -1093,407 +1093,108 @@ export default function OperationStepperPage() {
         <motion.div key={currentStepDef.id} initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} transition={{ duration: 0.15 }}>
 
           {/* ═══ CONTEXT STEP ═══ */}
-          <ContextStep isActive={currentStepDef.id === 'context'}>
-            <div className="space-y-4">
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                <div className="glass-card p-4 lg:col-span-2">
-                  <label className="stat-label">Campanha</label>
-                  <div className="flex items-center gap-2 mt-1">
-                    <Select value={selectedCampaignId} onValueChange={v => { setSelectedCampaignId(v); setSelectedProducts(new Map()); }}>
-                      <SelectTrigger className="bg-muted border-border text-foreground flex-1"><SelectValue placeholder="Selecione..." /></SelectTrigger>
-                      <SelectContent>
-                        {activeCampaigns?.map(c => <SelectItem key={c.id} value={c.id}>{c.name} ({c.season})</SelectItem>)}
-                      </SelectContent>
-                    </Select>
-                    {selectedCampaignId && (
-                      <Button variant="outline" size="icon" className="shrink-0 h-9 w-9 border-border" onClick={() => setShowCampaignPreview(true)} title="Ver parâmetros da campanha">
-                        <Eye className="w-4 h-4" />
-                      </Button>
-                    )}
-                  </div>
-                </div>
-                <div className="glass-card p-4">
-                  <label className="stat-label">Área (HA) / Quantidade de Combos</label>
-                  <div className="flex items-center gap-2 mt-1">
-                    <NumericInput value={area} onChange={v => setArea(v)} min={1} decimals={0} className="bg-muted border-border text-foreground flex-1" />
-                    <span className="text-xs text-muted-foreground">×</span>
-                    <NumericInput value={comboQty} onChange={v => setComboQty(Math.max(1, v))} min={1} decimals={0} className="bg-muted border-border text-foreground w-20" />
-                  </div>
-                  {comboQty > 1 && <p className="text-[11px] text-info mt-1">Área efetiva: {effectiveArea.toLocaleString('pt-BR')} ha ({comboQty}× combos)</p>}
-                </div>
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                <div className="glass-card p-4">
-                  <label className="stat-label">Nome do Cliente</label>
-                  {hasWhitelist ? (
-                    <Select value={clientDocument} onValueChange={v => {
-                      const entry = clientWhitelistFull?.find(c => c.document === v);
-                      setClientDocument(formatCpfCnpj(v));
-                      if (entry) setClientName(entry.name);
-                    }}>
-                      <SelectTrigger className="mt-1 bg-muted border-border text-foreground"><SelectValue placeholder="Selecione o cliente..." /></SelectTrigger>
-                      <SelectContent className="max-h-[300px]">
-                        {(clientWhitelistFull || []).map(c => (
-                          <SelectItem key={c.document} value={c.document}>{c.name} ({formatCpfCnpj(c.document)})</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  ) : (
-                    <Input value={clientName} onChange={e => setClientName(e.target.value)} placeholder="Produtor/Empresa" className="mt-1 bg-muted border-border text-foreground" />
-                  )}
-                </div>
-                <div className="glass-card p-4">
-                  <label className="stat-label">CPF/CNPJ</label>
-                  {hasWhitelist ? (
-                    <Input value={clientDocument} readOnly className="mt-1 bg-muted border-border text-foreground opacity-70 cursor-not-allowed" />
-                  ) : (
-                    <>
-                      <Input value={clientDocument} onChange={e => setClientDocument(formatCpfCnpj(e.target.value))} placeholder="Documento" className={`mt-1 bg-muted border-border text-foreground ${!documentValid ? 'border-destructive ring-1 ring-destructive' : ''}`} />
-                      {!documentValid && <p className="text-[11px] text-destructive mt-1">{documentDigits.length === 11 ? 'CPF inválido' : 'CNPJ inválido'}</p>}
-                    </>
-                  )}
-                </div>
-                <div className="glass-card p-4">
-                  <label className="stat-label">Tipo</label>
-                  <Select value={clientType} onValueChange={v => setClientType(v as 'PF' | 'PJ')}>
-                    <SelectTrigger className="mt-1 bg-muted border-border text-foreground"><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="PF">Pessoa Física</SelectItem>
-                      <SelectItem value="PJ">Pessoa Jurídica</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="glass-card p-4">
-                  <label className="stat-label">Inscrição Estadual</label>
-                  <Input value={clientIE} onChange={e => setClientIE(e.target.value)} placeholder="IE" className="mt-1 bg-muted border-border text-foreground" />
-                </div>
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                <div className="glass-card p-4">
-                  <label className="stat-label">Estado (UF)</label>
-                  <Select value={clientState} onValueChange={v => { setClientState(v); setClientCity(''); setClientCityCode(''); }}>
-                    <SelectTrigger className="mt-1 bg-muted border-border text-foreground"><SelectValue placeholder="Selecione o estado" /></SelectTrigger>
-                    <SelectContent className="bg-popover z-50 max-h-[300px]">
-                      {eligibleStates.map(uf => <SelectItem key={uf} value={uf}>{uf}</SelectItem>)}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="glass-card p-4">
-                  <label className="stat-label">Cidade</label>
-                  <Select value={clientCityCode} onValueChange={v => { setClientCityCode(v); const found = eligibleCitiesForState.find(m => m.ibge === v); setClientCity(found?.name || ''); }} disabled={!clientState}>
-                    <SelectTrigger className="mt-1 bg-muted border-border text-foreground"><SelectValue placeholder={clientState ? 'Selecione a cidade' : 'Selecione o estado primeiro'} /></SelectTrigger>
-                    <SelectContent className="bg-popover z-50 max-h-[300px]">
-                      {eligibleCitiesForState.map(m => <SelectItem key={m.ibge} value={m.ibge}>{m.name}</SelectItem>)}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="glass-card p-4">
-                  <label className="stat-label">E-mail</label>
-                  <Input type="email" value={clientEmail} onChange={e => setClientEmail(e.target.value)} placeholder="email@..." className="mt-1 bg-muted border-border text-foreground" />
-                </div>
-                <div className="glass-card p-4">
-                  <label className="stat-label">Telefone</label>
-                  <Input value={clientPhone} onChange={e => setClientPhone(e.target.value)} placeholder="(xx) xxxxx-xxxx" className="mt-1 bg-muted border-border text-foreground" />
-                </div>
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="glass-card p-4">
-                  <label className="stat-label">Endereço de Entrega</label>
-                  <Input value={deliveryAddress} onChange={e => setDeliveryAddress(e.target.value)} placeholder="Rua, nº, bairro, CEP" className="mt-1 bg-muted border-border text-foreground" />
-                </div>
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div className="glass-card p-4">
-                  <label className="stat-label">Distribuidor / Canal</label>
-                  <Select value={selectedDistributorId} onValueChange={setSelectedDistributorId}>
-                    <SelectTrigger className="mt-1 bg-muted border-border text-foreground"><SelectValue placeholder="Selecione..." /></SelectTrigger>
-                    <SelectContent>{(campaignDistributors || []).map((d: any) => <SelectItem key={d.id} value={d.id}>{d.short_name || d.full_name} ({d.cnpj})</SelectItem>)}</SelectContent>
-                  </Select>
-                  <p className="text-[11px] text-muted-foreground mt-2">Segmento canal: {channelSegmentName || '—'} · Margem: {channelMarginPercent}% · Ajuste: {channelAdjustmentPercent}%</p>
-                </div>
-                <div className="glass-card p-4">
-                  <label className="stat-label">Segmento Comercial</label>
-                  <Select value={segment} onValueChange={setSegment}>
-                    <SelectTrigger className="mt-1 bg-muted border-border text-foreground"><SelectValue placeholder="Selecione..." /></SelectTrigger>
-                    <SelectContent>{segmentOptions.map(o => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}</SelectContent>
-                  </Select>
-                </div>
-                <div className="glass-card p-4">
-                  <label className="stat-label">Commodity</label>
-                  <Select value={selectedCommodity} onValueChange={setSelectedCommodity}>
-                    <SelectTrigger className="mt-1 bg-muted border-border text-foreground"><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      {commodityOptions.map(option => (
-                        <SelectItem key={option.value} value={option.value}>
-                          {option.label}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="glass-card p-4">
-                  <label className="stat-label">Vencimento</label>
-                  <Select value={String(dueMonths)} onValueChange={v => setDueMonths(Number(v))} disabled={dueDateOptions.length === 0}>
-                    <SelectTrigger className="mt-1 bg-muted border-border text-foreground"><SelectValue placeholder={dueDateOptions.length === 0 ? 'Sem vencimentos configurados' : undefined} /></SelectTrigger>
-                    <SelectContent>{dueDateOptions.map(o => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}</SelectContent>
-                  </Select>
-                  {dueDateOptions.length === 0 && <p className="text-[11px] text-destructive mt-2">Campanha sem vencimentos configurados.</p>}
-                </div>
-              </div>
-              {/* Eligibility flags */}
-              {eligibility && !eligibility.eligible && (
-                <div className="space-y-1">
-                  {eligibility.warnings.map((w, i) => (
-                    <div key={i} className={`flex items-center gap-2 text-xs ${eligibility.blocked ? 'text-destructive bg-destructive/10' : 'text-warning bg-warning/10'} border rounded-md px-3 py-2`}>
-                      <AlertCircle className="w-3.5 h-3.5 shrink-0" /> {w}
-                      {eligibility.blocked && <span className="ml-auto font-semibold">⛔ BLOQUEANTE</span>}
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          </ContextStep>
+          <ContextStep
+            isActive={currentStepDef.id === 'context'}
+            selectedCampaignId={selectedCampaignId}
+            onCampaignChange={v => { setSelectedCampaignId(v); setSelectedProducts(new Map()); }}
+            activeCampaigns={activeCampaigns || []}
+            onShowCampaignPreview={() => setShowCampaignPreview(true)}
+            area={area}
+            onAreaChange={setArea}
+            comboQty={comboQty}
+            onComboQtyChange={setComboQty}
+            clientName={clientName}
+            onClientNameChange={setClientName}
+            clientDocument={clientDocument}
+            onClientDocumentChange={setClientDocument}
+            documentValid={documentValid}
+            clientType={clientType}
+            onClientTypeChange={setClientType}
+            clientEmail={clientEmail}
+            onClientEmailChange={setClientEmail}
+            clientPhone={clientPhone}
+            onClientPhoneChange={setClientPhone}
+            clientIE={clientIE}
+            onClientIEChange={setClientIE}
+            deliveryAddress={deliveryAddress}
+            onDeliveryAddressChange={setDeliveryAddress}
+            clientState={clientState}
+            onClientStateChange={setClientState}
+            clientCity={clientCity}
+            clientCityCode={clientCityCode}
+            onCitySelect={(city, code) => { setClientCity(city); setClientCityCode(code); }}
+            eligibleStates={eligibleStates}
+            eligibleCitiesForState={eligibleCitiesForState}
+            selectedDistributorId={selectedDistributorId}
+            onDistributorChange={setSelectedDistributorId}
+            campaignDistributors={campaignDistributors || []}
+            channelSegmentName={channelSegmentName}
+            channelMarginPercent={channelMarginPercent}
+            channelAdjustmentPercent={channelAdjustmentPercent}
+            segment={segment}
+            onSegmentChange={setSegment}
+            segmentOptions={segmentOptions}
+            selectedCommodity={selectedCommodity}
+            onCommodityChange={setSelectedCommodity}
+            commodityOptions={commodityOptions}
+            dueMonths={dueMonths}
+            onDueMonthsChange={setDueMonths}
+            dueDateOptions={dueDateOptions}
+            eligibility={eligibility}
+            hasWhitelist={hasWhitelist}
+            clientWhitelistFull={clientWhitelistFull || null}
+            formatCpfCnpj={formatCpfCnpj}
+          />
 
           {/* ═══ ORDER STEP ═══ */}
-          <OrderStep isActive={currentStepDef.id === 'order'}>
-            <div className="space-y-4">
-              {/* Sticky discount bar + mode toggle */}
-              <div className="glass-card p-4 space-y-3 sticky top-0 z-10 backdrop-blur-md">
-                <div className="flex items-center justify-between flex-wrap gap-2">
-                  <div className="flex items-center gap-3 flex-wrap">
-                    <span className="text-sm font-semibold text-foreground">Modo:</span>
-                    <div className="flex rounded-md border border-border overflow-hidden">
-                      <button onClick={() => setQuantityMode('dose')} className={`px-3 py-1 text-xs font-medium transition-colors ${quantityMode === 'dose' ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground hover:bg-muted/80'}`}>Dose/ha</button>
-                      <button onClick={() => {
-                        if (quantityMode !== 'livre') {
-                          const nextFree = new Map(freeQuantities);
-                          selectedProducts.forEach((dose, id) => {
-                            if (!nextFree.get(id)) {
-                              const sel = simResult?.selections?.find((s: any) => s.productId === id);
-                              const vol = sel?.roundedQuantity ?? Math.ceil(effectiveArea * dose);
-                              nextFree.set(id, vol);
-                            }
-                          });
-                          setFreeQuantities(nextFree);
-                        }
-                        setQuantityMode('livre');
-                      }} className={`px-3 py-1 text-xs font-medium transition-colors ${quantityMode === 'livre' ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground hover:bg-muted/80'}`}>Qtd Livre</button>
-                    </div>
-                    <div className="flex items-center gap-2 border-l border-border pl-3">
-                      <div className="flex items-center gap-1">
-                        <span className="text-[10px] text-muted-foreground uppercase tracking-wider">ha</span>
-                        <Button size="icon" variant="outline" className="h-6 w-6 rounded" onClick={() => setArea(a => Math.max(1, a - 50))} disabled={area <= 1}><Minus className="w-3 h-3" /></Button>
-                        <Input type="number" min={1} value={area} onChange={e => setArea(Math.max(1, Number(e.target.value) || 1))} className="h-6 w-16 text-xs font-mono text-center px-1 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none" />
-                        <Button size="icon" variant="outline" className="h-6 w-6 rounded" onClick={() => setArea(a => a + 50)}><Plus className="w-3 h-3" /></Button>
-                      </div>
-                      <span className="text-xs text-muted-foreground font-bold">×</span>
-                      <div className="flex items-center gap-1">
-                        <span className="text-[10px] text-muted-foreground uppercase tracking-wider">Combos</span>
-                        <Button size="icon" variant="outline" className="h-6 w-6 rounded" onClick={() => setComboQty(q => Math.max(1, q - 1))} disabled={comboQty <= 1}><Minus className="w-3 h-3" /></Button>
-                        <Input type="number" min={1} value={comboQty} onChange={e => setComboQty(Math.max(1, Number(e.target.value) || 1))} className="h-6 w-12 text-xs font-mono text-center px-1 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none" />
-                        <Button size="icon" variant="outline" className="h-6 w-6 rounded" onClick={() => setComboQty(q => q + 1)}><Plus className="w-3 h-3" /></Button>
-                      </div>
-                      <span className="text-xs text-muted-foreground font-bold">=</span>
-                      <span className="text-sm font-mono font-bold text-success">{effectiveArea} ha</span>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    {selectedProducts.size > 0 && (
-                      <Button size="sm" variant="ghost" onClick={clearOrder} className="text-destructive text-xs h-7 gap-1">
-                        <X className="w-3 h-3" /> Limpar Pedido
-                      </Button>
-                    )}
-                    {combos.length > 0 && (
-                      <span className="font-mono text-sm text-success font-bold">{activatedDiscount.toFixed(1)}% / {maxDiscount}%{complementaryDiscount > 0 && <span className="ml-2 text-info">+ {complementaryDiscount.toFixed(1)}%</span>}</span>
-                    )}
-                  </div>
-                </div>
-                {combos.length > 0 && (
-                  <>
-                    <Progress value={discountProgress} className="h-2.5 bg-muted" />
-                    {/* All available combos sorted by discount */}
-                    <div className="flex flex-wrap gap-1.5 mt-1">
-                      {[...comboActivations]
-                        .sort((a, b) => b.discountPercent - a.discountPercent)
-                        .map(ca => {
-                          const comboDef = combos.find(c => c.id === ca.comboId);
-                          const comboProducts = comboDef?.products || [];
-                          const missingRefs = ca.applied ? [] : comboProducts
-                            .filter((cp: any) => !selections.some(s => (s.ref || '').toUpperCase().trim() === (cp.ref || '').toUpperCase().trim()))
-                            .map((cp: any) => {
-                              const prod = products.find(p => (p.ref || '').toUpperCase().trim() === (cp.ref || '').toUpperCase().trim());
-                              return prod?.name || cp.ref;
-                            });
-                          const handleComboClick = () => {
-                            if (ca.applied) return;
-                            // Batch all products into a single state update
-                            const nextProducts = new Map(selectedProducts);
-                            const nextFree = new Map(freeQuantities);
-                            for (const cp of comboProducts) {
-                              const ref = (cp.ref || '').toUpperCase().trim();
-                              const prod = products.find(p => (p.ref || '').toUpperCase().trim() === ref);
-                              if (!prod) continue;
-                              const minDose = cp.minDosePerHa || prod.minDose || prod.dosePerHectare;
-                              if (!nextProducts.has(prod.id)) {
-                                nextProducts.set(prod.id, minDose);
-                                if (quantityMode === 'livre') {
-                                  nextFree.set(prod.id, Math.ceil(area * minDose));
-                                }
-                              } else {
-                                const currentDose = nextProducts.get(prod.id) ?? 0;
-                                if (currentDose < minDose) {
-                                  nextProducts.set(prod.id, minDose);
-                                  if (quantityMode === 'livre') {
-                                    nextFree.set(prod.id, Math.ceil(area * minDose));
-                                  }
-                                }
-                              }
-                            }
-                            setSelectedProducts(nextProducts);
-                            setFreeQuantities(nextFree);
-                          };
-                          return (
-                            <button
-                              key={ca.comboId}
-                              onClick={handleComboClick}
-                              title={ca.applied ? 'Ativado' : `Clique para adicionar: ${missingRefs.join(', ')}`}
-                              className={`text-[10px] px-2 py-0.5 rounded-full font-medium transition-colors ${
-                                ca.applied
-                                  ? 'bg-success/15 text-success border border-success/30 cursor-default'
-                                  : 'bg-muted text-muted-foreground border border-border hover:bg-primary/10 hover:text-primary hover:border-primary/30 cursor-pointer'
-                              }`}
-                            >
-                              {ca.comboName} ({ca.discountPercent}%)
-                              {ca.applied ? ' ✓' : ' +'}
-                            </button>
-                          );
-                        })}
-                    </div>
-                    {/* Combo recommendations — clickable to add product */}
-                    {comboRecommendations.length > 0 && (
-                      <div className="space-y-1">
-                        {comboRecommendations.map((rec, i) => (
-                          <button key={i} onClick={() => {
-                            if (rec.productId && !selectedProducts.has(rec.productId)) {
-                              toggleProduct(rec.productId, rec.suggestedDose);
-                              if (quantityMode === 'livre' && rec.suggestedQty) {
-                                updateFreeQuantity(rec.productId, rec.suggestedQty);
-                              }
-                            }
-                          }} className="flex items-center gap-2 text-xs text-info bg-info/10 border border-info/20 rounded-md px-3 py-1.5 w-full text-left hover:bg-info/20 transition-colors cursor-pointer">
-                            <Lightbulb className="w-3.5 h-3.5 shrink-0" />
-                            <span className="flex-1">{rec.action}</span>
-                            {rec.productId && !selectedProducts.has(rec.productId) && <Plus className="w-3.5 h-3.5 shrink-0 text-success" />}
-                          </button>
-                        ))}
-                      </div>
-                    )}
-                  </>
-                )}
-              </div>
-              {/* Product grid — grouped by REF */}
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-                {productGroups.map(group => {
-                  const selectedVariants = group.variants.filter(v => selectedProducts.has(v.id));
-                  const isSelected = selectedVariants.length > 0;
-                  const primaryVariant = selectedVariants[0] || group.variants[0];
-                  const dose = selectedProducts.get(primaryVariant.id) ?? group.defaultDose;
-                  const simPricing = simResult?.pricingResults?.find((p: any) => group.variants.some(v => v.id === p.productId));
-                  const displayPrice = simPricing?.normalizedPrice ?? group.pricePerUnit;
-                  return (
-                    <div key={group.ref} className={`glass-card p-4 cursor-pointer transition-all ${isSelected ? 'glow-border' : 'hover:border-muted-foreground/30'}`} onClick={() => !isSelected && toggleProduct(group.variants[0].id)}>
-                      <div className="flex items-center justify-between mb-1">
-                        <span className="text-sm font-semibold text-foreground">{group.ref}</span>
-                        {isSelected ? <Button size="sm" variant="ghost" onClick={e => { e.stopPropagation(); toggleProduct(primaryVariant.id); }} className="text-destructive h-6 w-6 p-0"><Minus className="w-3 h-3" /></Button>
-                          : <Button size="sm" variant="ghost" className="text-success h-6 w-6 p-0"><Plus className="w-3 h-3" /></Button>}
-                      </div>
-                      <div className="text-xs text-muted-foreground">{group.category} — {formatCurrency(displayPrice)}/{group.unitType}</div>
-                      {isSelected && (
-                        <div className="mt-2 pt-2 border-t border-border space-y-2" onClick={e => e.stopPropagation()}>
-                          {quantityMode === 'dose' ? (
-                            <div className="flex items-center gap-1">
-                              <label className="text-xs text-muted-foreground w-24 shrink-0">{isPerAreaProduct(primaryVariant) ? 'Dose/ha:' : 'Quantidade:'}</label>
-                              <Button size="icon" variant="outline" className="h-7 w-7 shrink-0" onClick={() => updateDoseForRef(group.ref, Math.max(0, dose - 0.1))}><Minus className="w-3 h-3" /></Button>
-                              <NumericInput value={dose} onChange={v => updateDoseForRef(group.ref, v)} decimals={2} className="h-7 bg-muted border-border text-xs text-foreground" />
-                              <Button size="icon" variant="outline" className="h-7 w-7 shrink-0" onClick={() => updateDoseForRef(group.ref, dose + 0.1)}><Plus className="w-3 h-3" /></Button>
-                            </div>
-                          ) : (
-                            <div className="flex items-center gap-1">
-                              <label className="text-xs text-muted-foreground w-16 shrink-0">Qtd ({group.unitType}):</label>
-                              <Button size="icon" variant="outline" className="h-7 w-7 shrink-0" onClick={() => updateFreeQuantity(primaryVariant.id, Math.max(0, (freeQuantities.get(primaryVariant.id) || 0) - 1))}><Minus className="w-3 h-3" /></Button>
-                              <NumericInput value={freeQuantities.get(primaryVariant.id) || 0} onChange={v => updateFreeQuantity(primaryVariant.id, v)} decimals={0} placeholder="0" className="h-7 bg-muted border-border text-xs text-foreground" />
-                              <Button size="icon" variant="outline" className="h-7 w-7 shrink-0" onClick={() => updateFreeQuantity(primaryVariant.id, (freeQuantities.get(primaryVariant.id) || 0) + 1)}><Plus className="w-3 h-3" /></Button>
-                            </div>
-                          )}
-                          {/* Packaging variants */}
-                          <div className="space-y-1.5">
-                            <div className="flex items-center justify-between">
-                              <span className="text-[10px] font-medium text-muted-foreground uppercase">Embalagem</span>
-                              {group.variants.length > 1 && selectedVariants.length < group.variants.length && (
-                                <button className="text-[10px] text-primary hover:underline" onClick={() => {
-                                  const unselected = group.variants.find(v => !selectedProducts.has(v.id));
-                                  if (unselected) addPackagingVariant(group.ref, unselected.id);
-                                }}>+ Dividir</button>
-                              )}
-                            </div>
-                            {selectedVariants.map(variant => {
-                              const sel = selections.find(s => s.productId === variant.id);
-                              const selFresh = sel && sel.areaHectares === effectiveArea ? sel : undefined;
-                              const totalQty = selFresh?.roundedQuantity ?? (quantityMode === 'livre' ? (freeQuantities.get(variant.id) || 0) : Math.ceil(effectiveArea * dose));
-                              return (
-                                <div key={variant.id} className="bg-muted/50 rounded p-2 space-y-1">
-                                  <div className="flex items-center justify-between">
-                                    <span className="text-[11px] font-medium text-foreground">{getPackageLabel(variant)}</span>
-                                    {selectedVariants.length > 1 && (
-                                      <button onClick={() => removePackagingVariant(group.ref, variant.id)} className="text-destructive hover:text-destructive/80"><X className="w-3 h-3" /></button>
-                                    )}
-                                  </div>
-                                  {selectedVariants.length > 1 && (
-                                    <div className="flex items-center gap-1">
-                                      <label className="text-[10px] text-muted-foreground shrink-0">Qtd ({variant.unitType}):</label>
-                                      <Button size="icon" variant="outline" className="h-6 w-6 shrink-0" onClick={() => updateFreeQuantity(variant.id, Math.max(0, (freeQuantities.get(variant.id) || totalQty) - 1))}><Minus className="w-2.5 h-2.5" /></Button>
-                                      <NumericInput value={freeQuantities.get(variant.id) || totalQty} onChange={v => updateFreeQuantity(variant.id, v)} decimals={0} className="h-6 bg-background border-border text-[11px] text-foreground flex-1" />
-                                      <Button size="icon" variant="outline" className="h-6 w-6 shrink-0" onClick={() => updateFreeQuantity(variant.id, (freeQuantities.get(variant.id) || totalQty) + 1)}><Plus className="w-2.5 h-2.5" /></Button>
-                                    </div>
-                                  )}
-                                  <div className="grid grid-cols-3 gap-1 text-[10px]">
-                                    <div className="text-center"><span className="text-muted-foreground">Vol</span><div className="font-mono text-foreground">{selFresh?.roundedQuantity?.toFixed(0) ?? totalQty}</div></div>
-                                    <div className="text-center"><span className="text-muted-foreground">Cx</span><div className="font-mono text-foreground">{selFresh?.boxes ?? 0}</div></div>
-                                    <div className="text-center"><span className="text-muted-foreground">Plt</span><div className="font-mono text-foreground">{selFresh?.pallets ?? 0}</div></div>
-                                  </div>
-                                </div>
-                              );
-                            })}
-                            {/* Swap packaging (single variant mode) */}
-                            {selectedVariants.length === 1 && group.variants.length > 1 && (
-                              <div className="flex flex-wrap gap-1 mt-1">
-                                {group.variants.filter(v => !selectedProducts.has(v.id)).map(v => (
-                                  <button key={v.id} onClick={() => {
-                                    const next = new Map(selectedProducts);
-                                    const nextFree = new Map(freeQuantities);
-                                    const currentId = selectedVariants[0].id;
-                                    const currentDose = next.get(currentId) || group.defaultDose;
-                                    const currentQty = nextFree.get(currentId);
-                                    next.delete(currentId); nextFree.delete(currentId);
-                                    next.set(v.id, currentDose);
-                                    if (currentQty !== undefined) nextFree.set(v.id, currentQty);
-                                    setSelectedProducts(next);
-                                    setFreeQuantities(nextFree);
-                                  }} className="text-[10px] px-2 py-0.5 rounded bg-muted border border-border text-muted-foreground hover:bg-primary/10 hover:text-primary transition-colors">
-                                    {getPackageLabel(v)}
-                                  </button>
-                                ))}
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          </OrderStep>
+          <OrderStep
+            isActive={currentStepDef.id === 'order'}
+            area={area}
+            onAreaChange={setArea}
+            comboQty={comboQty}
+            onComboQtyChange={setComboQty}
+            effectiveArea={effectiveArea}
+            quantityMode={quantityMode}
+            onQuantityModeChange={setQuantityMode}
+            onSwitchToFreeMode={() => {
+              if (quantityMode !== 'livre') {
+                const nextFree = new Map(freeQuantities);
+                selectedProducts.forEach((dose, id) => {
+                  if (!nextFree.get(id)) {
+                    const sel = simResult?.selections?.find((s: any) => s.productId === id);
+                    const vol = sel?.roundedQuantity ?? Math.ceil(effectiveArea * dose);
+                    nextFree.set(id, vol);
+                  }
+                });
+                setFreeQuantities(nextFree);
+              }
+              setQuantityMode('livre');
+            }}
+            productGroups={productGroups}
+            selectedProducts={selectedProducts}
+            freeQuantities={freeQuantities}
+            products={products}
+            combos={combos}
+            comboActivations={comboActivations}
+            maxDiscount={maxDiscount}
+            activatedDiscount={activatedDiscount}
+            complementaryDiscount={complementaryDiscount}
+            discountProgress={discountProgress}
+            comboRecommendations={comboRecommendations}
+            selections={selections}
+            simResult={simResult}
+            formatCurrency={formatCurrency}
+            toggleProduct={toggleProduct}
+            clearOrder={clearOrder}
+            updateDoseForRef={updateDoseForRef}
+            updateFreeQuantity={updateFreeQuantity}
+            addPackagingVariant={addPackagingVariant}
+            removePackagingVariant={removePackagingVariant}
+            getPackageLabel={getPackageLabel}
+            isPerAreaProduct={isPerAreaProduct}
+            setSelectedProducts={setSelectedProducts}
+            setFreeQuantities={setFreeQuantities}
+          />
 
           {/* ═══ SIMULATION STEP ═══ */}
           {/* Discount never shown per product — only total in footer */}
