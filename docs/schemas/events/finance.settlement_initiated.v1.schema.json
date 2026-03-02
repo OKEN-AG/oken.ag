@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://oken.ag/schemas/events/finance.settlement_initiated.v1.schema.json",
+  "title": "finance.settlement_initiated.v1",
+  "type": "object",
+  "required": ["event_id", "occurred_at", "producer", "schema_version", "dedupe_key", "payload"],
+  "properties": {
+    "event_id": { "type": "string", "format": "uuid" },
+    "occurred_at": { "type": "string", "format": "date-time" },
+    "producer": { "const": "finance" },
+    "schema_version": { "const": "v1" },
+    "dedupe_key": { "type": "string" },
+    "payload": {
+      "type": "object",
+      "required": ["settlement_id", "deal_id", "initiated_at"],
+      "properties": {
+        "settlement_id": { "type": "string" },
+        "deal_id": { "type": "string" },
+        "initiated_at": { "type": "string", "format": "date-time" }
+      }
+    }
+  }
+}

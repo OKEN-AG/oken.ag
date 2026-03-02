@@ -1,21 +1,46 @@
-## Resumo
+## Contexto
+- Feature/Issue:
+- Bounded Context primário:
+- Contextos afetados:
+- Squads R/A/C/I:
 
-<!-- Descreva brevemente a mudança e o objetivo de negócio/técnico. -->
+## Tipo de mudança
+- [ ] Core (domínio/invariantes)
+- [ ] Contrato (API/evento/snapshot)
+- [ ] Adapter/Wrapper (integração externa)
+- [ ] Observabilidade/Runbook
+- [ ] Segurança/Compliance
 
-## Checklist obrigatório — mudanças de domínio
+## Checklist Arquitetural
+### Boundary e domínio
+- [ ] Sem acesso direto a DB de outro contexto
+- [ ] Linguagem e naming consistentes com o contexto dono
 
-> Preencha este bloco quando a PR alterar entidades, regras de negócio, eventos, APIs ou dados.
+### Contratos e compatibilidade
+- [ ] OpenAPI/Schema atualizado e versionado (v1/v2)
+- [ ] Backward compatibility definida (ou v2 criada)
+- [ ] Exemplos canônicos atualizados
 
-- [ ] Identifiquei os bounded contexts impactados.
-- [ ] RFC criada/aprovada (ou justifiquei por que não é necessária).
-- [ ] Avaliei impacto em **eventos** (novos, alterados, removidos, versionados).
-- [ ] Avaliei impacto em **APIs** (request/response, contratos, consumers/producers).
-- [ ] Avaliei impacto em **dados** (schema, migrações, backfill, retenção, auditoria).
-- [ ] Atualizei versionamento semântico dos schemas afetados (`MAJOR.MINOR.PATCH`).
-- [ ] Documentei política de compatibilidade (backward/forward) para os contratos alterados.
-- [ ] Defini plano de rollout e rollback para mudanças com risco de incompatibilidade.
+### Resiliência
+- [ ] Timeout/deadline em síncrono
+- [ ] Idempotência em escrita sensível
+- [ ] Async com retry + DLQ + dedupe
 
-## Evidências de validação
+### Segurança e auditoria
+- [ ] AuthZ revisado (Identity policies/claims)
+- [ ] Audit trail para ações críticas
+- [ ] LGPD/regulatório considerado
 
-- [ ] Testes automatizados relevantes executados.
-- [ ] Verificações manuais/documentais relevantes executadas.
+### Blockchain (se aplicável)
+- [ ] Uso apenas via Adapter (subledger/anchor/rail)
+- [ ] Core opera sem blockchain
+- [ ] Fallback documentado
+
+### Operação
+- [ ] Runbook atualizado
+- [ ] Métricas/SLOs atualizados
+- [ ] Plano de rollback/reprocessamento definido
+
+## Evidências
+- Logs/prints:
+- Links para docs alterados:
