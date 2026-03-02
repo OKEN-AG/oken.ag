@@ -24,12 +24,20 @@ const isValidProfile = (value: unknown): value is UserProfile => (
   typeof value === 'string' && value in PROFILE_CAPABILITIES
 );
 
-const getProfileFromUser = (user: User | null): UserProfile => {
-  const metadataProfile = user?.user_metadata?.profile;
-  if (isValidProfile(metadataProfile)) return metadataProfile;
+const getProfileFromSession = (session: Session | null): UserProfile => {
+  const token = session?.access_token;
+  if (!token) return DEFAULT_PROFILE;
 
-  const emailHint = user?.email?.split('+')[1]?.split('@')[0]?.replace('-', '_');
-  if (isValidProfile(emailHint)) return emailHint;
+  const [, payload] = token.split('.');
+  if (!payload) return DEFAULT_PROFILE;
+
+  try {
+    const decoded = JSON.parse(atob(payload.replace(/-/g, '+').replace(/_/g, '/')));
+    if (isValidProfile(decoded?.profile)) return decoded.profile;
+  } catch {
+    return DEFAULT_PROFILE;
+  }
+
   return DEFAULT_PROFILE;
 };
 
@@ -37,7 +45,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
-  const profile = getProfileFromUser(user);
+  const profile = getProfileFromSession(session);
   const capabilities = PROFILE_CAPABILITIES[profile] ?? [];
 
   useEffect(() => {
