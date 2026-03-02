@@ -565,7 +565,7 @@ serve(async (req: Request) => {
     const tenantId = (body?.tenantId || user.user_metadata?.tenant_id || null) as string | null;
     const simulationPolicy = await resolvePolicy(supabase, 'simulation_engine', tenantId);
 
-    let result: Record<string, unknown> | EligibilityResult;
+    let result: Record<string, unknown>;
 
     switch (endpoint) {
       // ═══════════════════════════════════════════

@@ -1,6 +1,14 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.4";
 
+type BusinessEvent = {
+  payload: Record<string, unknown>;
+  event_name: string;
+  tenant_id: string | null;
+  correlation_id: string | null;
+  idempotency_key: string | null;
+};
+
 type OutboxCandidate = {
   id: string;
   business_event_id: string;
@@ -9,19 +17,7 @@ type OutboxCandidate = {
   attempts: number;
   created_at: string;
   updated_at: string;
-  business_events: {
-    payload: Record<string, unknown>;
-    event_name: string;
-    tenant_id: string | null;
-    correlation_id: string | null;
-    idempotency_key: string | null;
-  } | {
-    payload: Record<string, unknown>;
-    event_name: string;
-    tenant_id: string | null;
-    correlation_id: string | null;
-    idempotency_key: string | null;
-  }[] | null;
+  business_events: BusinessEvent | BusinessEvent[] | null;
 };
 
 const BATCH_SIZE = Number(Deno.env.get('OUTBOX_WORKER_BATCH_SIZE') ?? '50');
@@ -50,6 +46,16 @@ function computeBackoffMs(attemptNo: number): number {
   const exponential = BASE_DELAY_MS * 2 ** Math.max(0, attemptNo - 1);
   const jitter = Math.floor(Math.random() * (MAX_JITTER_MS + 1));
   return exponential + jitter;
+}
+
+function normalizeBusinessEvent(candidate: OutboxCandidate): BusinessEvent | null {
+  if (!candidate.business_events) return null;
+
+  if (Array.isArray(candidate.business_events)) {
+    return candidate.business_events[0] ?? null;
+  }
+
+  return candidate.business_events;
 }
 
 async function publishToDestination(destination: string, payload: Record<string, unknown>): Promise<void> {
@@ -113,9 +119,7 @@ serve(async () => {
   let deadLettered = 0;
 
   for (const candidate of workset) {
-    const businessEvent = Array.isArray(candidate.business_events)
-      ? candidate.business_events[0] ?? null
-      : candidate.business_events;
+    const businessEvent = normalizeBusinessEvent(candidate);
 
     if (!businessEvent) {
       continue;
