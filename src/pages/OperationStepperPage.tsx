@@ -1216,6 +1216,8 @@ export default function OperationStepperPage() {
             grossToNet={grossToNet}
             simLoading={simLoading}
             formatCurrency={formatCurrency}
+            dueMonths={dueMonths}
+            monthlyRate={rawCampaign?.interest_rate ?? 1.5}
           />
 
           {/* ═══ BARTER STEP (with buyer select + valorization) ═══ */}
@@ -1248,6 +1250,17 @@ export default function OperationStepperPage() {
             onShowInsuranceChange={setShowInsurance}
             insurancePremium={insurancePremium}
             formatCurrency={formatCurrency}
+            priceTrail={pricing ? {
+              exchangePrice: pricing.exchangePrice,
+              exchange: pricing.exchange,
+              contract: pricing.contract,
+              exchangeRateBolsa: pricing.exchangeRateBolsa,
+              basisByPort: pricing.basisByPort,
+              securityDeltaMarket: pricing.securityDeltaMarket,
+              securityDeltaFreight: pricing.securityDeltaFreight,
+              bushelsPerTon: pricing.bushelsPerTon,
+              pesoSacaKg: pricing.pesoSacaKg,
+            } : null}
           />
 
           {/* ═══ FORMALIZATION STEP ═══ */}
@@ -1277,6 +1290,19 @@ export default function OperationStepperPage() {
             netRevenue={grossToNet.netRevenue}
             quantitySacas={parity.quantitySacas}
             formatCurrency={formatCurrency}
+            documentData={{
+              clientName, clientDocument, clientCity, clientState,
+              counterparty: selectedBuyerId === '__other__' ? counterpartyOther : (buyers?.find((b: any) => b.id === selectedBuyerId)?.buyer_name || ''),
+              commodity: selectedCommodity, quantitySacas: parity.quantitySacas, commodityPrice: parity.commodityPricePerUnit,
+              deliveryLocation: freightOrigin, dueDate: selectedDueDate || undefined,
+              grossRevenue: grossToNet.grossRevenue, comboDiscount: grossToNet.comboDiscount, netRevenue: grossToNet.netRevenue,
+              paymentMethod: selectedPM?.method_name,
+              items: pricingResults.map(pr => {
+                const prod = products.find(p => p.id === pr.productId);
+                const sel = selections.find(s => s.productId === pr.productId);
+                return { product: prod?.name || '', dose: `${sel?.dosePerHectare ?? 0}`, quantity: `${pr.quantity?.toFixed(0) ?? 0}`, price: formatCurrency(pr.normalizedPrice), subtotal: formatCurrency(pr.subtotal) };
+              }),
+            }}
           />
 
           {/* ═══ SUMMARY STEP ═══ */}

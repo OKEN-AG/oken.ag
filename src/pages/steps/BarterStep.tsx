@@ -1,10 +1,24 @@
+import { useState } from 'react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
+import { Button } from '@/components/ui/button';
 import { NumericInput } from '@/components/NumericInput';
-import { AlertTriangle } from 'lucide-react';
+import { AlertTriangle, ChevronDown, ChevronUp, ArrowRight } from 'lucide-react';
 import type { ContractPriceType } from '@/types/barter';
+
+interface PriceTrailData {
+  exchangePrice?: number;
+  exchange?: string;
+  contract?: string;
+  exchangeRateBolsa?: number;
+  basisByPort?: Record<string, number>;
+  securityDeltaMarket?: number;
+  securityDeltaFreight?: number;
+  bushelsPerTon?: number;
+  pesoSacaKg?: number;
+}
 
 interface BarterStepProps {
   isActive: boolean;
@@ -35,6 +49,20 @@ interface BarterStepProps {
   onShowInsuranceChange: (v: boolean) => void;
   insurancePremium: any;
   formatCurrency: (v: number) => string;
+  priceTrail?: PriceTrailData | null;
+}
+
+function TrailStep({ label, value, formula, isLast }: { label: string; value: string; formula?: string; isLast?: boolean }) {
+  return (
+    <div className="flex items-center gap-2">
+      <div className="flex-1 bg-muted/50 rounded px-3 py-2">
+        <div className="text-[10px] text-muted-foreground uppercase tracking-wider">{label}</div>
+        <div className="font-mono text-sm font-bold text-foreground">{value}</div>
+        {formula && <div className="text-[10px] text-muted-foreground mt-0.5">{formula}</div>}
+      </div>
+      {!isLast && <ArrowRight className="w-3.5 h-3.5 text-muted-foreground shrink-0" />}
+    </div>
+  );
 }
 
 export function BarterStep({
@@ -44,8 +72,25 @@ export function BarterStep({
   hasContract, onHasContractChange, userPrice, onUserPriceChange,
   commodityNetPrice, parity, freightReducer, ivp, buyerFee, selectedValorization,
   showInsurance, onShowInsuranceChange, insurancePremium, formatCurrency,
+  priceTrail,
 }: BarterStepProps) {
+  const [showTrail, setShowTrail] = useState(false);
+
   if (!isActive) return null;
+
+  const basis = priceTrail?.basisByPort?.[port] ?? 0;
+  const priceUsdBu = (priceTrail?.exchangePrice ?? 0) / 100; // cents to dollars
+  const priceBrl = priceUsdBu * (priceTrail?.exchangeRateBolsa ?? 1);
+  const withBasis = priceBrl + basis;
+  const bushelsPerTon = priceTrail?.bushelsPerTon ?? 36.744;
+  const pesoSacaKg = priceTrail?.pesoSacaKg ?? 60;
+  const tonPerSaca = pesoSacaKg / 1000;
+  const pricePerSacaPreFreight = withBasis * bushelsPerTon * tonPerSaca;
+  const freightDeduction = freightReducer?.totalReducer ?? 0;
+  const afterFreight = pricePerSacaPreFreight - freightDeduction;
+  const deltaMarket = priceTrail?.securityDeltaMarket ?? 0;
+  const deltaFreight = priceTrail?.securityDeltaFreight ?? 0;
+
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -102,6 +147,28 @@ export function BarterStep({
           {hasContract && <NumericInput value={userPrice} onChange={onUserPriceChange} decimals={2} prefix="R$" placeholder="0,00" className="bg-muted border-border text-foreground" />}
         </div>
       </div>
+
+      {/* Price Formation Trail */}
+      {priceTrail && priceTrail.exchangePrice !== undefined && (
+        <div className="glass-card p-4">
+          <button onClick={() => setShowTrail(!showTrail)} className="flex items-center justify-between w-full text-left">
+            <h3 className="text-sm font-semibold text-foreground">Trilha de Formação de Preço</h3>
+            {showTrail ? <ChevronUp className="w-4 h-4 text-muted-foreground" /> : <ChevronDown className="w-4 h-4 text-muted-foreground" />}
+          </button>
+          {showTrail && (
+            <div className="mt-3 grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-2">
+              <TrailStep label={`Bolsa ${priceTrail.exchange || 'CBOT'} (${priceTrail.contract || ''})`} value={`${(priceTrail.exchangePrice ?? 0).toFixed(2)} ¢/bu`} formula="Preço cotação" />
+              <TrailStep label="Câmbio" value={`R$ ${(priceTrail.exchangeRateBolsa ?? 0).toFixed(4)}`} formula={`= USD ${priceUsdBu.toFixed(4)}/bu × R$`} />
+              <TrailStep label={`Basis ${port || '—'}`} value={`USD ${basis.toFixed(2)}/bu`} formula="Prêmio porto" />
+              <TrailStep label="Preço/sc (pré-frete)" value={formatCurrency(pricePerSacaPreFreight)} formula={`${bushelsPerTon} bu/ton × ${tonPerSaca.toFixed(3)} ton/sc`} />
+              <TrailStep label="Redutor Frete" value={`- ${formatCurrency(freightDeduction)}/sc`} formula={freightReducer ? `${freightReducer.distanceKm}km` : '—'} />
+              <TrailStep label="Deltas (%)" value={`Mkt: ${deltaMarket}% | Frt: ${deltaFreight}%`} formula="Margem de segurança" />
+              <TrailStep label="Preço Net/sc" value={formatCurrency(commodityNetPrice)} formula="Preço final calculado" isLast />
+            </div>
+          )}
+        </div>
+      )}
+
       <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
         <div className="glass-card p-4"><div className="stat-label">Preço Net/sc</div><div className="font-mono text-lg font-bold text-foreground">{formatCurrency(commodityNetPrice)}</div></div>
         <div className="glass-card p-4"><div className="stat-label">Sacas</div><div className="font-mono text-lg font-bold text-success">{parity.quantitySacas.toLocaleString('pt-BR')}</div></div>

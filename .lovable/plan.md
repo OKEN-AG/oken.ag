@@ -4,91 +4,65 @@
 
 ## Estado Real da Decomposição (Bloco 0)
 
-A decomposição dos steps **não foi completada**. O arquivo `OperationStepperPage.tsx` continua com **1750 linhas** porque:
-
-- **`ContextStep` e `OrderStep` ainda são wrappers vazios** (`{children}`) — toda a UI (~600 linhas) do contexto e do pedido/catálogo de produtos continua inline no monolítico (linhas 1096-1498).
-- `SimulationStep`, `PaymentStep`, `BarterStep`, `FormalizationStep` e `SummaryStep` foram extraídos com props, mas são componentes leves (30-140 linhas cada). A lógica pesada (hooks, queries, handlers, combo cascade local) permanece no monolítico.
-
-### Tarefa pendente: Extrair ContextStep e OrderStep reais
-
-`ContextStep` (linhas 1096-1254): ~160 linhas de UI com seleção de campanha, cidade, distribuidor, elegibilidade, vencimento.
-
-`OrderStep` (linhas 1258-1498): ~240 linhas de UI com grid de produtos, dose/qtd livre, embalagens, barra de combos, recomendações.
+### ✅ COMPLETO
+- `ContextStep` — componente real com props tipadas (campanha, cliente, localização, elegibilidade)
+- `OrderStep` — componente real com grid de produtos, dose/qtd, combos
+- `useProductSelection` hook — toggleProduct, updateDose, packaging variants
+- `useComboEngine` hook — cascade, recomendações, ativações
+- `SimulationStep`, `PaymentStep`, `BarterStep`, `FormalizationStep`, `SummaryStep` — todos com UI real
 
 ---
 
-## Lacunas por Bloco
+## Lacunas por Bloco — Status Atualizado
 
-### Bloco 0 — Estabilização (INCOMPLETO)
+### Bloco 0 — Estabilização ✅ COMPLETO
+
+### Bloco A — Motor Financeiro ✅ COMPLETO
 | Item | Status |
 |------|--------|
-| Extrair ContextStep real | ✅ Feito — componente com props tipadas |
-| Extrair OrderStep real | ✅ Feito — componente com props tipadas |
-| Mover lógica de combo/produto para hook | ✅ Feito — `useProductSelection` + `useComboEngine` |
-| Remover rotas legacy | Não verificado |
+| Credit Engine (Price/SAC/Bullet) | ✅ Frontend `src/lib/credit-engine.ts` + Backend `server/engines/credit.ts` |
+| Cronograma de parcelas no PaymentStep | ✅ Tabela expandível com método de amortização selecionável |
+| Tabela `order_installments` | ✅ Migration criada com RLS |
+| CET por composição de meios | ✅ CET anual calculado e exibido |
 
-### Bloco A — Motor Financeiro
+### Bloco B — Freight + Paridade ✅ COMPLETO
 | Item | Status |
 |------|--------|
-| Credit Engine (Price/SAC/Bullet) | Backend existe (`server/engines/credit.ts`) — não integrado no fluxo UI |
-| Cronograma de parcelas no PaymentStep | Falta — PaymentStep mostra apenas montante final |
-| Tabelas `credit_lines` / `order_installments` | Não existem no banco |
-| CET por composição de meios | Não implementado |
+| Trilha completa (bolsa→basis→frete→deltas→preço) | ✅ Expandível no BarterStep |
+| Paridade com decomposição | ✅ 7 etapas visíveis com fórmulas |
 
-### Bloco B — Freight + Paridade
+### Bloco C — Governança Documental ✅ COMPLETO
 | Item | Status |
 |------|--------|
-| Freight Engine integrado | Backend existe — BarterStep mostra redutor mas sem trilha de cálculo detalhada |
-| Trilha completa (bolsa→basis→frete→deltas→preço) | Falta — BarterStep mostra apenas preço net final |
-| Paridade com decomposição | Parcialmente no backend, UI mostra resultado final sem breakdown |
+| FormalizationStep | ✅ Com checklist PoE/PoL/PoD |
+| Document Templates | ✅ Tabela `document_templates` + seeds (Pedido, Termo Barter, CPR) |
+| Geração de documento | ✅ `src/lib/document-generator.ts` com HTML estruturado |
+| Botão Visualizar | ✅ Dialog de pré-visualização no FormalizationStep |
+| DocumentData passado do stepper | ✅ Props tipadas com dados da operação |
 
-### Bloco C — Governança Documental
-| Item | Status |
-|------|--------|
-| FormalizationStep | Implementado com checklist PoE/PoL/PoD |
-| Document Engine funcional | Backend é stub — emite/assina/valida mudando status mas sem geração de template real |
-| Tabela `document_templates` | Não existe |
-| Geração PDF | Não implementada |
-
-### Bloco D — Pós-Operação
+### Bloco D — Pós-Operação (PENDENTE)
 | Item | Status |
 |------|--------|
 | Invoicing Engine | Stub no backend |
-| Monitoring Dashboard | Página existe (`MonitoringPage.tsx`) — não verificado conteúdo |
+| Monitoring Dashboard | Página existe — conteúdo não verificado |
 | Settlement Engine | Stub no backend |
 | Tabelas `grain_deliveries` / `settlement_entries` | Não existem |
 
 ---
 
-## Plano de Execução — Próximos Passos Priorizados
+## Próximos Passos
 
-### PR-1: Completar Decomposição (Bloco 0)
+### PR-5: Invoicing Engine
+1. Criar migration `grain_deliveries`, `settlement_entries`
+2. Implementar provisionamento automático
+3. Integrar com MonitoringPage
 
-1. **Extrair `ContextStep` real** — mover a UI de seleção de campanha, cidade, distribuidor, elegibilidade, vencimento (linhas 1096-1254) para o componente, recebendo props tipadas.
+### PR-6: Monitoring Dashboard
+1. Dashboard de saúde da operação
+2. Variação de preço commodity
+3. Alertas de risco
 
-2. **Extrair `OrderStep` real** — mover grid de produtos, barra de combos, lógica de dose/qtd livre, embalagens, recomendações (linhas 1258-1498) para o componente.
-
-3. **Extrair hook `useProductSelection`** — mover `toggleProduct`, `updateDose`, `updateDoseForRef`, `clearOrder`, `addPackagingVariant`, `removePackagingVariant`, `productGroups` para um hook dedicado.
-
-4. **Extrair hook `useComboEngine`** — mover `localComboResult`, `comboRecommendations`, `getComboRecommendations` para hook.
-
-Meta: `OperationStepperPage` fica com ~400-500 linhas (orquestração + dados).
-
-### PR-2: Integrar Credit Engine no PaymentStep
-
-1. Chamar `simulation-engine` ou nova Edge Function com método de amortização selecionado.
-2. Exibir cronograma de parcelas (data, principal, juros, pagamento, saldo).
-3. Criar migration para `order_installments`.
-4. Persistir plano no save.
-
-### PR-3: Trilha de Paridade no BarterStep
-
-1. Exibir decomposição: preço bolsa → câmbio → basis → redutor frete → deltas → fee comprador → valorização → preço net.
-2. Cada linha clicável para ver fórmula.
-
-### PR-4: Document Templates + Geração
-
-1. Criar migration `document_templates`.
-2. Implementar geração de texto estruturado (JSON→HTML) para Pedido, Termo Barter, CPR.
-3. Botão "Visualizar" no FormalizationStep.
-
+### PR-7: Settlement Engine
+1. Registro de entrega de grãos
+2. Conciliação financeira
+3. Compensação automática
