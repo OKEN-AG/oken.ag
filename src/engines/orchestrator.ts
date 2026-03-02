@@ -13,6 +13,15 @@ import { validateMinimumDocumentRule } from '@/domains/core/formalization';
  * NEW: PoE/PoL validation gates for garantido→faturado transition.
  */
 
+export interface ResolvedOrchestratorPolicy {
+  policyVersionId?: string;
+  policyVersionNo?: number;
+  nextStatus?: OperationStatus | null;
+  blockingReason?: string | null;
+  wagonStages?: WagonStage[];
+  rationale?: string | null;
+}
+
 export interface StageDefinition {
   module: JourneyModule;
   name: string;
@@ -130,8 +139,10 @@ export function calculateGuaranteeCoverage(
 export function buildWagonStages(
   activeModules: JourneyModule[],
   currentStatus: OperationStatus,
-  existingDocuments: { doc_type: string; status: string; guarantee_category?: string }[]
+  existingDocuments: { doc_type: string; status: string; guarantee_category?: string }[],
+  resolvedPolicy?: ResolvedOrchestratorPolicy | null
 ): WagonStage[] {
+  if (resolvedPolicy?.wagonStages?.length) return resolvedPolicy.wagonStages;
   const stages: WagonStage[] = [];
   const currentIdx = STATUS_ORDER.indexOf(currentStatus);
 
@@ -181,8 +192,10 @@ export function buildWagonStages(
 export function canAdvance(
   activeModules: JourneyModule[],
   currentStatus: OperationStatus,
-  existingDocuments: { doc_type: string; status: string; guarantee_category?: string }[]
+  existingDocuments: { doc_type: string; status: string; guarantee_category?: string }[],
+  resolvedPolicy?: ResolvedOrchestratorPolicy | null
 ): OperationStatus | null {
+  if (resolvedPolicy) return resolvedPolicy.nextStatus || null;
   const stages = buildWagonStages(activeModules, currentStatus, existingDocuments);
 
   const currentStages = stages.filter(s => {
@@ -228,8 +241,10 @@ export function canAdvance(
 export function getBlockingReason(
   activeModules: JourneyModule[],
   currentStatus: OperationStatus,
-  existingDocuments: { doc_type: string; status: string; guarantee_category?: string }[]
+  existingDocuments: { doc_type: string; status: string; guarantee_category?: string }[],
+  resolvedPolicy?: ResolvedOrchestratorPolicy | null
 ): string | null {
+  if (resolvedPolicy) return resolvedPolicy.blockingReason || null;
   // Check PoE/PoL gates first
   if (currentStatus === 'garantido') {
     const missingProofs: string[] = [];
@@ -246,7 +261,7 @@ export function getBlockingReason(
     );
 
     if (!minimumRule.canDisburse) {
-      return `Regra documental mínima para desembolso não atendida: ${minimumRule.missing.join(', ')}`;
+      return `document_done=false. Regra documental mínima para desembolso não atendida: ${minimumRule.missing.join(', ')}`;
     }
   }
 

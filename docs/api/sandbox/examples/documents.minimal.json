@@ -1,0 +1,12 @@
+{
+  "endpoint": "POST /v1/documents",
+  "request": {
+    "tenant_id": "11111111-1111-1111-1111-111111111111",
+    "type": "invoice",
+    "uri": "s3://docs/invoice-001.pdf"
+  },
+  "response": {
+    "id": "doc_001",
+    "status": "pending"
+  }
+}

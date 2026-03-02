@@ -1,0 +1,16 @@
+{
+  "endpoint": "GET /v1/campaigns",
+  "response": {
+    "data": [
+      {
+        "id": "cmp_001",
+        "name": "Safra 2026",
+        "status": "active"
+      }
+    ],
+    "page_info": {
+      "next_cursor": null,
+      "has_next_page": false
+    }
+  }
+}
