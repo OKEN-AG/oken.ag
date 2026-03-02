@@ -1,0 +1,79 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://oken.ag/schemas/events/reconciliation.divergence_opened.v1.schema.json",
+  "title": "reconciliation.divergence_opened.v1",
+  "description": "Evento emitido quando uma divergência de reconciliação é aberta.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "event_id",
+    "occurred_at",
+    "producer",
+    "schema_version",
+    "payload"
+  ],
+  "properties": {
+    "event_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "occurred_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "producer": {
+      "type": "string",
+      "minLength": 1
+    },
+    "schema_version": {
+      "type": "string",
+      "const": "v1"
+    },
+    "dedupe_key": {
+      "type": "string",
+      "minLength": 1
+    },
+    "payload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "divergence_id",
+        "opened_at",
+        "severity",
+        "source"
+      ],
+      "properties": {
+        "divergence_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "opened_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "severity": {
+          "type": "string",
+          "enum": [
+            "low",
+            "medium",
+            "high",
+            "critical"
+          ]
+        },
+        "source": {
+          "type": "string",
+          "enum": [
+            "bank",
+            "ledger",
+            "adapter",
+            "manual"
+          ]
+        },
+        "reconciliation_batch_id": {
+          "type": "string",
+          "format": "uuid"
+        }
+      }
+    }
+  }
+}

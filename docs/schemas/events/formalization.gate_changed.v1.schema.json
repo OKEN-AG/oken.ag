@@ -1,0 +1,74 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://oken.ag/schemas/events/formalization.gate_changed.v1.schema.json",
+  "title": "formalization.gate_changed.v1",
+  "description": "Evento emitido quando um gate de formalização muda de estado.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "event_id",
+    "occurred_at",
+    "producer",
+    "schema_version",
+    "payload"
+  ],
+  "properties": {
+    "event_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "occurred_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "producer": {
+      "type": "string",
+      "minLength": 1
+    },
+    "schema_version": {
+      "type": "string",
+      "const": "v1"
+    },
+    "dedupe_key": {
+      "type": "string",
+      "minLength": 1
+    },
+    "payload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "case_id",
+        "gate",
+        "from_status",
+        "to_status",
+        "changed_at"
+      ],
+      "properties": {
+        "case_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "gate": {
+          "type": "string",
+          "minLength": 1
+        },
+        "from_status": {
+          "type": "string",
+          "minLength": 1
+        },
+        "to_status": {
+          "type": "string",
+          "minLength": 1
+        },
+        "changed_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "actor_id": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    }
+  }
+}
