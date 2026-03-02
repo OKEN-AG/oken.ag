@@ -84,3 +84,19 @@ Hoje o sistema opera com foco em campanhas/operações e snapshots de cálculo.
 3. APIs internas por domínio (`/parties`, `/programs`, `/deals`, `/evidence`, `/events`).
 4. Case management com SLA, approvals e exception handling.
 
+
+
+## 6) Endurecimento aplicado após revisão (Fase 1.1)
+
+Após revisão da fundação inicial, foi definido endurecimento mínimo de banco:
+
+- FK explícita `deals.snapshot_id -> core_snapshots.id`.
+- Checks de integridade (`event_version > 0`, `attempts >= 0`, valores monetários não negativos em `deals`).
+- Índices únicos para pontes legadas (`programs.legacy_campaign_id`, `deals.legacy_operation_id`).
+- Triggers de `updated_at` para tabelas novas do core.
+- Políticas RLS mínimas para leitura autenticada e gestão por administradores.
+
+> Próxima evolução recomendada: substituir políticas globais por políticas tenant-aware com `tenant_id` obrigatório e escopo por organização/partes relacionadas.
+
+---
+
