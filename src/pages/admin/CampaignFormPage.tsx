@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Label } from '@/components/ui/label';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { useCampaign, useCreateCampaign, useUpdateCampaign } from '@/hooks/useCampaigns';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
@@ -379,9 +380,73 @@ export default function CampaignFormPage() {
 
   const formalizacaoModules = JOURNEY_MODULES.filter(m => m.group === 'formalizacao');
   const standaloneModules = JOURNEY_MODULES.filter(m => !m.group && m.value !== 'formalizacao');
+  const campaignBlueprintBlocks = [
+    {
+      title: 'A) Feed de leitura',
+      items: [
+        'Campanhas por tenant (status, safra, período).',
+        'Versões de política por domínio (produto, commodity, frete, incentivos, due date).',
+      ],
+    },
+    {
+      title: 'B) Inputs',
+      items: [
+        'Cadastro/edição de campanha.',
+        'Associação de produtos e regras de elegibilidade.',
+        'Engine config por campanha (credit, freight, commodity, document, settlement).',
+      ],
+    },
+    {
+      title: 'C) Precedentes',
+      items: [
+        'Tenant ativo obrigatório.',
+        'Permissão admin/campaign.manage.',
+        'Validação de vigência (não pode sobrepor janelas ativas sem nova versão).',
+      ],
+    },
+    {
+      title: 'D) Outputs',
+      items: [
+        'campaign_published (evento).',
+        'policy_set_version congelada.',
+        'Snapshot de configuração disponível para simulação/operação.',
+      ],
+    },
+  ];
 
   return (
     <div className="p-6 space-y-6 max-w-5xl">
+      <section className="space-y-3">
+        <h2 className="text-lg font-semibold text-foreground">Layout de Publicação de Campanha</h2>
+        <div className="grid gap-4 md:grid-cols-2">
+          {campaignBlueprintBlocks.map(block => (
+            <Card key={block.title}>
+              <CardHeader className="pb-3">
+                <CardTitle className="text-base">{block.title}</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <ul className="list-disc space-y-2 pl-5 text-sm text-muted-foreground">
+                  {block.items.map(item => (
+                    <li key={item}>{item}</li>
+                  ))}
+                </ul>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+        <Card className="border-dashed">
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base">Persistência backend</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <ul className="list-disc space-y-2 pl-5 text-sm text-muted-foreground">
+              <li>Tabelas de campanha e versões de política.</li>
+              <li>Outbox event para notificar monitoramento e motores.</li>
+            </ul>
+          </CardContent>
+        </Card>
+      </section>
+
       <Tabs defaultValue="geral" className="w-full">
         <div className="sticky top-0 z-20 bg-background pb-2 space-y-2">
           <div className="flex items-center gap-4">
